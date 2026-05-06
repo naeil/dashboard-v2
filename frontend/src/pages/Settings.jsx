@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildApiUrl } from '../api/apiBase'
 import { authorizedFetch } from '../api/authApi'
 
@@ -88,6 +88,9 @@ function SelectField({ value, onChange, disabled = false, className = '', childr
 }
 
 export default function Settings({ isExpanded }) {
+  const isHydratingPlayautoRef = useRef(false)
+  const isHydratingOpenMarketRef = useRef(false)
+
   const [activeTab, setActiveTab] = useState(AUTH_TAB)
 
   const [playautoKey, setPlayautoKey] = useState('')
@@ -132,6 +135,7 @@ export default function Settings({ isExpanded }) {
       const market = settings.find((item) => item.integrationType !== 'PLAYAUTO')
 
       if (playauto) {
+        isHydratingPlayautoRef.current = true
         setPlayautoKey(playauto.apiKey || '')
         setPlayautoEmail(playauto.email || '')
         setPlayautoPassword(playauto.password || '')
@@ -149,6 +153,7 @@ export default function Settings({ isExpanded }) {
       }
 
       if (market) {
+        isHydratingOpenMarketRef.current = true
         setSelectedMarket(market.integrationType || '')
         setOpenMarketKey(market.apiKey || '')
         setIsValidOpenMarket(Boolean(market.apiKey))
@@ -167,10 +172,18 @@ export default function Settings({ isExpanded }) {
   }
 
   useEffect(() => {
+    if (isHydratingPlayautoRef.current) {
+      isHydratingPlayautoRef.current = false
+      return
+    }
     setIsValidPlayauto(false)
   }, [playautoKey, playautoEmail, playautoPassword])
 
   useEffect(() => {
+    if (isHydratingOpenMarketRef.current) {
+      isHydratingOpenMarketRef.current = false
+      return
+    }
     setIsValidOpenMarket(false)
   }, [openMarketKey, selectedMarket])
 
@@ -186,10 +199,12 @@ export default function Settings({ isExpanded }) {
 
   const applyAuthResponse = (responseBody) => {
     if (responseBody.integrationType === 'PLAYAUTO') {
+      isHydratingPlayautoRef.current = true
       setPlayautoKey(responseBody.apiKey || '')
       setPlayautoEmail(responseBody.email || '')
       setPlayautoPassword(responseBody.password || '')
     } else {
+      isHydratingOpenMarketRef.current = true
       setSelectedMarket(responseBody.integrationType || '')
       setOpenMarketKey(responseBody.apiKey || '')
     }
@@ -328,6 +343,7 @@ export default function Settings({ isExpanded }) {
   }
 
   const handleRunOrderCollection = async () => {
+    if (isRunningOrderCollection) return
     setIsRunningOrderCollection(true)
     try {
       const response = await authorizedFetch(`${SETTINGS_API_BASE}/collection/run`, {
@@ -603,6 +619,7 @@ export default function Settings({ isExpanded }) {
                       type="checkbox"
                       checked={autoCollectEnabled}
                       onChange={(event) => setAutoCollectEnabled(event.target.checked)}
+                      disabled={isRunningOrderCollection}
                       className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
                     />
                     <span>주문 자동 수집 사용</span>
@@ -618,12 +635,16 @@ export default function Settings({ isExpanded }) {
                         min="1"
                         value={collectionValue}
                         onChange={(event) => setCollectionValue(event.target.value)}
+                        disabled={isRunningOrderCollection}
                         placeholder="값을 입력하세요"
-                        className="w-32 rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                        className={`w-32 rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200 ${
+                          isRunningOrderCollection ? 'cursor-not-allowed bg-slate-100 text-slate-400' : ''
+                        }`}
                       />
                       <SelectField
                         value={collectionUnit}
                         onChange={(event) => setCollectionUnit(event.target.value)}
+                        disabled={isRunningOrderCollection}
                         className="w-32"
                       >
                         {UNIT_OPTIONS.map((option) => (
@@ -656,16 +677,18 @@ export default function Settings({ isExpanded }) {
                         min="1"
                         value={scheduleValue}
                         onChange={(event) => setScheduleValue(event.target.value)}
-                        disabled={!autoCollectEnabled}
+                        disabled={!autoCollectEnabled || isRunningOrderCollection}
                         placeholder="값을 입력하세요"
                         className={`w-32 rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200 ${
-                          autoCollectEnabled ? 'bg-white text-slate-900' : 'cursor-not-allowed bg-slate-100 text-slate-400'
+                          autoCollectEnabled && !isRunningOrderCollection
+                            ? 'bg-white text-slate-900'
+                            : 'cursor-not-allowed bg-slate-100 text-slate-400'
                         }`}
                       />
                       <SelectField
                         value={scheduleUnit}
                         onChange={(event) => setScheduleUnit(event.target.value)}
-                        disabled={!autoCollectEnabled}
+                        disabled={!autoCollectEnabled || isRunningOrderCollection}
                         className="w-32"
                       >
                         {UNIT_OPTIONS.map((option) => (
@@ -735,9 +758,9 @@ export default function Settings({ isExpanded }) {
                 <button
                   type="button"
                   onClick={handleSaveCollection}
-                  disabled={isSavingCollection || !collectionReady}
+                  disabled={isSavingCollection || isRunningOrderCollection || !collectionReady}
                   className={`rounded-xl px-6 py-3 text-sm font-bold transition-all ${
-                    isSavingCollection || !collectionReady
+                    isSavingCollection || isRunningOrderCollection || !collectionReady
                       ? 'cursor-not-allowed bg-slate-200 text-slate-400'
                       : 'bg-slate-950 text-white hover:bg-slate-800'
                   }`}

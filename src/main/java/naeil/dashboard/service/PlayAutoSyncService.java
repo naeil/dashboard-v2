@@ -38,6 +38,7 @@ import naeil.dashboard.repository.OrdersRepository;
 import naeil.dashboard.repository.ProductRepository;
 import naeil.dashboard.repository.ProductOutboundRepository;
 import naeil.dashboard.repository.ShopRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,6 +48,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class PlayAutoSyncService {
 
     private static final DateTimeFormatter DATETIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_DATE;
+    private static final int ORDER_SYNC_CHUNK_DAYS = 7;
     private static final String DEFAULT_SHOP_CODE = "A000";
     private static final String DEFAULT_SHOP_NAME = "\uC9C1\uC811\uC785\uB825";
     private static final String DEFAULT_BRAND_NAME = "\uBBF8\uBD84\uB958";
@@ -189,6 +192,53 @@ public class PlayAutoSyncService {
 
     @Transactional
     public void syncOrders(Long companyId, String token, String apiKey, String sDate, String eDate) {
+        LocalDate startDate = parseIsoDate(sDate);
+        LocalDate endDate = parseIsoDate(eDate);
+        if (startDate != null && endDate != null) {
+            List<DateRange> chunks = splitDateRanges(startDate, endDate, ORDER_SYNC_CHUNK_DAYS);
+            if (chunks.size() > 1) {
+                log.info(
+                        "Starting PlayAuto Order Sync chunk processing for company {}. totalChunks={} [{} ~ {}]",
+                        companyId,
+                        chunks.size(),
+                        sDate,
+                        eDate
+                );
+                for (int index = 0; index < chunks.size(); index++) {
+                    DateRange chunk = chunks.get(index);
+                    int chunkNumber = index + 1;
+                    log.info(
+                            "Starting PlayAuto Order Sync chunk {}/{} for company {} [{} ~ {}]",
+                            chunkNumber,
+                            chunks.size(),
+                            companyId,
+                            chunk.startDate(),
+                            chunk.endDate()
+                    );
+                    syncOrdersRange(
+                            companyId,
+                            token,
+                            apiKey,
+                            chunk.startDate().format(DATE_FORMATTER),
+                            chunk.endDate().format(DATE_FORMATTER)
+                    );
+                    log.info(
+                            "Completed PlayAuto Order Sync chunk {}/{} for company {} [{} ~ {}]",
+                            chunkNumber,
+                            chunks.size(),
+                            companyId,
+                            chunk.startDate(),
+                            chunk.endDate()
+                    );
+                }
+                return;
+            }
+        }
+
+        syncOrdersRange(companyId, token, apiKey, sDate, eDate);
+    }
+
+    private void syncOrdersRange(Long companyId, String token, String apiKey, String sDate, String eDate) {
         log.info("Starting PlayAuto Order Sync for company: {} [{} ~ {}]", companyId, sDate, eDate);
         JsonNode orderData = playAutoApiClient.getOrderList(token, apiKey, sDate, eDate);
         Map<String, Customer> customerCache = new HashMap<>();
@@ -217,6 +267,30 @@ public class PlayAutoSyncService {
             );
         } else {
             log.warn("PlayAuto order response does not contain results array for company {}", companyId);
+        }
+    }
+
+    private List<DateRange> splitDateRanges(LocalDate startDate, LocalDate endDate, int chunkDays) {
+        List<DateRange> ranges = new ArrayList<>();
+        for (LocalDate current = startDate; !current.isAfter(endDate); current = current.plusDays(chunkDays)) {
+            LocalDate chunkEnd = current.plusDays(chunkDays - 1L);
+            if (chunkEnd.isAfter(endDate)) {
+                chunkEnd = endDate;
+            }
+            ranges.add(new DateRange(current, chunkEnd));
+        }
+        return ranges;
+    }
+
+    private LocalDate parseIsoDate(String value) {
+        if (isBlank(value)) {
+            return null;
+        }
+
+        try {
+            return LocalDate.parse(value, DATE_FORMATTER);
+        } catch (Exception e) {
+            return null;
         }
     }
 
@@ -347,7 +421,13 @@ public class PlayAutoSyncService {
         }
 
         if (existingOpt.isEmpty()) {
-            Orders order = saveNewOrder(companyId, node, productSnapshot, resolvedSkuCd, customerCache);
+            OrderSaveOutcome outcome = saveNewOrder(companyId, node, productSnapshot, resolvedSkuCd, customerCache);
+            if (!outcome.created()) {
+                log.info("Skipping duplicate order during sync. uniq={}", uniq);
+                return true;
+            }
+
+            Orders order = outcome.order();
             if (OrderStatusGroups.isRevenueIncludedStatus(status)) {
                 updateStats(companyId, order, false);
             } else if (OrderStatusGroups.isCompletedReversalStatus(status)) {
@@ -378,7 +458,7 @@ public class PlayAutoSyncService {
         return true;
     }
 
-    private Orders saveNewOrder(
+    private OrderSaveOutcome saveNewOrder(
             Long companyId,
             JsonNode node,
             JsonNode productSnapshot,
@@ -408,9 +488,10 @@ public class PlayAutoSyncService {
         LocalDateTime payTime = (payTimeNode.isMissingNode() || payTimeNode.asText().isEmpty())
                 ? null
                 : LocalDateTime.parse(payTimeNode.asText(), DATETIME_FORMATTER);
+        String uniq = node.path("uniq").asText();
 
         Orders order = Orders.builder()
-                .uniq(node.path("uniq").asText())
+                .uniq(uniq)
                 .companyId(companyId)
                 .brandId(brandId)
                 .shopId(shop.getId())
@@ -426,7 +507,16 @@ public class PlayAutoSyncService {
                 .payTime(payTime)
                 .build();
 
-        return ordersRepository.save(order);
+        try {
+            return new OrderSaveOutcome(ordersRepository.save(order), true);
+        } catch (DataIntegrityViolationException e) {
+            Orders existingOrder = ordersRepository.findByUniq(uniq).orElse(null);
+            if (existingOrder != null) {
+                log.warn("Duplicate order detected during save. Reusing existing order. uniq={}", uniq);
+                return new OrderSaveOutcome(existingOrder, false);
+            }
+            throw e;
+        }
     }
 
     private Customer resolveCustomer(Long companyId, JsonNode node, Map<String, Customer> customerCache) {
@@ -466,7 +556,28 @@ public class PlayAutoSyncService {
             }
 
             customer.incrementOrderCount();
-            return customerRepository.save(customer);
+            try {
+                return customerRepository.save(customer);
+            } catch (DataIntegrityViolationException e) {
+                Customer existingCustomer = customerRepository.findByCompanyIdAndCustomerHtel(companyId, phone)
+                        .orElse(null);
+                if (existingCustomer == null) {
+                    throw e;
+                }
+
+                if (isBlank(existingCustomer.getCustomerName())) {
+                    existingCustomer.setCustomerName(firstNonBlank(
+                            node.path("order_name").asText(null),
+                            node.path("recv_name").asText(null)
+                    ));
+                }
+                if (isBlank(existingCustomer.getCustomerEmail())) {
+                    existingCustomer.setCustomerEmail(blankToNull(node.path("order_email").asText(null)));
+                }
+                existingCustomer.incrementOrderCount();
+                log.warn("Duplicate customer detected during save. Reusing existing customer. companyId={}, phone={}", companyId, phone);
+                return customerRepository.save(existingCustomer);
+            }
         });
     }
 
@@ -811,6 +922,12 @@ public class PlayAutoSyncService {
 
     private IntegrationType resolvePlatform(PlayAutoShopResponseDTO dto) {
         return IntegrationType.fromShop(dto.getShopName(), dto.getShopId());
+    }
+
+    private record DateRange(LocalDate startDate, LocalDate endDate) {
+    }
+
+    private record OrderSaveOutcome(Orders order, boolean created) {
     }
 }
 

@@ -3,6 +3,8 @@ package naeil.dashboard.service;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import naeil.dashboard.enums.CollectionJobType;
@@ -15,6 +17,7 @@ import org.springframework.stereotype.Service;
 public class PlayAutoCollectionService {
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_DATE;
+    private static final int ORDER_COLLECTION_CHUNK_DAYS = 7;
 
     private final IntegrationSettingService integrationSettingService;
     private final PlayAutoSyncService playAutoSyncService;
@@ -52,13 +55,16 @@ public class PlayAutoCollectionService {
                     window.startDate().format(DATE_FORMATTER),
                     window.endDate().format(DATE_FORMATTER)
             );
-            playAutoSyncService.syncOrders(
+
+            runChunkedOrderSync(
                     companyId,
                     credentials.accessToken(),
                     credentials.apiKey(),
-                    window.startDate().format(DATE_FORMATTER),
-                    window.endDate().format(DATE_FORMATTER)
+                    window.startDate(),
+                    window.endDate(),
+                    triggerLabel
             );
+
             playAutoSyncService.remapOrdersToResolvedProducts(companyId);
             playAutoSyncService.rebuildDailySalesStats(companyId);
 
@@ -132,6 +138,70 @@ public class PlayAutoCollectionService {
         }
     }
 
+    private void runChunkedOrderSync(
+            Long companyId,
+            String token,
+            String apiKey,
+            LocalDate startDate,
+            LocalDate endDate,
+            String triggerLabel
+    ) {
+        List<CollectionChunk> chunks = splitIntoChunks(startDate, endDate, ORDER_COLLECTION_CHUNK_DAYS);
+        log.info(
+                "Starting {} PlayAuto order chunk processing for company {}. totalChunks={} [{} ~ {}]",
+                triggerLabel,
+                companyId,
+                chunks.size(),
+                startDate,
+                endDate
+        );
+
+        for (int index = 0; index < chunks.size(); index++) {
+            CollectionChunk chunk = chunks.get(index);
+            int chunkNumber = index + 1;
+
+            log.info(
+                    "Starting {} PlayAuto order chunk {}/{} for company {} [{} ~ {}]",
+                    triggerLabel,
+                    chunkNumber,
+                    chunks.size(),
+                    companyId,
+                    chunk.startDate(),
+                    chunk.endDate()
+            );
+
+            playAutoSyncService.syncOrders(
+                    companyId,
+                    token,
+                    apiKey,
+                    chunk.startDate().format(DATE_FORMATTER),
+                    chunk.endDate().format(DATE_FORMATTER)
+            );
+
+            log.info(
+                    "Completed {} PlayAuto order chunk {}/{} for company {} [{} ~ {}]",
+                    triggerLabel,
+                    chunkNumber,
+                    chunks.size(),
+                    companyId,
+                    chunk.startDate(),
+                    chunk.endDate()
+            );
+        }
+    }
+
+    private List<CollectionChunk> splitIntoChunks(LocalDate startDate, LocalDate endDate, int chunkDays) {
+        List<CollectionChunk> chunks = new ArrayList<>();
+        for (LocalDate current = startDate; !current.isAfter(endDate); current = current.plusDays(chunkDays)) {
+            LocalDate chunkEnd = current.plusDays(chunkDays - 1L);
+            if (chunkEnd.isAfter(endDate)) {
+                chunkEnd = endDate;
+            }
+            chunks.add(new CollectionChunk(current, chunkEnd));
+        }
+        return chunks;
+    }
+
     private void syncMissingProductOutbound(
             Long companyId,
             String token,
@@ -157,5 +227,8 @@ public class PlayAutoCollectionService {
             return baseMessage + " 실패";
         }
         return baseMessage + " 실패: " + detail;
+    }
+
+    private record CollectionChunk(LocalDate startDate, LocalDate endDate) {
     }
 }
