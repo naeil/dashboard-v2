@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: dashboard
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5433/naeil_dashboard}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:password}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  cache:
+    type: redis
+    redis:
+      time-to-live: 300000  # 5 minutes in milliseconds
+
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      username: ${SPRING_DATA_REDIS_USERNAME:}
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
+      ssl:
+        enabled: ${SPRING_DATA_REDIS_SSL_ENABLED:false}
+      timeout: ${SPRING_DATA_REDIS_TIMEOUT:2000ms}
+
+app:
+  auth:
+    username: ${APP_AUTH_USERNAME:admin}
+    password: ${APP_AUTH_PASSWORD:change-me-1234}
+    token-secret: ${APP_AUTH_TOKEN_SECRET:change-this-token-secret-for-production-32chars}
+    token-ttl-seconds: ${APP_AUTH_TOKEN_TTL_SECONDS:43200}
+  encryption:
+    secret-key: ${APP_ENCRYPTION_SECRET_KEY:0123456789abcdef0123456789abcdef}
+  cors:
+    allowed-origin-patterns: ${APP_CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:5173,http://localhost:3000}
+
+server:
+  port: ${PORT:${SERVER_PORT:8080}}
+
+logging:
+  level:
+    naeil.dashboard: DEBUG
+    org.springframework.cache: DEBUG

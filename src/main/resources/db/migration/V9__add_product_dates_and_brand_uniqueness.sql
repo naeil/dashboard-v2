@@ -1,0 +1,6 @@
+ALTER TABLE product
+ADD COLUMN IF NOT EXISTS wdate TIMESTAMPTZ,
+ADD COLUMN IF NOT EXISTS mdate TIMESTAMPTZ;
+
+ALTER TABLE brand DROP CONSTRAINT IF EXISTS uq_brand_company_name;
+ALTER TABLE brand ADD CONSTRAINT uq_brand_company_name UNIQUE (company_id, brand_name);
