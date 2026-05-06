@@ -11,6 +11,8 @@ out/
 *.log
 logs/
 hs_err_pid*
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
 
 # Node / Frontend
 frontend/node_modules/
