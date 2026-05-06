@@ -65,7 +65,8 @@ public class SettingsController {
     }
 
     @PostMapping("/collection/run")
-    public ResponseEntity<?> runOrderCollection() {
+    public ResponseEntity<?> runOrderCollection(@RequestBody IntegrationSettingDto.SaveCollectionRequest request) {
+        settingService.saveCollectionSetting(DEFAULT_COMPANY_ID, request);
         playAutoCollectionService.runOrderCollection(DEFAULT_COMPANY_ID, false);
         return ResponseEntity.ok(Map.of("message", "Order collection completed successfully"));
     }

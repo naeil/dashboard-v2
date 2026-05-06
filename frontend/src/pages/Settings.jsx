@@ -94,9 +94,9 @@ export default function Settings({ isExpanded }) {
   const [playautoEmail, setPlayautoEmail] = useState('')
   const [playautoPassword, setPlayautoPassword] = useState('')
 
-  const [collectionValue, setCollectionValue] = useState('3')
+  const [collectionValue, setCollectionValue] = useState('')
   const [collectionUnit, setCollectionUnit] = useState('DAY')
-  const [scheduleValue, setScheduleValue] = useState('1')
+  const [scheduleValue, setScheduleValue] = useState('')
   const [scheduleUnit, setScheduleUnit] = useState('DAY')
   const [autoCollectEnabled, setAutoCollectEnabled] = useState(true)
 
@@ -135,9 +135,9 @@ export default function Settings({ isExpanded }) {
         setPlayautoKey(playauto.apiKey || '')
         setPlayautoEmail(playauto.email || '')
         setPlayautoPassword(playauto.password || '')
-        setCollectionValue(String(playauto.collectionValue ?? 3))
+        setCollectionValue(playauto.collectionValue != null ? String(playauto.collectionValue) : '')
         setCollectionUnit(playauto.collectionUnit || 'DAY')
-        setScheduleValue(String(playauto.scheduleValue ?? 1))
+        setScheduleValue(playauto.scheduleValue != null ? String(playauto.scheduleValue) : '')
         setScheduleUnit(playauto.scheduleUnit || 'DAY')
         setAutoCollectEnabled(Boolean(playauto.autoCollectEnabled))
         setIsValidPlayauto(Boolean(playauto.apiKey))
@@ -198,9 +198,9 @@ export default function Settings({ isExpanded }) {
   }
 
   const applyCollectionResponse = (responseBody) => {
-    setCollectionValue(String(responseBody.collectionValue ?? 3))
+    setCollectionValue(responseBody.collectionValue != null ? String(responseBody.collectionValue) : '')
     setCollectionUnit(responseBody.collectionUnit || 'DAY')
-    setScheduleValue(String(responseBody.scheduleValue ?? 1))
+    setScheduleValue(responseBody.scheduleValue != null ? String(responseBody.scheduleValue) : '')
     setScheduleUnit(responseBody.scheduleUnit || 'DAY')
     setAutoCollectEnabled(Boolean(responseBody.autoCollectEnabled))
     setCollectionSavedAt(
@@ -330,7 +330,17 @@ export default function Settings({ isExpanded }) {
   const handleRunOrderCollection = async () => {
     setIsRunningOrderCollection(true)
     try {
-      const response = await authorizedFetch(`${SETTINGS_API_BASE}/collection/run`, { method: 'POST' })
+      const response = await authorizedFetch(`${SETTINGS_API_BASE}/collection/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          collectionUnit,
+          collectionValue: Number(collectionValue),
+          scheduleUnit,
+          scheduleValue: Number(scheduleValue),
+          autoCollectEnabled,
+        }),
+      })
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({}))
         throw new Error(errorBody.message || '주문 수집 실행에 실패했습니다.')
@@ -362,9 +372,8 @@ export default function Settings({ isExpanded }) {
 
   const renderTabButton = (tab, label) => {
     const isActive = activeTab === tab
-    const isConfigured =
-      tab === AUTH_TAB ? authReady || Boolean(selectedMarket && openMarketKey) : collectionReady
     const savedAt = tab === AUTH_TAB ? authSavedAt : collectionSavedAt
+    const isConfigured = Boolean(savedAt)
 
     return (
       <button
@@ -609,6 +618,7 @@ export default function Settings({ isExpanded }) {
                         min="1"
                         value={collectionValue}
                         onChange={(event) => setCollectionValue(event.target.value)}
+                        placeholder="값을 입력하세요"
                         className="w-32 rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200"
                       />
                       <SelectField
@@ -647,6 +657,7 @@ export default function Settings({ isExpanded }) {
                         value={scheduleValue}
                         onChange={(event) => setScheduleValue(event.target.value)}
                         disabled={!autoCollectEnabled}
+                        placeholder="값을 입력하세요"
                         className={`w-32 rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200 ${
                           autoCollectEnabled ? 'bg-white text-slate-900' : 'cursor-not-allowed bg-slate-100 text-slate-400'
                         }`}
