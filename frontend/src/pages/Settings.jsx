@@ -62,6 +62,46 @@ function formatHistoryMessage(history) {
   return history.message || '메시지가 없습니다.'
 }
 
+const KST_TIME_ZONE = 'Asia/Seoul'
+
+const savedAtKstFormatter = new Intl.DateTimeFormat('ko-KR', {
+  timeZone: KST_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+})
+
+const dateTimeKstFormatter = new Intl.DateTimeFormat('sv-SE', {
+  timeZone: KST_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+})
+
+function toKstDate(value) {
+  if (!value) return null
+  if (value instanceof Date) return value
+
+  const normalizedValue =
+    typeof value === 'string' && !/[zZ]|[+-]\d{2}:\d{2}$/.test(value) ? `${value}Z` : value
+  const parsedDate = new Date(normalizedValue)
+
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate
+}
+
+function formatSavedAtKst(value) {
+  const date = toKstDate(value)
+  return date ? savedAtKstFormatter.format(date) : '-'
+}
+
+function formatDateTimeKst(value) {
+  const date = toKstDate(value)
+  return date ? dateTimeKstFormatter.format(date) : '-'
+}
+
 function SelectField({ value, onChange, disabled = false, className = '', children }) {
   return (
     <select
@@ -145,11 +185,9 @@ export default function Settings({ isExpanded }) {
         setScheduleUnit(playauto.scheduleUnit || 'DAY')
         setAutoCollectEnabled(Boolean(playauto.autoCollectEnabled))
         setIsValidPlayauto(Boolean(playauto.apiKey))
-        setAuthSavedAt(playauto.authUpdatedAt ? new Date(playauto.authUpdatedAt) : null)
-        setCollectionSavedAt(playauto.collectionUpdatedAt ? new Date(playauto.collectionUpdatedAt) : null)
-        setLastOrderCollectedAt(
-          playauto.lastOrderCollectedAt ? new Date(playauto.lastOrderCollectedAt) : null,
-        )
+        setAuthSavedAt(toKstDate(playauto.authUpdatedAt))
+        setCollectionSavedAt(toKstDate(playauto.collectionUpdatedAt))
+        setLastOrderCollectedAt(toKstDate(playauto.lastOrderCollectedAt))
       }
 
       if (market) {
@@ -158,7 +196,7 @@ export default function Settings({ isExpanded }) {
         setOpenMarketKey(market.apiKey || '')
         setIsValidOpenMarket(Boolean(market.apiKey))
         if (market.authUpdatedAt && !playauto?.authUpdatedAt) {
-          setAuthSavedAt(new Date(market.authUpdatedAt))
+          setAuthSavedAt(toKstDate(market.authUpdatedAt))
         }
       }
 
@@ -209,7 +247,7 @@ export default function Settings({ isExpanded }) {
       setOpenMarketKey(responseBody.apiKey || '')
     }
 
-    setAuthSavedAt(responseBody.authUpdatedAt ? new Date(responseBody.authUpdatedAt) : new Date())
+    setAuthSavedAt(toKstDate(responseBody.authUpdatedAt) || new Date())
   }
 
   const applyCollectionResponse = (responseBody) => {
@@ -218,12 +256,8 @@ export default function Settings({ isExpanded }) {
     setScheduleValue(responseBody.scheduleValue != null ? String(responseBody.scheduleValue) : '')
     setScheduleUnit(responseBody.scheduleUnit || 'DAY')
     setAutoCollectEnabled(Boolean(responseBody.autoCollectEnabled))
-    setCollectionSavedAt(
-      responseBody.collectionUpdatedAt ? new Date(responseBody.collectionUpdatedAt) : new Date(),
-    )
-    setLastOrderCollectedAt(
-      responseBody.lastOrderCollectedAt ? new Date(responseBody.lastOrderCollectedAt) : null,
-    )
+    setCollectionSavedAt(toKstDate(responseBody.collectionUpdatedAt) || new Date())
+    setLastOrderCollectedAt(toKstDate(responseBody.lastOrderCollectedAt))
   }
 
   const handleValidate = async (integrationType, apiKey) => {
@@ -409,7 +443,7 @@ export default function Settings({ isExpanded }) {
         </span>
         {savedAt && (
           <span className="ml-3 align-middle text-xs font-medium text-slate-400">
-            {formatSavedAt(savedAt)}
+            {formatSavedAtKst(savedAt)}
           </span>
         )}
       </button>
@@ -456,10 +490,10 @@ export default function Settings({ isExpanded }) {
             <div className="mt-3 text-xs font-medium text-slate-400">
               {activeTab === AUTH_TAB
                 ? authSavedAt
-                  ? `마지막 저장: ${formatSavedAt(authSavedAt)}`
+                  ? `마지막 저장: ${formatSavedAtKst(authSavedAt)}`
                   : '아직 인증 정보가 저장되지 않았습니다.'
                 : collectionSavedAt
-                  ? `마지막 저장: ${formatSavedAt(collectionSavedAt)}`
+                  ? `마지막 저장: ${formatSavedAtKst(collectionSavedAt)}`
                   : '아직 수집 설정이 저장되지 않았습니다.'}
             </div>
           </div>
@@ -741,9 +775,9 @@ export default function Settings({ isExpanded }) {
                             <div>
                               마지막 실행:{' '}
                               {history.finishedAt
-                                ? formatDateTime(new Date(history.finishedAt))
+                                ? formatDateTimeKst(history.finishedAt)
                                 : history.startedAt
-                                  ? formatDateTime(new Date(history.startedAt))
+                                  ? formatDateTimeKst(history.startedAt)
                                   : '-'}
                             </div>
                           </div>
