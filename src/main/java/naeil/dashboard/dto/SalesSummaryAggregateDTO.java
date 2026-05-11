@@ -10,4 +10,5 @@ public interface SalesSummaryAggregateDTO {
     BigDecimal getTotalCancelAmount();
     Long getCancelCount();
     Long getTotalOrderCount();
+    BigDecimal getProfitAmount();
 }

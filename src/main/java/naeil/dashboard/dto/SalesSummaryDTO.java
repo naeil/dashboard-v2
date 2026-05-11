@@ -12,6 +12,7 @@ public class SalesSummaryDTO {
     private final Long cancelCount;
     private final Long totalOrderCount;
     private final Long totalCustomerCount;
+    private final BigDecimal profitAmount;
 
     public SalesSummaryDTO(
             BigDecimal totalGrossAmount,
@@ -21,7 +22,8 @@ public class SalesSummaryDTO {
             BigDecimal totalCancelAmount,
             Long cancelCount,
             Long totalOrderCount,
-            Long totalCustomerCount
+            Long totalCustomerCount,
+            BigDecimal profitAmount
     ) {
         this.totalGrossAmount = totalGrossAmount;
         this.totalDiscountAmount = totalDiscountAmount;
@@ -31,6 +33,7 @@ public class SalesSummaryDTO {
         this.cancelCount = cancelCount;
         this.totalOrderCount = totalOrderCount;
         this.totalCustomerCount = totalCustomerCount;
+        this.profitAmount = profitAmount;
     }
 
     public BigDecimal getTotalGrossAmount() {
@@ -63,5 +66,9 @@ public class SalesSummaryDTO {
 
     public Long getTotalCustomerCount() {
         return totalCustomerCount;
+    }
+
+    public BigDecimal getProfitAmount() {
+        return profitAmount;
     }
 }

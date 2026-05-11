@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 
 /**
  * JPA projection interface for product-level sales aggregation.
- * Used with Spring Data JPA interface-based projections — no entity loading.
+ * Used with Spring Data JPA interface-based projections without entity loading.
  */
 public interface ProductSalesDTO {
     Long getProductId();
@@ -17,4 +17,5 @@ public interface ProductSalesDTO {
     BigDecimal getTotalNetRevenue();
     BigDecimal getTotalShippingFee();
     BigDecimal getAverageOrderValue();
+    BigDecimal getProfitAmount();
 }

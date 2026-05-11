@@ -9,7 +9,10 @@ const menuItems = [
     id: 'products',
     icon: 'inventory_2',
     label: '상품 관리',
-    children: [{ id: 'products-inventory', label: '재고 및 출고량' }],
+    children: [
+      { id: 'products-inventory', label: '재고 관리' },
+      { id: 'products-costs', label: '비용 관리' },
+    ],
   },
 ]
 
@@ -36,7 +39,7 @@ export default function Sidebar({
   const [openMenus, setOpenMenus] = useState({ products: true })
 
   const productsActive = useMemo(
-    () => activePage === 'products' || activePage === 'products-inventory',
+    () => activePage === 'products' || activePage === 'products-inventory' || activePage === 'products-costs',
     [activePage]
   )
 
@@ -46,17 +49,13 @@ export default function Sidebar({
 
   const handleMenuClick = (event, item) => {
     event.preventDefault()
-    if (item.comingSoon) {
-      return
-    }
+    if (item.comingSoon) return
     onNavigate(item.id)
   }
 
   const renderComingSoonBadge = () =>
     isExpanded ? (
-      <span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-bold text-slate-500">
-        준비중
-      </span>
+      <span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-bold text-slate-500">준비중</span>
     ) : null
 
   return (

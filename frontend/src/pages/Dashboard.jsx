@@ -6,15 +6,9 @@ import {
 
 const KW = (n) => '₩' + Math.round(Number(n ?? 0)).toLocaleString('ko-KR')
 
-const COMPANIES = [
-  { id: 1, name: '내일커머스' },
-  { id: 2, name: '에이블패션' },
-  { id: 3, name: '그린라이프' },
-]
-
 export default function Dashboard({ isExpanded }) {
   const today = new Date()
-  const [companyId, setCompanyId] = useState(1)
+  const [companyId] = useState(1)
   const [startDate, setStartDate] = useState(startOfMonth(today))
   const [endDate, setEndDate] = useState(endOfMonth(today))
 

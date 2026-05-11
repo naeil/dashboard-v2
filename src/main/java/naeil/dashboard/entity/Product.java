@@ -1,11 +1,21 @@
 package naeil.dashboard.entity;
 
-import jakarta.persistence.*;
-import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-
-import java.time.LocalDate;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.Table;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import org.hibernate.annotations.CreationTimestamp;
 
 @Entity
 @Table(name = "product", indexes = {
@@ -39,6 +49,18 @@ public class Product {
     /** PlayAuto 상품 번호 (prod_no) */
     @Column(name = "prod_no")
     private Long prodNo;
+
+    @Column(name = "product_price", nullable = false, precision = 12, scale = 2)
+    @Builder.Default
+    private BigDecimal productPrice = BigDecimal.ZERO;
+
+    @Column(name = "cost_price", nullable = false, precision = 12, scale = 2)
+    @Builder.Default
+    private BigDecimal costPrice = BigDecimal.ZERO;
+
+    @Column(name = "supply_price", nullable = false, precision = 12, scale = 2)
+    @Builder.Default
+    private BigDecimal supplyPrice = BigDecimal.ZERO;
 
     @Column(name = "real_stock", nullable = false)
     @Builder.Default

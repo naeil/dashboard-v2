@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard'
 import SalesStatus from './pages/SalesStatus'
 import Settings from './pages/Settings'
 import ProductInventory from './pages/ProductInventory'
+import ProductCosts from './pages/ProductCosts'
 import LoginPage from './pages/LoginPage'
 import { getAuthToken, getSession, logout } from './api/authApi'
 
@@ -78,6 +79,7 @@ export default function App() {
       {page === 'dashboard' && <Dashboard isExpanded={isSidebarExpanded} />}
       {page === 'sales' && <SalesStatus isExpanded={isSidebarExpanded} />}
       {page === 'products-inventory' && <ProductInventory isExpanded={isSidebarExpanded} />}
+      {page === 'products-costs' && <ProductCosts isExpanded={isSidebarExpanded} />}
       {page === 'settings' && <Settings isExpanded={isSidebarExpanded} />}
     </>
   )

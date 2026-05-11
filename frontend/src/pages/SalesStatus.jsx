@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   addDays,
   addMonths,
@@ -14,7 +14,7 @@ import {
   subMonths,
   subWeeks
 } from 'date-fns'
-import { getBrands, getProductSales, getShopSales, getSummary, getTrend } from '../api/salesApi'
+import { getBrands, getProductMarketSales, getProductSales, getShopSales, getSummary, getTrend, refreshTodaySales } from '../api/salesApi'
 import {
   ArcElement,
   BarElement,
@@ -51,7 +51,7 @@ const PLATFORM_LABELS = {
   ELEVEN_STREET: '11번가',
   AUCTION: '옥션',
   IMWEB: '아임웹',
-  LOTTE_ON: '롯데온',
+  LOTTE_ON: '롯데ON',
   KAKAO_TALK_STORE: '카카오톡 스토어',
   NONGSAN_SHOPPINGMALL: '기타',
   OTHER: '기타'
@@ -92,7 +92,6 @@ function resolveShopPlatform(shop) {
 
   return 'OTHER'
 }
-
 function toDateInputValue(date) {
   return format(date, 'yyyy-MM-dd')
 }
@@ -369,6 +368,12 @@ export default function SalesStatus({ isExpanded }) {
   const [trendGranularity, setTrendGranularity] = useState('DAY')
   const [growthInfo, setGrowthInfo] = useState({ label: '전일 대비 성장', value: null })
   const [visibleCount, setVisibleCount] = useState(10)
+  const [selectedProductMarketDetail, setSelectedProductMarketDetail] = useState(null)
+  const [productMarketSales, setProductMarketSales] = useState([])
+  const [isProductMarketSalesLoading, setIsProductMarketSalesLoading] = useState(false)
+  const [productMarketSalesError, setProductMarketSalesError] = useState(null)
+  const [isRefreshingTodaySales, setIsRefreshingTodaySales] = useState(false)
+  const [refreshNotice, setRefreshNotice] = useState(null)
   const [trendTooltip, setTrendTooltip] = useState({
     visible: false,
     title: '',
@@ -376,6 +381,7 @@ export default function SalesStatus({ isExpanded }) {
     y: 0,
     items: []
   })
+  const trendTooltipHoverRef = useRef(false)
 
   const fetchAll = useCallback(async () => {
     try {
@@ -458,6 +464,13 @@ export default function SalesStatus({ isExpanded }) {
     setVisibleCount(10)
   }, [dailyDate, monthlyValue, selectedBrand, viewType, weeklyDate, customRange.start, customRange.end])
 
+  useEffect(() => {
+    if (!refreshNotice) return undefined
+
+    const timeoutId = window.setTimeout(() => setRefreshNotice(null), 3000)
+    return () => window.clearTimeout(timeoutId)
+  }, [refreshNotice])
+
   const nonZeroShops = useMemo(
     () => [...shops]
       .filter((shop) => Number(shop.totalNetRevenue ?? 0) > 0)
@@ -470,6 +483,13 @@ export default function SalesStatus({ isExpanded }) {
     [nonZeroShops]
   )
 
+  const currentMetricRange = useMemo(() => {
+    const now = new Date()
+    const anchorDate = viewType === 'WEEK' ? weeklyDate : dailyDate
+    const rangeContext = viewType === 'MONTH' ? { ...customRange, monthValue: monthlyValue } : customRange
+    return getMetricRange(viewType, now, anchorDate, rangeContext)
+  }, [customRange, dailyDate, monthlyValue, viewType, weeklyDate])
+
   const metricPeriodLabel = useMemo(
     () => {
       const anchorDate = viewType === 'WEEK' ? weeklyDate : dailyDate
@@ -477,6 +497,11 @@ export default function SalesStatus({ isExpanded }) {
       return getMetricPeriodLabel(viewType, new Date(), anchorDate, rangeContext)
     },
     [customRange, dailyDate, monthlyValue, viewType, weeklyDate]
+  )
+
+  const isTodayDailyView = useMemo(
+    () => viewType === 'DAY' && dailyDate === getInitialDailyDate(),
+    [dailyDate, viewType]
   )
 
   const marketShareData = useMemo(() => ({
@@ -496,6 +521,7 @@ export default function SalesStatus({ isExpanded }) {
     const { chart, tooltip } = context
 
     if (!tooltip || tooltip.opacity === 0) {
+      if (trendTooltipHoverRef.current) return
       setTrendTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev))
       return
     }
@@ -510,6 +536,7 @@ export default function SalesStatus({ isExpanded }) {
       }))
 
     if (items.length === 0) {
+      if (trendTooltipHoverRef.current) return
       setTrendTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev))
       return
     }
@@ -523,12 +550,91 @@ export default function SalesStatus({ isExpanded }) {
     })
   }, [])
 
+  const handleRefreshTodaySales = useCallback(async () => {
+    if (isRefreshingTodaySales) return
+
+    setIsRefreshingTodaySales(true)
+    setRefreshNotice(null)
+
+    try {
+      const response = await refreshTodaySales(companyId)
+      await fetchAll()
+      setRefreshNotice({
+        type: 'success',
+        message: response.data?.message || '오늘 주문 재수집이 완료되었습니다.'
+      })
+    } catch (error) {
+      setRefreshNotice({
+        type: 'error',
+        message: error.response?.data?.message || '오늘 주문 재수집에 실패했습니다.'
+      })
+    } finally {
+      setIsRefreshingTodaySales(false)
+    }
+  }, [companyId, fetchAll, isRefreshingTodaySales])
+
+  const handleOpenProductMarketDetail = useCallback(async (product) => {
+    if (!currentMetricRange) return
+
+    setSelectedProductMarketDetail(product)
+    setIsProductMarketSalesLoading(true)
+    setProductMarketSalesError(null)
+
+    try {
+      const response = await getProductMarketSales(
+        product.productId,
+        companyId,
+        currentMetricRange.start,
+        currentMetricRange.end
+      )
+      setProductMarketSales(response.data || [])
+    } catch (error) {
+      console.error('Product market detail API error:', error)
+      setProductMarketSales([])
+      setProductMarketSalesError('마켓별 비교 데이터를 불러오지 못했습니다.')
+    } finally {
+      setIsProductMarketSalesLoading(false)
+    }
+  }, [companyId, currentMetricRange])
+
+  const closeProductMarketDetail = useCallback(() => {
+    setSelectedProductMarketDetail(null)
+    setProductMarketSales([])
+    setProductMarketSalesError(null)
+    setIsProductMarketSalesLoading(false)
+  }, [])
+
+  useEffect(() => {
+    closeProductMarketDetail()
+  }, [closeProductMarketDetail, selectedBrand, dailyDate, weeklyDate, monthlyValue, customRange.start, customRange.end, viewType])
+
+  const selectedProductCostSnapshot = useMemo(
+    () => (productMarketSales.length > 0 ? productMarketSales[0] : null),
+    [productMarketSales]
+  )
+
+  const selectedProductMarketSummary = useMemo(() => (
+    productMarketSales.reduce((accumulator, item) => ({
+      totalGrossAmount: accumulator.totalGrossAmount + Number(item.totalGrossAmount ?? 0),
+      totalNetRevenue: accumulator.totalNetRevenue + Number(item.totalNetRevenue ?? 0),
+      totalShippingFee: accumulator.totalShippingFee + Number(item.totalShippingFee ?? 0),
+      totalOrderCount: accumulator.totalOrderCount + Number(item.totalOrderCount ?? 0),
+      profitAmount: accumulator.profitAmount + Number(item.profitAmount ?? 0),
+    }), {
+      totalGrossAmount: 0,
+      totalNetRevenue: 0,
+      totalShippingFee: 0,
+      totalOrderCount: 0,
+      profitAmount: 0,
+    })
+  ), [productMarketSales])
+
   return (
     <main className={`min-h-screen p-8 transition-all duration-300 ${isExpanded ? 'ml-64' : 'ml-20'}`}>
       <div className="mb-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="mb-2 text-3xl font-black tracking-tight text-primary">매출 현황</h1>
-          <p className="break-keep text-sm text-on-surface-variant">플랫폼 전체 매출과 상품별 실적을 한눈에 확인합니다.</p>
+          <p className="break-keep text-sm text-on-surface-variant">브랜드별 전체 매출과 상품별 실적을 한눈에 확인합니다.</p>
         </div>
 
         <div className="flex flex-col items-start gap-3 lg:items-end">
@@ -610,8 +716,7 @@ export default function SalesStatus({ isExpanded }) {
                   onClick={() => setCustomRange(getInitialCustomRange())}
                   className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-200"
                 >
-                  최근 7일
-                </button>
+                  최근 7일                </button>
               </div>
             </div>
           )}
@@ -662,17 +767,67 @@ export default function SalesStatus({ isExpanded }) {
                   />
                 </label>
               )}
+              {isTodayDailyView && (
+                <button
+                  type="button"
+                  onClick={handleRefreshTodaySales}
+                  disabled={isRefreshingTodaySales}
+                  className={`inline-flex h-8 items-center gap-1 rounded-full px-3 text-xs font-bold transition-colors ${
+                    isRefreshingTodaySales
+                      ? 'cursor-not-allowed bg-white/10 text-white/50'
+                      : 'bg-white/10 text-primary-fixed hover:bg-white/20'
+                  }`}
+                >
+                  <span className={`material-symbols-outlined text-[16px] ${isRefreshingTodaySales ? 'animate-spin' : ''}`}>
+                    refresh
+                  </span>
+                  <span>{isRefreshingTodaySales ? '수집 중...' : '오늘 주문 새로고침'}</span>
+                </button>
+              )}
             </div>
-            <h2 className="mt-2 text-5xl font-black leading-tight">
+            <h2 className="mt-2 text-[1.9rem] font-black leading-tight sm:text-[2.25rem] lg:text-[2.7rem] xl:text-[3.05rem] 2xl:text-[3.35rem]">
               {summary ? KRW(summary.totalGrossAmount) : '₩0'}
             </h2>
+            {refreshNotice && (
+              <p
+                className={`mt-3 text-xs font-semibold ${
+                  refreshNotice.type === 'success' ? 'text-emerald-300' : 'text-rose-300'
+                }`}
+              >
+                {refreshNotice.message}
+              </p>
+            )}
           </div>
 
-          <div className="relative z-10 mt-8 flex items-center space-x-6">
-            <div className="rounded-lg bg-white/10 px-4 py-2 backdrop-blur-md">
-              <p className="text-[10px] uppercase tracking-tighter text-primary-fixed-dim">{growthInfo.label}</p>
+          <div className="relative z-10 mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 min-[1800px]:grid-cols-4">
+            <div className="flex min-h-[128px] flex-col justify-between rounded-2xl bg-white/10 px-5 py-4 backdrop-blur-md">
+              <p className="break-keep text-[0.72rem] font-semibold text-primary-fixed-dim sm:text-[0.78rem] lg:text-[0.84rem]">
+                배송비 제외 매출액
+              </p>
+              <p className="overflow-hidden text-[0.92rem] font-black leading-none text-primary-fixed sm:text-[1rem] lg:text-[1.15rem] xl:text-[1.28rem] 2xl:text-[1.42rem]">
+                {summary ? KRW(summary.totalNetRevenue) : '₩0'}
+              </p>
+            </div>
+            <div className="flex min-h-[128px] flex-col justify-between rounded-2xl bg-white/10 px-5 py-4 backdrop-blur-md">
+              <p className="break-keep text-[0.72rem] font-semibold text-primary-fixed-dim sm:text-[0.78rem] lg:text-[0.84rem]">
+                배송비 합계
+              </p>
+              <p className="overflow-hidden text-[0.92rem] font-black leading-none text-primary-fixed sm:text-[1rem] lg:text-[1.15rem] xl:text-[1.28rem] 2xl:text-[1.42rem]">
+                {summary ? KRW(summary.totalShippingFee) : '₩0'}
+              </p>
+            </div>
+            <div className="flex min-h-[128px] flex-col justify-between rounded-2xl bg-white/10 px-5 py-4 backdrop-blur-md">
+              <p className="break-keep text-[0.72rem] font-semibold text-primary-fixed-dim sm:text-[0.78rem] lg:text-[0.84rem]">수익</p>
+              <p className="overflow-hidden text-[0.92rem] font-black leading-none text-primary-fixed sm:text-[1rem] lg:text-[1.15rem] xl:text-[1.28rem] 2xl:text-[1.42rem]">
+                {summary ? KRW(summary.profitAmount) : '₩0'}
+              </p>
+            </div>
+            <div className="flex min-h-[128px] flex-col justify-between rounded-2xl bg-white/10 px-5 py-4 backdrop-blur-md">
+              <p className="break-keep text-[0.72rem] font-semibold text-primary-fixed-dim sm:text-[0.78rem] lg:text-[0.84rem]">
+                {growthInfo.label}
+              </p>
               <p
-                className={`flex items-center text-lg font-bold ${
+                className={`flex items-center text-[0.9rem] font-black leading-none sm:text-[1rem] lg:text-[1.1rem] xl:text-[1.24rem] 2xl:text-[1.42rem] ${
                   growthInfo.value === null
                     ? 'text-slate-300'
                     : growthInfo.value >= 0
@@ -681,7 +836,7 @@ export default function SalesStatus({ isExpanded }) {
                 }`}
               >
                 {growthInfo.value !== null && (
-                  <span className="material-symbols-outlined mr-1 text-sm">
+                  <span className="material-symbols-outlined mr-1 text-[0.72rem] sm:text-[0.8rem] lg:text-[0.9rem]">
                     {growthInfo.value >= 0 ? 'arrow_upward' : 'arrow_downward'}
                   </span>
                 )}
@@ -695,7 +850,7 @@ export default function SalesStatus({ isExpanded }) {
           <div className="flex flex-col justify-between rounded-xl border border-outline-variant/10 bg-surface-container-lowest p-5">
             <div className="flex items-start justify-between">
               <div>
-                <span className="mb-1 block text-xs font-semibold text-on-surface-variant">광고 전환 매출액</span>
+                <span className="mb-1 block text-xs font-semibold text-on-surface-variant">광고 환산 매출액</span>
                 <p className="text-xl font-bold text-slate-400">-</p>
               </div>
             </div>
@@ -717,8 +872,7 @@ export default function SalesStatus({ isExpanded }) {
               <div className="flex items-start justify-between">
                 <span className="mb-1 block text-xs font-semibold text-rose-600">주문 취소</span>
                 <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-black text-rose-600">
-                  {summary?.cancelCount || 0}건
-                </span>
+                  {summary?.cancelCount || 0}건                </span>
               </div>
               <p className="text-xl font-bold text-rose-700">{summary ? KRW(summary.totalCancelAmount || 0) : '₩0'}</p>
             </div>
@@ -726,11 +880,10 @@ export default function SalesStatus({ isExpanded }) {
 
           <div className="flex flex-col justify-between rounded-xl border border-orange-100 bg-orange-50/50 p-5">
             <div>
-              <span className="mb-1 block text-xs font-semibold text-orange-600">주문자 수 / 주문건수</span>
+              <span className="mb-1 block text-xs font-semibold text-orange-600">주문고객 / 주문건수</span>
             </div>
             <p className="text-xl font-bold text-orange-700">
-              {(summary?.totalCustomerCount || 0).toLocaleString('ko-KR')}명 / {(summary?.totalOrderCount || 0).toLocaleString('ko-KR')}건
-            </p>
+              {(summary?.totalCustomerCount || 0).toLocaleString('ko-KR')}명/ {(summary?.totalOrderCount || 0).toLocaleString('ko-KR')}건            </p>
           </div>
 
           <div className="col-span-2 flex items-center justify-between rounded-xl border border-outline-variant/20 bg-surface-container-low p-4">
@@ -741,7 +894,7 @@ export default function SalesStatus({ isExpanded }) {
               <div>
                 <p className="text-sm font-bold">실시간 분석 인사이트</p>
                 <p className="text-xs text-on-surface-variant">
-                  현재 상위 마켓은 {nonZeroShops[0]?.shopName || '데이터 없음'}이며, 브랜드 필터에 따라 추이와 매출 비중이 함께 바뀝니다.
+                  현재 상위 마켓은 {nonZeroShops[0]?.shopName || '데이터 없음'}이고, 브랜드 필터에 따라 추이와 매출 비중이 함께 바뀝니다.
                 </p>
               </div>
             </div>
@@ -836,13 +989,23 @@ export default function SalesStatus({ isExpanded }) {
 
             {trendTooltip.visible && (
               <div
-                className="pointer-events-none absolute z-20 max-h-[260px] min-w-[300px] max-w-[380px] overflow-y-auto rounded-xl px-4 py-3 text-white shadow-2xl ring-1 backdrop-blur-md"
+                className="pointer-events-auto absolute z-20 max-h-[260px] min-w-[300px] max-w-[380px] overflow-y-auto rounded-xl px-4 py-3 text-white shadow-2xl ring-1 backdrop-blur-md"
                 style={{
                   backgroundColor: '#D9E2F2',
                   borderColor: '#B7C4DA',
                   left: `${trendTooltip.x}px`,
                   top: `${trendTooltip.y}px`,
                   transform: 'translate(0, -100%)'
+                }}
+                onMouseEnter={() => {
+                  trendTooltipHoverRef.current = true
+                }}
+                onMouseLeave={() => {
+                  trendTooltipHoverRef.current = false
+                  setTrendTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev))
+                }}
+                onWheel={(event) => {
+                  event.stopPropagation()
                 }}
               >
                 <div className="mb-3 border-b pb-2 text-sm font-bold" style={{ borderColor: '#B7C4DA', color: '#0F172A' }}>
@@ -931,7 +1094,7 @@ export default function SalesStatus({ isExpanded }) {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[700px] border-collapse text-left">
+          <table className="w-full min-w-[700px] border-collapse text-center">
             <thead>
               <tr className="border-b border-surface-container">
                 <th className="whitespace-nowrap px-8 py-4 text-center text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">상품명 / ID</th>
@@ -943,26 +1106,36 @@ export default function SalesStatus({ isExpanded }) {
             </thead>
             <tbody className="divide-y divide-surface-container">
               {products.slice(0, visibleCount).map((product) => (
-                <tr key={product.productId} className="group transition-colors hover:bg-surface-container-low">
-                  <td className="px-8 py-5 text-left">
-                    <div className="flex flex-col">
+                <tr
+                  key={product.productId}
+                  className="group cursor-pointer transition-colors hover:bg-surface-container-low"
+                  onClick={() => handleOpenProductMarketDetail(product)}
+                >
+                  <td className="px-8 py-5 text-center">
+                    <div className="flex flex-col items-center">
                       <p className="text-sm font-bold text-primary">{product.productName}</p>
                       <p className="text-[11px] text-on-surface-variant">{product.externalProductId || '-'}</p>
                     </div>
                   </td>
-                  <td className="px-8 py-5 text-right">
+                  <td className="px-8 py-5 text-center">
                     <span className="text-sm font-medium text-on-surface-variant">{KRW(product.totalGrossAmount)}</span>
                   </td>
-                  <td className="px-8 py-5 text-right">
+                  <td className="px-8 py-5 text-center">
                     <span className="text-sm font-medium text-on-surface-variant">{KRW(product.averageOrderValue)}</span>
                   </td>
-                  <td className="px-8 py-5 text-right">
+                  <td className="px-8 py-5 text-center">
                     <span className="text-sm font-black text-primary">
-                      {Number(product.totalOrderCount ?? 0).toLocaleString('ko-KR')}건
-                    </span>
+                      {Number(product.totalOrderCount ?? 0).toLocaleString('ko-KR')}건                    </span>
                   </td>
-                  <td className="px-8 py-5 text-right">
-                    <button className="rounded-full p-2 transition-colors hover:bg-surface-container">
+                  <td className="px-8 py-5 text-center">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        handleOpenProductMarketDetail(product)
+                      }}
+                      className="rounded-full p-2 transition-colors hover:bg-surface-container"
+                    >
                       <span className="material-symbols-outlined text-on-surface-variant">more_vert</span>
                     </button>
                   </td>
@@ -979,11 +1152,153 @@ export default function SalesStatus({ isExpanded }) {
               className="flex items-center space-x-2 rounded-full bg-surface-container-high px-6 py-2.5 text-xs font-bold text-primary shadow-sm transition-all hover:bg-primary hover:text-white active:scale-95"
             >
               <span className="material-symbols-outlined text-sm">add</span>
-              <span>더보기 (현재 {visibleCount}/{products.length})</span>
+              <span>더보기(현재 {visibleCount}/{products.length})</span>
             </button>
           </div>
         )}
       </div>
+
+      {selectedProductMarketDetail && (
+        <div className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-[2px]">
+          <div className="absolute inset-y-0 right-0 flex w-full max-w-[920px] flex-col overflow-hidden bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-200 px-6 py-5">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">오픈마켓별 비교</p>
+                <h3 className="mt-2 text-2xl font-black text-slate-900">{selectedProductMarketDetail.productName}</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  SKU {selectedProductMarketDetail.externalProductId || '-'} · {metricPeriodLabel}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeProductMarketDetail}
+                className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-900"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-6">
+              <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">총 매출액</p>
+                  <p className="mt-3 text-2xl font-black text-slate-900">{KRW(selectedProductMarketSummary.totalGrossAmount)}</p>
+                </div>
+                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">배송비 제외 매출</p>
+                  <p className="mt-3 text-2xl font-black text-slate-900">{KRW(selectedProductMarketSummary.totalNetRevenue)}</p>
+                </div>
+                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">배송비 합계</p>
+                  <p className="mt-3 text-2xl font-black text-slate-900">{KRW(selectedProductMarketSummary.totalShippingFee)}</p>
+                </div>
+                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">수익</p>
+                  <p className="mt-3 text-2xl font-black text-slate-900">{KRW(selectedProductMarketSummary.profitAmount)}</p>
+                </div>
+              </div>
+
+              {selectedProductCostSnapshot && (
+                <section className="mb-6 rounded-3xl border border-slate-200 bg-slate-50/70 p-5">
+                  <div className="mb-4 flex items-center justify-between">
+                    <h4 className="text-lg font-black text-slate-900">상품 공통 비용 기준</h4>
+                    <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-500 shadow-sm">
+                      주문 {selectedProductMarketSummary.totalOrderCount.toLocaleString('ko-KR')}건 기준
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-7">
+                    {[
+                      ['판매가', selectedProductCostSnapshot.salePrice],
+                      ['원가', selectedProductCostSnapshot.costPrice],
+                      ['공급가', selectedProductCostSnapshot.supplyPrice],
+                      ['판관비', selectedProductCostSnapshot.sgnaCost],
+                      ['물류비', selectedProductCostSnapshot.logisticsCost],
+                      ['포장비', selectedProductCostSnapshot.packagingCost],
+                      ['기타 비용', selectedProductCostSnapshot.otherCost],
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">{label}</p>
+                        <p className="mt-2 text-lg font-black text-slate-900">{KRW(value)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              <section className="overflow-hidden rounded-3xl border border-slate-200">
+                <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+                  <h4 className="text-lg font-black text-slate-900">마켓별 매출 및 비용 비교</h4>
+                </div>
+
+                {isProductMarketSalesLoading ? (
+                  <div className="px-6 py-16 text-center text-slate-500">마켓별 비교 데이터를 불러오는 중입니다.</div>
+                ) : productMarketSalesError ? (
+                  <div className="px-6 py-16 text-center text-rose-500">{productMarketSalesError}</div>
+                ) : productMarketSales.length === 0 ? (
+                  <div className="px-6 py-16 text-center text-slate-500">표시할 마켓별 실적이 없습니다.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full border-collapse">
+                      <thead className="bg-white">
+                        <tr className="border-b border-slate-200">
+                          {['마켓', '총 매출액', '배송비 제외', '배송비', '주문건수', '객단가', '기본 비용', '수수료', '광고비', '반품/교환비', '수익'].map((label) => (
+                            <th key={label} className="whitespace-nowrap px-4 py-3 text-center text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                              {label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {productMarketSales.map((item) => (
+                          <tr key={`${item.shopId}-${item.shopCode}`} className="bg-white">
+                            <td className="px-4 py-4 text-center">
+                              <div className="flex flex-col items-center">
+                                <span className="text-sm font-bold text-slate-900">{item.shopName}</span>
+                                <span className="text-[11px] text-slate-500">{item.shopCode}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-4 text-center text-sm font-bold text-slate-900">{KRW(item.totalGrossAmount)}</td>
+                            <td className="px-4 py-4 text-center text-sm text-slate-600">{KRW(item.totalNetRevenue)}</td>
+                            <td className="px-4 py-4 text-center text-sm text-slate-600">{KRW(item.totalShippingFee)}</td>
+                            <td className="px-4 py-4 text-center text-sm font-bold text-slate-900">{Number(item.totalOrderCount ?? 0).toLocaleString('ko-KR')}건</td>
+                            <td className="px-4 py-4 text-center text-sm text-slate-600">{KRW(item.averageOrderValue)}</td>
+                            <td className="px-4 py-4 text-center text-sm text-slate-600">{KRW(item.baseCostAmount)}</td>
+                            <td className="px-4 py-4 text-center text-sm text-slate-600">
+                              <div className="flex flex-col items-center">
+                                <span>{KRW(item.channelFeeAmount)}</span>
+                                <span className="text-[11px] text-slate-400">
+                                  {item.channelFeeType === 'FIXED' ? `고정 ${KRW(item.channelFeeValue)}` : `${Number(item.channelFeeValue ?? 0).toLocaleString('ko-KR')}%`}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-4 text-center text-sm text-slate-600">
+                              <div className="flex flex-col items-center">
+                                <span>{KRW(item.adCostAmount)}</span>
+                                <span className="text-[11px] text-slate-400">설정값 {KRW(item.adCost)}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-4 text-center text-sm text-slate-600">
+                              <div className="flex flex-col items-center">
+                                <span>{KRW(item.returnExchangeCostAmount)}</span>
+                                <span className="text-[11px] text-slate-400">설정값 {KRW(item.returnExchangeCost)}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-4 text-center text-sm font-black text-slate-900">{KRW(item.profitAmount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
+
+
+
+

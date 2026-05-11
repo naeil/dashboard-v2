@@ -13,8 +13,8 @@ public class PlayAutoShopResponseDTO {
     @JsonProperty("shop_name")
     private String shopName;
 
-    @JsonProperty("shop_id")
-    private String shopId; // storeCode/shopCode
+    @JsonProperty("shop_cd")
+    private String shopCode;
 
     @JsonProperty("platform")
     private String platform;

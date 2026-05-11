@@ -151,6 +151,7 @@ export default function Settings({ isExpanded }) {
   const [isSavingAuth, setIsSavingAuth] = useState(false)
   const [isSavingCollection, setIsSavingCollection] = useState(false)
   const [isRunningOrderCollection, setIsRunningOrderCollection] = useState(false)
+  const [isSyncingShops, setIsSyncingShops] = useState(false)
   const [authSavedAt, setAuthSavedAt] = useState(null)
   const [collectionSavedAt, setCollectionSavedAt] = useState(null)
   const [lastOrderCollectedAt, setLastOrderCollectedAt] = useState(null)
@@ -402,6 +403,28 @@ export default function Settings({ isExpanded }) {
       showToast(error.message || '주문 수집 실행에 실패했습니다.', 'error')
     } finally {
       setIsRunningOrderCollection(false)
+    }
+  }
+
+  const handleSyncShops = async () => {
+    if (isSyncingShops) return
+    setIsSyncingShops(true)
+    try {
+      const response = await authorizedFetch(`${SETTINGS_API_BASE}/shops/sync`, {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}))
+        throw new Error(errorBody.message || '쇼핑몰 정보 업데이트에 실패했습니다.')
+      }
+
+      await loadSettings()
+      showToast('쇼핑몰 정보를 업데이트했습니다.')
+    } catch (error) {
+      showToast(error.message || '쇼핑몰 정보 업데이트에 실패했습니다.', 'error')
+    } finally {
+      setIsSyncingShops(false)
     }
   }
 
@@ -687,6 +710,18 @@ export default function Settings({ isExpanded }) {
                           </option>
                         ))}
                       </SelectField>
+                      <button
+                        type="button"
+                        onClick={handleSyncShops}
+                        disabled={isSyncingShops || !authReady}
+                        className={`rounded-xl border px-4 py-3 text-sm font-bold transition-all ${
+                          isSyncingShops || !authReady
+                            ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+                            : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:text-slate-900'
+                        }`}
+                      >
+                        {isSyncingShops ? '업데이트 중...' : '쇼핑몰 정보 업데이트'}
+                      </button>
                       <button
                         type="button"
                         onClick={handleRunOrderCollection}

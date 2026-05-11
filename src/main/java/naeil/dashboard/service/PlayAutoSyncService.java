@@ -9,20 +9,17 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import naeil.dashboard.common.api.PlayAutoApiClient;
 import naeil.dashboard.common.order.OrderStatusGroups;
+import naeil.dashboard.dto.PlayAutoStockConditionResponseDTO;
 import naeil.dashboard.dto.PlayAutoShopResponseDTO;
-import naeil.dashboard.dto.PlayAutoStockInoutResponseDTO;
-import naeil.dashboard.dto.PlayAutoStockResponseDTO;
 import naeil.dashboard.entity.Brand;
 import naeil.dashboard.entity.Customer;
 import naeil.dashboard.entity.DailySalesStats;
@@ -78,108 +75,131 @@ public class PlayAutoSyncService {
         PlayAutoShopResponseDTO[] shopDtos = playAutoApiClient.getShopInfo(token, apiKey);
 
         if (shopDtos != null && shopDtos.length > 0) {
-            Set<String> existingCodes = shopRepository.findAll().stream()
-                    .filter(shop -> companyId.equals(shop.getCompanyId()))
-                    .map(Shop::getShopCode)
-                    .collect(Collectors.toSet());
+            Map<String, PlayAutoShopResponseDTO> uniqueShopsByCode = new HashMap<>();
+            for (PlayAutoShopResponseDTO dto : shopDtos) {
+                String shopCode = blankToNull(dto.getShopCode());
+                if (isBlank(shopCode) || isBlank(dto.getShopName())) {
+                    continue;
+                }
+                uniqueShopsByCode.put(shopCode, dto);
+            }
 
-            Arrays.stream(shopDtos)
-                    .collect(Collectors.toMap(
-                            PlayAutoShopResponseDTO::getShopId,
-                            dto -> dto,
-                            (first, second) -> first
-                    ))
-                    .values()
-                    .forEach(dto -> {
-                        Shop shop = shopRepository.findByCompanyIdAndShopCode(companyId, dto.getShopId())
-                                .orElseGet(() -> {
-                                    if (existingCodes.contains(dto.getShopId())) {
-                                        return null;
-                                    }
-                                    return Shop.builder()
-                                            .companyId(companyId)
-                                            .shopCode(dto.getShopId())
-                                            .build();
-                                });
+            int syncedCount = 0;
+            for (PlayAutoShopResponseDTO dto : uniqueShopsByCode.values()) {
+                String shopCode = blankToNull(dto.getShopCode());
+                if (shopCode == null) {
+                    continue;
+                }
 
-                        if (shop == null) {
-                            return;
-                        }
+                Shop shop = shopRepository.findByCompanyIdAndShopCode(companyId, shopCode)
+                        .orElseGet(() -> Shop.builder()
+                                .companyId(companyId)
+                                .shopCode(shopCode)
+                                .build());
 
-                        shop.setShopName(dto.getShopName());
-                        shop.setPlatform(resolvePlatform(dto));
-                        shopRepository.save(shop);
-                    });
-            log.info("Successfully synced {} shops.", shopDtos.length);
+                shop.setShopCode(shopCode);
+                shop.setShopName(dto.getShopName());
+                shop.setPlatform(resolvePlatform(dto));
+                shopRepository.save(shop);
+                syncedCount++;
+            }
+            log.info("Successfully synced {} shops.", syncedCount);
         }
     }
 
     @Transactional
     public void syncProducts(Long companyId) {
         IntegrationSettingService.PlayAutoCredentials credentials = integrationSettingService.getValidPlayAutoCredentials(companyId);
-        IntegrationSettingService.CollectionWindow window = integrationSettingService.getPlayAutoCollectionWindow(companyId);
-        syncProducts(
-                companyId,
-                credentials.accessToken(),
-                credentials.apiKey(),
-                window.startDate().format(DateTimeFormatter.ISO_DATE),
-                window.endDate().format(DateTimeFormatter.ISO_DATE)
-        );
+        syncProducts(companyId, credentials.accessToken(), credentials.apiKey());
     }
 
     @Transactional
     public void syncProducts(Long companyId, String token, String apiKey) {
-        IntegrationSettingService.CollectionWindow window = integrationSettingService.getPlayAutoCollectionWindow(companyId);
-        syncProducts(
-                companyId,
-                token,
-                apiKey,
-                window.startDate().format(DateTimeFormatter.ISO_DATE),
-                window.endDate().format(DateTimeFormatter.ISO_DATE)
-        );
-    }
-
-    @Transactional
-    public void syncProducts(Long companyId, String token, String apiKey, String sDate, String eDate) {
-        log.info("Starting PlayAuto Product/Stock Sync for company: {} [{} ~ {}]", companyId, sDate, eDate);
-        PlayAutoStockResponseDTO stockData = playAutoApiClient.getStockList(token, apiKey, sDate, eDate);
+        log.info("Starting PlayAuto Product/Stock Sync for company: {} [fetchMode=FULL_PRODUCT_LIST]", companyId);
+        PlayAutoStockConditionResponseDTO stockData = playAutoApiClient.getStockConditionList(token, apiKey);
 
         if (stockData != null && stockData.getResults() != null) {
             int syncedCount = 0;
             int skippedMissingIdentityCount = 0;
+            int skippedNewOutOfStockCount = 0;
+            int skippedNewUnclassifiedBrandCount = 0;
+            int zeroStockUpdatedCount = 0;
 
-            for (PlayAutoStockResponseDTO.StockItem item : stockData.getResults()) {
-                int realStock = sumRealStock(item);
-                int safeStock = sumSafeStock(item);
-                if (isBlank(item.getSkuCd()) || item.getProdNo() == null) {
+            LocalDate collectionDate = LocalDate.now();
+            for (StockConditionAggregate item : aggregateStockConditionItems(stockData.getResults())) {
+                if (isBlank(item.skuCd()) || item.prodNo() == null) {
                     skippedMissingIdentityCount++;
                     continue;
                 }
 
-                Brand brand = resolveBrand(companyId, item.getBrand());
-                Product product = productRepository.findByCompanyIdAndProdNo(companyId, item.getProdNo())
-                        .orElse(productRepository.findByCompanyIdAndSkuCd(companyId, item.getSkuCd())
-                                .orElse(Product.builder()
-                                        .companyId(companyId)
-                                        .brandId(brand.getId())
-                                        .build()));
+                Product existingProduct = productRepository.findByCompanyIdAndProdNo(companyId, item.prodNo())
+                        .orElse(productRepository.findByCompanyIdAndSkuCd(companyId, item.skuCd()).orElse(null));
 
-                product.setBrandId(brand.getId());
-                product.setProductName(item.getProdName());
-                product.setSkuCd(item.getSkuCd());
-                product.setProdNo(item.getProdNo());
-                product.setRealStock(realStock);
-                product.setSafeStock(safeStock);
-                product.setWdate(parseDateTime(item.getWdate()));
-                product.setMdate(parseDateTime(item.getMdate()));
+                if (existingProduct == null) {
+                    if (item.realStock() <= 0) {
+                        skippedNewOutOfStockCount++;
+                        continue;
+                    }
 
-                productRepository.save(product);
-                syncedCount++;
+                    if (isUnclassifiedBrandName(item.brand())) {
+                        skippedNewUnclassifiedBrandCount++;
+                        continue;
+                    }
+
+                    Brand brand = resolveBrand(companyId, item.brand());
+                    Product newProduct = Product.builder()
+                            .companyId(companyId)
+                            .brandId(brand.getId())
+                            .build();
+
+                    newProduct.setProductName(item.prodName());
+                    newProduct.setSkuCd(item.skuCd());
+                    newProduct.setProdNo(item.prodNo());
+                    newProduct.setProductPrice(normalizeMoney(item.salePrice()));
+                    newProduct.setCostPrice(normalizeMoney(item.costPrice()));
+                    newProduct.setSupplyPrice(normalizeMoney(item.supplyPrice()));
+                    newProduct.setRealStock(item.realStock());
+                    newProduct.setSafeStock(item.safeStock());
+                    newProduct.setWdate(item.wdate());
+                    newProduct.setMdate(item.mdate());
+
+                    Product savedProduct = productRepository.save(newProduct);
+                    syncProductOutboundSnapshot(companyId, savedProduct, item.outCntAccum(), collectionDate);
+                    syncedCount++;
+                    continue;
+                }
+
+                if (!isUnclassifiedBrandName(item.brand())) {
+                    Brand brand = resolveBrand(companyId, item.brand());
+                    existingProduct.setBrandId(brand.getId());
+                }
+
+                existingProduct.setProductName(item.prodName());
+                existingProduct.setSkuCd(item.skuCd());
+                existingProduct.setProdNo(item.prodNo());
+                existingProduct.setProductPrice(normalizeMoney(item.salePrice()));
+                existingProduct.setCostPrice(normalizeMoney(item.costPrice()));
+                existingProduct.setSupplyPrice(normalizeMoney(item.supplyPrice()));
+                existingProduct.setRealStock(item.realStock());
+                existingProduct.setSafeStock(item.safeStock());
+                existingProduct.setWdate(item.wdate());
+                existingProduct.setMdate(item.mdate());
+
+                Product savedProduct = productRepository.save(existingProduct);
+                syncProductOutboundSnapshot(companyId, savedProduct, item.outCntAccum(), collectionDate);
+                if (item.realStock() <= 0) {
+                    zeroStockUpdatedCount++;
+                } else {
+                    syncedCount++;
+                }
             }
             log.info(
-                    "Successfully synced {} products. skippedMissingIdentity={}",
+                    "Successfully synced {} products. skippedMissingIdentity={}, skippedNewOutOfStock={}, skippedNewUnclassifiedBrand={}, zeroStockUpdated={}",
                     syncedCount,
-                    skippedMissingIdentityCount
+                    skippedMissingIdentityCount,
+                    skippedNewOutOfStockCount,
+                    skippedNewUnclassifiedBrandCount,
+                    zeroStockUpdatedCount
             );
         }
     }
@@ -295,74 +315,6 @@ public class PlayAutoSyncService {
     }
 
     @Transactional
-    public void syncProductOutbound(Long companyId, LocalDate targetDate) {
-        IntegrationSettingService.PlayAutoCredentials credentials = integrationSettingService.getValidPlayAutoCredentials(companyId);
-        syncProductOutbound(companyId, credentials.accessToken(), credentials.apiKey(), targetDate);
-    }
-
-    @Transactional
-    public void syncProductOutbound(Long companyId, String token, String apiKey, LocalDate targetDate) {
-        String dateText = targetDate.format(DateTimeFormatter.ISO_DATE);
-        log.info("Starting PlayAuto Product Outbound Sync for company: {} [{}]", companyId, dateText);
-
-        PlayAutoStockInoutResponseDTO response = playAutoApiClient.getStockInout(token, apiKey, dateText, dateText);
-        Map<Long, Integer> outboundByProductId = new HashMap<>();
-
-        if (response != null && response.getResults() != null) {
-            for (PlayAutoStockInoutResponseDTO.StockInoutItem item : response.getResults()) {
-                // PlayAuto returns outbound quantities as negative numbers for outbound rows.
-                int outCount = normalizeOutboundCount(item);
-                if (outCount <= 0) {
-                    continue;
-                }
-
-                Optional<Product> productOpt = resolveProduct(companyId, item.getProdNo(), item.getSkuCd());
-                if (productOpt.isEmpty()) {
-                    continue;
-                }
-
-                outboundByProductId.merge(productOpt.get().getId(), outCount, Integer::sum);
-            }
-        }
-
-        for (Map.Entry<Long, Integer> entry : outboundByProductId.entrySet()) {
-            Product product = productRepository.findById(entry.getKey()).orElse(null);
-            if (product == null) {
-                continue;
-            }
-
-            ProductOutbound outbound = productOutboundRepository
-                    .findByCompanyIdAndProductIdAndOutboundDate(companyId, product.getId(), targetDate)
-                    .orElse(ProductOutbound.builder()
-                            .companyId(companyId)
-                            .productId(product.getId())
-                            .brandId(product.getBrandId())
-                            .outboundDate(targetDate)
-                            .build());
-
-            outbound.setBrandId(product.getBrandId());
-            outbound.setOutboundCount(entry.getValue());
-            outbound.setCollectedAt(LocalDateTime.now());
-            productOutboundRepository.save(outbound);
-        }
-
-        log.info("Completed PlayAuto Product Outbound Sync for company: {} [{}], saved {} product rows.", companyId, dateText, outboundByProductId.size());
-    }
-
-    private int normalizeOutboundCount(PlayAutoStockInoutResponseDTO.StockInoutItem item) {
-        if (item == null || item.getOutCnt() == null) {
-            return 0;
-        }
-
-        return Math.abs(item.getOutCnt());
-    }
-
-    @Transactional(readOnly = true)
-    public LocalDate getLastProductOutboundDate(Long companyId) {
-        return productOutboundRepository.findLastCollectedOutboundDate(companyId);
-    }
-
-    @Transactional
     public void remapOrdersToResolvedProducts(Long companyId) {
         Brand defaultBrand = ensureDefaultBrand(companyId);
         List<Orders> orders = ordersRepository.findAllByCompanyId(companyId);
@@ -404,22 +356,13 @@ public class PlayAutoSyncService {
             Map<String, Customer> customerCache
     ) {
         String uniq = node.path("uniq").asText();
-        String oriUniq = textOrNull(node.path("ori_uniq"));
         String status = node.path("ord_status").asText();
-        String resolvedSkuCd = resolveOrderSkuCd(node, productSnapshot);
+        String resolvedSkuCd = resolveEffectiveOrderSkuCd(node, productSnapshot);
 
         Optional<Orders> existingOpt = ordersRepository.findByUniq(uniq);
 
         // API???띯뫁???대??????????獄쏆뮇源?????덉쨮??uniq 揶쎛 獄쏆뮄???랁??봔筌?雅뚯눖揆甕곕뜇?뉐첎? ori_uniq ????용┛??野껋럩??
         // 疫꿸퀣??雅뚯눖揆???곕뗄???뤿연 ??????띯뫁???? ?怨밴묶????낅쑓??꾨뱜??????덈즲嚥???몃빍??
-        if (existingOpt.isEmpty() && !isBlank(oriUniq)) {
-            existingOpt = ordersRepository.findByUniq(oriUniq);
-        }
-
-        if (isBlank(resolvedSkuCd) && existingOpt.isEmpty()) {
-            return false;
-        }
-
         if (existingOpt.isEmpty()) {
             OrderSaveOutcome outcome = saveNewOrder(companyId, node, productSnapshot, resolvedSkuCd, customerCache);
             if (!outcome.created()) {
@@ -442,9 +385,9 @@ public class PlayAutoSyncService {
             return true;
         }
 
-        if (OrderStatusGroups.isCompletedReversalStatus(status) && existingOpt.isPresent()) {
-            Orders order = existingOpt.get();
-            if (!OrderStatusGroups.isCompletedReversalStatus(order.getOrdStatus())) {
+        if (existingOpt.isPresent()) {
+            Orders order = refreshExistingOrder(companyId, existingOpt.get(), node, productSnapshot, resolvedSkuCd);
+            if (OrderStatusGroups.isCompletedReversalStatus(status)) {
                 BigDecimal cancelAmt = parseBigDecimal(node.path("pay_amt"));
                 // ?띯뫁?????문 ?紐껊굡??野껋럩??pay_amt揶쎛 0??곗쨮 ?????삳뮉 野껋럩??첎? 筌띾‘?앲첋?嚥? ??野껋럩??疫꿸퀣????雅뚯눖揆??野껉퀣?ｆ묾?됰만???????몃빍??
                 if (cancelAmt.compareTo(BigDecimal.ZERO) <= 0) {
@@ -453,6 +396,9 @@ public class PlayAutoSyncService {
                 order.markAsReversed(status, cancelAmt);
                 ordersRepository.save(order);
                 updateStats(companyId, order, true);
+            } else {
+                order.clearCancelAmt();
+                ordersRepository.save(order);
             }
         }
         return true;
@@ -467,14 +413,18 @@ public class PlayAutoSyncService {
     ) {
         BigDecimal payAmt = parseBigDecimal(node.path("pay_amt"));
         BigDecimal discountAmt = resolveDiscountAmount(node);
-        BigDecimal grossAmt = payAmt.add(discountAmt);
         BigDecimal shippingFee = parseBigDecimal(node.path("ship_cost"));
+        BigDecimal grossAmt = calculateGrossAmount(payAmt, discountAmt, shippingFee);
         String skuCd = resolvedSkuCd;
         Long prodNo = parseLong(firstNonBlank(
                 textOrNull(productSnapshot != null ? productSnapshot.path("prod_no") : null),
                 textOrNull(node.path("prod_no"))
         ));
-        String shopCode = firstNonBlank(textOrNull(node.path("shop_cd")), DEFAULT_SHOP_CODE);
+        String shopCode = firstNonBlank(
+                textOrNull(node.path("shop_cd")),
+                textOrNull(node.path("pa_shop_cd")),
+                DEFAULT_SHOP_CODE
+        );
         String shopName = firstNonBlank(textOrNull(node.path("shop_name")), DEFAULT_SHOP_NAME);
         Customer customer = resolveCustomer(companyId, node, customerCache);
 
@@ -482,6 +432,7 @@ public class PlayAutoSyncService {
         Product product = resolveOrCreateProduct(companyId, prodNo, skuCd, node, productSnapshot);
         Long internalProductId = product.getId();
         Long brandId = product.getBrandId();
+        LocalDateTime ordTime = parseDateTime(node.path("ord_time").asText());
         LocalDateTime wdate = LocalDateTime.parse(node.path("wdate").asText(), DATETIME_FORMATTER);
 
         JsonNode payTimeNode = node.path("pay_time");
@@ -503,6 +454,7 @@ public class PlayAutoSyncService {
                 .shippingFee(shippingFee)
                 .payAmt(payAmt)
                 .ordStatus(node.path("ord_status").asText())
+                .ordTime(ordTime)
                 .wdate(wdate)
                 .payTime(payTime)
                 .build();
@@ -517,6 +469,51 @@ public class PlayAutoSyncService {
             }
             throw e;
         }
+    }
+
+    private Orders refreshExistingOrder(
+            Long companyId,
+            Orders order,
+            JsonNode node,
+            JsonNode productSnapshot,
+            String resolvedSkuCd
+    ) {
+        BigDecimal payAmt = parseBigDecimal(node.path("pay_amt"));
+        BigDecimal discountAmt = resolveDiscountAmount(node);
+        BigDecimal shippingFee = parseBigDecimal(node.path("ship_cost"));
+        BigDecimal grossAmt = calculateGrossAmount(payAmt, discountAmt, shippingFee);
+        Long prodNo = parseLong(firstNonBlank(
+                textOrNull(productSnapshot != null ? productSnapshot.path("prod_no") : null),
+                textOrNull(node.path("prod_no"))
+        ));
+        String shopCode = firstNonBlank(
+                textOrNull(node.path("shop_cd")),
+                textOrNull(node.path("pa_shop_cd")),
+                DEFAULT_SHOP_CODE
+        );
+        String shopName = firstNonBlank(textOrNull(node.path("shop_name")), DEFAULT_SHOP_NAME);
+
+        Shop shop = resolveShop(companyId, shopCode, shopName);
+        Product product = resolveOrCreateProduct(companyId, prodNo, resolvedSkuCd, node, productSnapshot);
+        LocalDateTime ordTime = parseDateTime(node.path("ord_time").asText());
+        LocalDateTime wdate = parseDateTime(node.path("wdate").asText());
+        LocalDateTime payTime = parseDateTime(node.path("pay_time").asText());
+
+        order.refreshFromSync(
+                product.getBrandId(),
+                shop.getId(),
+                product.getId(),
+                resolvedSkuCd,
+                grossAmt,
+                discountAmt,
+                shippingFee,
+                payAmt,
+                ordTime,
+                payTime,
+                wdate,
+                node.path("ord_status").asText()
+        );
+        return order;
     }
 
     private Customer resolveCustomer(Long companyId, JsonNode node, Map<String, Customer> customerCache) {
@@ -729,32 +726,93 @@ public class PlayAutoSyncService {
         );
     }
 
-    private int sumRealStock(PlayAutoStockResponseDTO.StockItem item) {
-        if (item.getDepots() == null || item.getDepots().isEmpty()) {
-            return 0;
-        }
-
-        return item.getDepots().stream()
-                .map(PlayAutoStockResponseDTO.Depot::getRealStock)
-                .filter(value -> value != null)
-                .mapToInt(Integer::intValue)
-                .sum();
+    private String resolveEffectiveOrderSkuCd(JsonNode node, JsonNode productSnapshot) {
+        return firstNonBlank(
+                resolveOrderSkuCd(node, productSnapshot),
+                buildSyntheticSkuCd(node, productSnapshot)
+        );
     }
 
-    private int sumSafeStock(PlayAutoStockResponseDTO.StockItem item) {
-        if (item.getDepots() == null || item.getDepots().isEmpty()) {
-            return 0;
+    private String buildSyntheticSkuCd(JsonNode node, JsonNode productSnapshot) {
+        String shopCode = firstNonBlank(
+                textOrNull(node.path("shop_cd")),
+                textOrNull(node.path("pa_shop_cd")),
+                DEFAULT_SHOP_CODE
+        );
+        String identitySource = firstNonBlank(
+                textOrNull(productSnapshot != null ? productSnapshot.path("prod_name") : null),
+                textOrNull(node.path("shop_sale_name")),
+                textOrNull(node.path("shop_opt_name")),
+                textOrNull(node.path("shop_add_opt_name")),
+                textOrNull(node.path("model_no")),
+                textOrNull(node.path("uniq"))
+        );
+        return "AUTO-" + shopCode + "-" + hashText(shopCode + "|" + identitySource).substring(0, 12);
+    }
+
+    private List<StockConditionAggregate> aggregateStockConditionItems(
+            List<PlayAutoStockConditionResponseDTO.StockConditionItem> items
+    ) {
+        Map<String, MutableStockConditionAggregate> aggregated = new LinkedHashMap<>();
+        for (PlayAutoStockConditionResponseDTO.StockConditionItem item : items) {
+            String key = item.getProdNo() != null ? "PROD:" + item.getProdNo() : "SKU:" + blankToNull(item.getSkuCd());
+            if (key.endsWith("null")) {
+                continue;
+            }
+
+            MutableStockConditionAggregate aggregate = aggregated.computeIfAbsent(
+                    key,
+                    unused -> new MutableStockConditionAggregate(item.getProdNo(), blankToNull(item.getSkuCd()))
+            );
+            aggregate.merge(item, this::parseDateTime);
         }
 
-        return item.getDepots().stream()
-                .map(PlayAutoStockResponseDTO.Depot::getSafeStock)
-                .filter(value -> value != null)
-                .mapToInt(Integer::intValue)
-                .sum();
+        return aggregated.values().stream()
+                .map(MutableStockConditionAggregate::toImmutable)
+                .toList();
+    }
+
+    private void syncProductOutboundSnapshot(
+            Long companyId,
+            Product product,
+            int currentAccum,
+            LocalDate collectionDate
+    ) {
+        ProductOutbound today = productOutboundRepository
+                .findByCompanyIdAndProductIdAndOutboundDate(companyId, product.getId(), collectionDate)
+                .orElse(ProductOutbound.builder()
+                        .companyId(companyId)
+                        .productId(product.getId())
+                        .brandId(product.getBrandId())
+                        .outboundDate(collectionDate)
+                        .outboundCount(0)
+                        .outboundAccumSnapshot(0)
+                        .build());
+
+        Integer previousAccum = productOutboundRepository
+                .findTopByCompanyIdAndProductIdAndOutboundDateBeforeOrderByOutboundDateDesc(
+                        companyId,
+                        product.getId(),
+                        collectionDate
+                )
+                .map(ProductOutbound::getOutboundAccumSnapshot)
+                .orElse(null);
+
+        int outboundCount = previousAccum == null ? 0 : Math.max(0, currentAccum - previousAccum);
+
+        today.setBrandId(product.getBrandId());
+        today.setOutboundCount(outboundCount);
+        today.setOutboundAccumSnapshot(currentAccum);
+        today.setCollectedAt(LocalDateTime.now());
+        productOutboundRepository.save(today);
     }
 
     private void updateStats(Long companyId, Orders order, boolean isCancellation) {
-        LocalDate targetDate = order.getWdate().toLocalDate();
+        LocalDateTime salesBaseDateTime = resolveSalesBaseDateTime(order);
+        if (salesBaseDateTime == null) {
+            return;
+        }
+        LocalDate targetDate = salesBaseDateTime.toLocalDate();
 
         DailySalesStats stats = statsRepository.findByCompanyIdAndDateAndShopIdAndBrandIdAndProductId(
                 companyId, targetDate, order.getShopId(), order.getBrandId(), order.getProductId())
@@ -774,15 +832,15 @@ public class PlayAutoSyncService {
                         .build());
 
         if (!isCancellation) {
-            stats.setGrossAmount(stats.getGrossAmount().add(order.getGrossAmt()));
+            stats.setGrossAmount(stats.getGrossAmount().add(resolveGrossAmount(order)));
             stats.setDiscountAmount(stats.getDiscountAmount().add(order.getDiscountAmt()));
-            stats.setNetRevenue(stats.getNetRevenue().add(order.getPayAmt()));
+            stats.setNetRevenue(stats.getNetRevenue().add(resolveNetRevenue(order)));
             stats.setShippingFee(stats.getShippingFee().add(order.getShippingFee()));
             stats.setOrdererCount(stats.getOrdererCount() + 1);
         } else {
-            stats.setGrossAmount(stats.getGrossAmount().subtract(order.getGrossAmt()));
+            stats.setGrossAmount(stats.getGrossAmount().subtract(resolveGrossAmount(order)));
             stats.setDiscountAmount(stats.getDiscountAmount().subtract(order.getDiscountAmt()));
-            stats.setNetRevenue(stats.getNetRevenue().subtract(order.getPayAmt()));
+            stats.setNetRevenue(stats.getNetRevenue().subtract(resolveNetRevenue(order)));
             stats.setCancelAmount(stats.getCancelAmount().add(order.getPayAmt()));
             stats.setOrdererCount(Math.max(0, stats.getOrdererCount() - 1));
             stats.setCancelCount(stats.getCancelCount() + 1);
@@ -797,11 +855,12 @@ public class PlayAutoSyncService {
 
         Map<String, DailySalesStats> statsMap = new HashMap<>();
         for (Orders order : orders) {
-            if (order.getWdate() == null || order.getProductId() == null || order.getBrandId() == null || order.getShopId() == null) {
+            LocalDateTime salesBaseDateTime = resolveSalesBaseDateTime(order);
+            if (salesBaseDateTime == null || order.getProductId() == null || order.getBrandId() == null || order.getShopId() == null) {
                 continue;
             }
 
-            LocalDate targetDate = order.getWdate().toLocalDate();
+            LocalDate targetDate = salesBaseDateTime.toLocalDate();
             String key = companyId + "|" + targetDate + "|" + order.getShopId() + "|" + order.getBrandId() + "|" + order.getProductId();
             DailySalesStats stats = statsMap.computeIfAbsent(key, unused -> DailySalesStats.builder()
                     .companyId(companyId)
@@ -819,20 +878,23 @@ public class PlayAutoSyncService {
                     .build());
 
             if (OrderStatusGroups.isCompletedReversalStatus(order.getOrdStatus())) {
-                stats.setGrossAmount(stats.getGrossAmount().subtract(order.getGrossAmt()));
-                stats.setDiscountAmount(stats.getDiscountAmount().subtract(order.getDiscountAmt()));
-                stats.setNetRevenue(stats.getNetRevenue().subtract(order.getPayAmt()));
+                /*
+                 * The orders table stores the latest state for each order.
+                 * During a full stats rebuild, a cancelled/returned order should therefore
+                 * contribute cancellation metrics only instead of recreating a negative sale.
+                 * Otherwise partial backfills or status-only syncs can produce negative bars.
+                 */
+                stats.setShippingFee(stats.getShippingFee().add(order.getShippingFee()));
                 stats.setCancelAmount(stats.getCancelAmount().add(
                         order.getCancelAmt() != null && order.getCancelAmt().compareTo(BigDecimal.ZERO) > 0
                                 ? order.getCancelAmt()
                                 : order.getPayAmt()
                 ));
-                stats.setOrdererCount(Math.max(0, stats.getOrdererCount() - 1));
                 stats.setCancelCount(stats.getCancelCount() + 1);
             } else if (OrderStatusGroups.isRevenueIncludedStatus(order.getOrdStatus())) {
-                stats.setGrossAmount(stats.getGrossAmount().add(order.getGrossAmt()));
+                stats.setGrossAmount(stats.getGrossAmount().add(resolveGrossAmount(order)));
                 stats.setDiscountAmount(stats.getDiscountAmount().add(order.getDiscountAmt()));
-                stats.setNetRevenue(stats.getNetRevenue().add(order.getPayAmt()));
+                stats.setNetRevenue(stats.getNetRevenue().add(resolveNetRevenue(order)));
                 stats.setShippingFee(stats.getShippingFee().add(order.getShippingFee()));
                 stats.setOrdererCount(stats.getOrdererCount() + 1);
             }
@@ -855,16 +917,20 @@ public class PlayAutoSyncService {
     }
 
     private String hashPhone(String phone) {
+        return hashText(phone);
+    }
+
+    private String hashText(String value) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(phone.getBytes(StandardCharsets.UTF_8));
+            byte[] hash = digest.digest(String.valueOf(value).getBytes(StandardCharsets.UTF_8));
             StringBuilder builder = new StringBuilder();
             for (byte b : hash) {
                 builder.append(String.format("%02x", b));
             }
             return builder.toString();
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to hash customer phone", e);
+            throw new IllegalStateException("Failed to hash value", e);
         }
     }
 
@@ -908,6 +974,44 @@ public class PlayAutoSyncService {
         return isBlank(brandName) ? DEFAULT_BRAND_NAME : brandName.trim();
     }
 
+    private boolean isUnclassifiedBrandName(String brandName) {
+        return DEFAULT_BRAND_NAME.equals(normalizeBrandName(brandName));
+    }
+
+    private LocalDateTime resolveSalesBaseDateTime(Orders order) {
+        if (order == null) {
+            return null;
+        }
+        return order.getOrdTime() != null ? order.getOrdTime() : order.getWdate();
+    }
+
+    private BigDecimal resolveGrossAmount(Orders order) {
+        if (order == null) {
+            return BigDecimal.ZERO;
+        }
+        return calculateGrossAmount(order.getPayAmt(), order.getDiscountAmt(), order.getShippingFee());
+    }
+
+    private BigDecimal resolveNetRevenue(Orders order) {
+        if (order == null) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal safePayAmt = order.getPayAmt() != null ? order.getPayAmt() : BigDecimal.ZERO;
+        BigDecimal safeDiscountAmt = order.getDiscountAmt() != null ? order.getDiscountAmt() : BigDecimal.ZERO;
+        return safePayAmt.subtract(safeDiscountAmt);
+    }
+
+    private BigDecimal calculateGrossAmount(BigDecimal payAmt, BigDecimal discountAmt, BigDecimal shippingFee) {
+        BigDecimal safePayAmt = payAmt != null ? payAmt : BigDecimal.ZERO;
+        BigDecimal safeDiscountAmt = discountAmt != null ? discountAmt : BigDecimal.ZERO;
+        BigDecimal safeShippingFee = shippingFee != null ? shippingFee : BigDecimal.ZERO;
+        return safePayAmt.subtract(safeDiscountAmt).add(safeShippingFee);
+    }
+
+    private BigDecimal normalizeMoney(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value.max(BigDecimal.ZERO);
+    }
+
     private Shop ensureDefaultShop(Long companyId) {
         return shopRepository.findByCompanyIdAndShopCode(companyId, DEFAULT_SHOP_CODE)
                 .orElseGet(() -> shopRepository.save(
@@ -921,13 +1025,92 @@ public class PlayAutoSyncService {
     }
 
     private IntegrationType resolvePlatform(PlayAutoShopResponseDTO dto) {
-        return IntegrationType.fromShop(dto.getShopName(), dto.getShopId());
+        return IntegrationType.fromShop(dto.getShopName(), blankToNull(dto.getShopCode()));
+    }
+
+    private LocalDateTime maxDateTime(LocalDateTime left, LocalDateTime right) {
+        if (left == null) {
+            return right;
+        }
+        if (right == null) {
+            return left;
+        }
+        return left.isAfter(right) ? left : right;
+    }
+
+    private final class MutableStockConditionAggregate {
+        private final Long prodNo;
+        private final String skuCd;
+        private String prodName;
+        private String brand;
+        private BigDecimal salePrice;
+        private BigDecimal costPrice;
+        private BigDecimal supplyPrice;
+        private int realStock;
+        private int safeStock;
+        private int outCntAccum;
+        private LocalDateTime wdate;
+        private LocalDateTime mdate;
+
+        private MutableStockConditionAggregate(Long prodNo, String skuCd) {
+            this.prodNo = prodNo;
+            this.skuCd = skuCd;
+        }
+
+        private void merge(
+                PlayAutoStockConditionResponseDTO.StockConditionItem item,
+                java.util.function.Function<String, LocalDateTime> dateParser
+        ) {
+            this.prodName = firstNonBlank(this.prodName, item.getProdName());
+            this.brand = firstNonBlank(this.brand, item.getBrand());
+            this.salePrice = this.salePrice != null ? this.salePrice : item.getSalePrice();
+            this.costPrice = this.costPrice != null ? this.costPrice : item.getCostPrice();
+            this.supplyPrice = this.supplyPrice != null ? this.supplyPrice : item.getSupplyPrice();
+            this.realStock += item.getStockCntReal() != null ? item.getStockCntReal() : 0;
+            this.safeStock += item.getStockCntSafe() != null ? item.getStockCntSafe() : 0;
+            this.outCntAccum += item.getOutCntAccum() != null ? item.getOutCntAccum() : 0;
+            this.wdate = maxDateTime(this.wdate, dateParser.apply(item.getWdate()));
+            this.mdate = maxDateTime(this.mdate, dateParser.apply(item.getMdate()));
+        }
+
+        private StockConditionAggregate toImmutable() {
+            return new StockConditionAggregate(
+                    prodNo,
+                    skuCd,
+                    prodName,
+                    brand,
+                    salePrice,
+                    costPrice,
+                    supplyPrice,
+                    realStock,
+                    safeStock,
+                    outCntAccum,
+                    wdate,
+                    mdate
+            );
+        }
     }
 
     private record DateRange(LocalDate startDate, LocalDate endDate) {
     }
 
     private record OrderSaveOutcome(Orders order, boolean created) {
+    }
+
+    private record StockConditionAggregate(
+            Long prodNo,
+            String skuCd,
+            String prodName,
+            String brand,
+            BigDecimal salePrice,
+            BigDecimal costPrice,
+            BigDecimal supplyPrice,
+            int realStock,
+            int safeStock,
+            int outCntAccum,
+            LocalDateTime wdate,
+            LocalDateTime mdate
+    ) {
     }
 }
 

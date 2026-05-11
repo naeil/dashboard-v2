@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import naeil.dashboard.dto.BrandOptionDTO;
 import naeil.dashboard.dto.BrandSalesDTO;
 import naeil.dashboard.dto.PlatformTrendSalesDTO;
+import naeil.dashboard.dto.ProductMarketSalesDTO;
 import naeil.dashboard.dto.ProductSalesDTO;
 import naeil.dashboard.dto.SalesSummaryAggregateDTO;
 import naeil.dashboard.dto.SalesSummaryDTO;
@@ -47,7 +48,8 @@ public class SalesService {
                 summary.getTotalCancelAmount(),
                 summary.getCancelCount(),
                 summary.getTotalOrderCount(),
-                totalCustomerCount == null ? 0L : totalCustomerCount
+                totalCustomerCount == null ? 0L : totalCustomerCount,
+                summary.getProfitAmount()
         );
     }
 
@@ -56,15 +58,21 @@ public class SalesService {
                 companyId,
                 startDate,
                 endDate,
-                startDate.atStartOfDay(),
-                endDate.plusDays(1).atStartOfDay(),
-                OrderStatusGroups.REVENUE_INCLUDED_STATUSES,
                 brandId
         );
     }
 
     public List<BrandSalesDTO> getBrandSales(Long companyId, LocalDate startDate, LocalDate endDate, Long brandId) {
         return salesRepository.findSalesByBrand(companyId, startDate, endDate, brandId);
+    }
+
+    public List<ProductMarketSalesDTO> getProductMarketSales(
+            Long companyId,
+            Long productId,
+            LocalDate startDate,
+            LocalDate endDate
+    ) {
+        return salesRepository.findSalesByProductAndShop(companyId, productId, startDate, endDate);
     }
 
     public List<ShopSalesDTO> getShopSales(Long companyId, LocalDate startDate, LocalDate endDate, Long brandId) {

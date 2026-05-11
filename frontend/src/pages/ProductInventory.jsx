@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { getBrands, getProductInventory } from '../api/salesApi'
 
 function formatNumber(value) {
@@ -83,11 +83,7 @@ export default function ProductInventory({ isExpanded }) {
     const totalStock = items.reduce((sum, item) => sum + Number(item.realStock ?? 0), 0)
     const totalSafeStock = items.reduce((sum, item) => sum + Number(item.safeStock ?? 0), 0)
     const totalMonthlyOutbound = items.reduce((sum, item) => sum + Number(item.monthlyOutboundCount ?? 0), 0)
-    const brandCount = new Set(
-      items
-        .filter((item) => item.brandName && item.brandName !== '미분류')
-        .map((item) => item.brandId)
-    ).size
+    const brandCount = new Set(items.map((item) => item.brandId)).size
 
     return { totalProducts, totalStock, totalSafeStock, totalMonthlyOutbound, brandCount }
   }, [items])
@@ -100,9 +96,9 @@ export default function ProductInventory({ isExpanded }) {
     >
       <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900">재고 및 출고량</h1>
+          <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900">재고 관리</h1>
           <p className="mt-3 text-slate-500">
-            브랜드별 상품 재고와 월 기준 출고량을 한눈에 확인하는 상품 관리 화면입니다.
+            수집된 상품의 실재고와 안전재고, 월 출고량을 확인하는 화면입니다.
           </p>
         </div>
 
@@ -112,11 +108,11 @@ export default function ProductInventory({ isExpanded }) {
               <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
                 브랜드 필터
               </label>
-              <div className="min-w-[14rem] overflow-hidden rounded-xl border border-slate-200 bg-white transition-colors focus-within:border-primary">
+              <div className="relative min-w-[14rem] overflow-hidden rounded-xl border border-slate-200 bg-white transition-colors focus-within:border-primary">
                 <select
                   value={selectedBrand}
                   onChange={(e) => setSelectedBrand(e.target.value)}
-                  className="w-full cursor-pointer border-none bg-transparent py-2 pl-3 pr-8 text-sm font-semibold text-slate-700 outline-none"
+                  className="w-full appearance-none cursor-pointer border-none bg-transparent py-2 pl-3 pr-12 text-sm font-semibold text-slate-700 outline-none"
                 >
                   <option value="ALL">전체 브랜드</option>
                   {brands.map((brand) => (
@@ -125,13 +121,28 @@ export default function ProductInventory({ isExpanded }) {
                     </option>
                   ))}
                 </select>
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 16 16"
+                    className="h-4 w-4"
+                    fill="none"
+                  >
+                    <path
+                      d="M3.5 6L8 10.5L12.5 6"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
               </div>
             </div>
 
             <div>
               <label className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
-                출고 기준 월
-              </label>
+                출고 기준 월              </label>
               <input
                 type="month"
                 value={selectedMonth}
@@ -154,46 +165,41 @@ export default function ProductInventory({ isExpanded }) {
       <section className="overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-col gap-2 border-b border-slate-100 px-8 py-6 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-2xl font-black text-slate-900">브랜드별 재고 및 월 출고량</h2>
+            <h2 className="text-2xl font-black text-slate-900">수집 상품 재고 현황</h2>
           </div>
           <div className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700">
-            {selectedMonth} 월 기준 집계
+            {selectedMonth} 기준 집계
           </div>
         </div>
 
         {loading ? (
-          <div className="px-8 py-16 text-center text-slate-500">재고 및 출고량 데이터를 불러오는 중입니다.</div>
+          <div className="px-8 py-16 text-center text-slate-500">재고 데이터를 불러오는 중입니다.</div>
         ) : items.length === 0 ? (
           <div className="px-8 py-16 text-center text-slate-500">표시할 상품이 없습니다.</div>
         ) : (
           <div className="w-full overflow-x-auto">
-            <table className="min-w-[1080px] w-full table-fixed">
+            <table className="min-w-[1180px] w-full table-fixed">
               <thead className="bg-slate-50">
                 <tr>
                   <th className="w-[12%] px-3 py-4 text-center text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 sm:px-4 lg:px-6 lg:text-xs">
-                    브랜드
-                  </th>
+                    브랜드</th>
                   <th className="w-[24%] px-3 py-4 text-center text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 sm:px-4 lg:px-6 lg:text-xs">
-                    상품명
-                  </th>
+                    상품명</th>
                   <th className="w-[16%] px-3 py-4 text-center text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 sm:px-4 lg:px-6 lg:text-xs">
                     SKU
                   </th>
                   <th className="w-[12%] px-3 py-4 text-center text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 sm:px-4 lg:px-6 lg:text-xs">
                     PROD NO
                   </th>
-                  <th className="w-[10%] px-3 py-4 text-center text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 sm:px-4 lg:px-6 lg:text-xs">
-                    실재고
-                  </th>
-                  <th className="w-[10%] px-3 py-4 text-center text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 sm:px-4 lg:px-6 lg:text-xs">
+                  <th className="w-[8%] px-3 py-4 text-center text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 sm:px-4 lg:px-6 lg:text-xs">
+                    실재고</th>
+                  <th className="w-[8%] px-3 py-4 text-center text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 sm:px-4 lg:px-6 lg:text-xs">
                     안전재고
                   </th>
                   <th className="w-[10%] px-3 py-4 text-center text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 sm:px-4 lg:px-6 lg:text-xs">
-                    {selectedMonth} 월 출고량
-                  </th>
-                  <th className="w-[18%] px-3 py-4 text-center text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 sm:px-4 lg:px-6 lg:text-xs">
-                    마지막 상품 수정일
-                  </th>
+                    월 출고량</th>
+                  <th className="w-[10%] px-3 py-4 text-center text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400 sm:px-4 lg:px-6 lg:text-xs">
+                    마지막 수정일</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -235,3 +241,6 @@ export default function ProductInventory({ isExpanded }) {
     </main>
   )
 }
+
+
+

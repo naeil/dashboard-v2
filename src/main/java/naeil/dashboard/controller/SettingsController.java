@@ -71,6 +71,12 @@ public class SettingsController {
         return ResponseEntity.ok(Map.of("message", "Order collection completed successfully"));
     }
 
+    @PostMapping("/shops/sync")
+    public ResponseEntity<?> syncShops() {
+        playAutoCollectionService.syncShopMetadata(DEFAULT_COMPANY_ID);
+        return ResponseEntity.ok(Map.of("message", "Shop metadata synced successfully"));
+    }
+
     @GetMapping("/history")
     public ResponseEntity<List<CollectionExecutionHistoryDto>> getCollectionHistory(
             @RequestParam(defaultValue = "PLAYAUTO") IntegrationType integrationType,

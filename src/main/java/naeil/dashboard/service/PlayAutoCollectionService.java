@@ -23,11 +23,38 @@ public class PlayAutoCollectionService {
     private final PlayAutoSyncService playAutoSyncService;
 
     public void runOrderCollection(Long companyId, boolean automatic) {
-        LocalDateTime startedAt = LocalDateTime.now();
         IntegrationSettingService.CollectionWindow window =
                 integrationSettingService.getPlayAutoCollectionWindow(companyId);
         String triggerLabel = automatic ? "자동" : "수동";
         String historyMessage = String.format("주문 %s 수집 [%s ~ %s]", triggerLabel, window.startDate(), window.endDate());
+        runOrderCollection(companyId, window.startDate(), window.endDate(), triggerLabel, historyMessage);
+    }
+
+    public void refreshTodayOrders(Long companyId) {
+        LocalDate today = LocalDate.now();
+        runOrderCollection(
+                companyId,
+                today,
+                today,
+                "즉시",
+                String.format("매출 현황 새로고침 [%s ~ %s]", today, today)
+        );
+    }
+
+    public void syncShopMetadata(Long companyId) {
+        IntegrationSettingService.PlayAutoCredentials credentials =
+                integrationSettingService.getValidPlayAutoCredentials(companyId);
+        playAutoSyncService.syncShops(companyId, credentials.accessToken(), credentials.apiKey());
+    }
+
+    private void runOrderCollection(
+            Long companyId,
+            LocalDate startDate,
+            LocalDate endDate,
+            String triggerLabel,
+            String historyMessage
+    ) {
+        LocalDateTime startedAt = LocalDateTime.now();
         Long historyId = integrationSettingService.recordCollectionExecutionStarted(
                 companyId,
                 IntegrationType.PLAYAUTO,
@@ -44,24 +71,22 @@ public class PlayAutoCollectionService {
                     "Starting {} PlayAuto order collection for company {} [{} ~ {}]",
                     triggerLabel,
                     companyId,
-                    window.startDate(),
-                    window.endDate()
+                    startDate,
+                    endDate
             );
 
             playAutoSyncService.syncProducts(
                     companyId,
                     credentials.accessToken(),
-                    credentials.apiKey(),
-                    window.startDate().format(DATE_FORMATTER),
-                    window.endDate().format(DATE_FORMATTER)
+                    credentials.apiKey()
             );
 
             runChunkedOrderSync(
                     companyId,
                     credentials.accessToken(),
                     credentials.apiKey(),
-                    window.startDate(),
-                    window.endDate(),
+                    startDate,
+                    endDate,
                     triggerLabel
             );
 
@@ -113,15 +138,7 @@ public class PlayAutoCollectionService {
             playAutoSyncService.syncProducts(
                     companyId,
                     credentials.accessToken(),
-                    credentials.apiKey(),
-                    startDate.format(DATE_FORMATTER),
-                    endDate.format(DATE_FORMATTER)
-            );
-            syncMissingProductOutbound(
-                    companyId,
-                    credentials.accessToken(),
-                    credentials.apiKey(),
-                    today
+                    credentials.apiKey()
             );
 
             LocalDateTime finishedAt = LocalDateTime.now();
@@ -200,25 +217,6 @@ public class PlayAutoCollectionService {
             chunks.add(new CollectionChunk(current, chunkEnd));
         }
         return chunks;
-    }
-
-    private void syncMissingProductOutbound(
-            Long companyId,
-            String token,
-            String apiKey,
-            LocalDate today
-    ) {
-        LocalDate lastCollectedDate = playAutoSyncService.getLastProductOutboundDate(companyId);
-        LocalDate startDate = lastCollectedDate != null ? lastCollectedDate.plusDays(1) : today.minusDays(1);
-        LocalDate endDate = today.minusDays(1);
-
-        if (startDate.isAfter(endDate)) {
-            return;
-        }
-
-        for (LocalDate current = startDate; !current.isAfter(endDate); current = current.plusDays(1)) {
-            playAutoSyncService.syncProductOutbound(companyId, token, apiKey, current);
-        }
     }
 
     private String buildFailureMessage(String baseMessage, Exception e) {

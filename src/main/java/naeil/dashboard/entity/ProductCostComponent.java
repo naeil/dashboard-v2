@@ -7,8 +7,9 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
-import java.time.LocalDate;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -18,16 +19,19 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 @Entity
-@Table(name = "product_outbound", indexes = {
-        @Index(name = "idx_product_outbound_company_date", columnList = "company_id, outbound_date"),
-        @Index(name = "idx_product_outbound_company_product", columnList = "company_id, product_id")
-})
+@Table(
+        name = "product_cost_component",
+        indexes = {
+                @Index(name = "idx_product_cost_component_company", columnList = "company_id"),
+                @Index(name = "idx_product_cost_component_product", columnList = "product_id")
+        }
+)
 @Getter
 @Setter
-@NoArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
 @Builder
-public class ProductOutbound {
+public class ProductCostComponent {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -39,26 +43,22 @@ public class ProductOutbound {
     @Column(name = "product_id", nullable = false)
     private Long productId;
 
-    @Column(name = "brand_id", nullable = false)
-    private Long brandId;
+    @Column(name = "component_name", nullable = false, length = 120)
+    private String componentName;
 
-    @Column(name = "outbound_date", nullable = false)
-    private LocalDate outboundDate;
+    @Column(name = "amount", nullable = false, precision = 12, scale = 2)
+    @Builder.Default
+    private BigDecimal amount = BigDecimal.ZERO;
 
-    @Column(name = "outbound_count", nullable = false)
-    private Integer outboundCount;
-
-    @Column(name = "outbound_accum_snapshot", nullable = false)
-    private Integer outboundAccumSnapshot;
-
-    @Column(name = "collected_at", nullable = false)
-    private LocalDateTime collectedAt;
+    @Column(name = "sort_order", nullable = false)
+    @Builder.Default
+    private Integer sortOrder = 0;
 
     @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @UpdateTimestamp
-    @Column(name = "updated_at", nullable = false)
+    @Column(nullable = false)
     private LocalDateTime updatedAt;
 }

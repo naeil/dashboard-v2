@@ -15,6 +15,12 @@ public interface ProductOutboundRepository extends JpaRepository<ProductOutbound
 
     Optional<ProductOutbound> findByCompanyIdAndProductIdAndOutboundDate(Long companyId, Long productId, LocalDate outboundDate);
 
+    Optional<ProductOutbound> findTopByCompanyIdAndProductIdAndOutboundDateBeforeOrderByOutboundDateDesc(
+            Long companyId,
+            Long productId,
+            LocalDate outboundDate
+    );
+
     @Query("""
         SELECT COALESCE(SUM(p.outboundCount), 0)
         FROM ProductOutbound p
@@ -40,10 +46,4 @@ public interface ProductOutboundRepository extends JpaRepository<ProductOutbound
             @Param("yearMonth") String yearMonth
     );
 
-    @Query("""
-        SELECT MAX(p.outboundDate)
-        FROM ProductOutbound p
-        WHERE p.companyId = :companyId
-        """)
-    LocalDate findLastCollectedOutboundDate(@Param("companyId") Long companyId);
 }

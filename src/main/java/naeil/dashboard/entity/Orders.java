@@ -75,6 +75,9 @@ public class Orders {
     @Column(name = "pay_time")
     private LocalDateTime payTime;
 
+    @Column(name = "ord_time")
+    private LocalDateTime ordTime;
+
     @Column(name = "wdate")
     private LocalDateTime wdate;
 
@@ -88,6 +91,38 @@ public class Orders {
 
     public void setProductId(Long productId) {
         this.productId = productId;
+    }
+
+    public void refreshFromSync(
+            Long brandId,
+            Long shopId,
+            Long productId,
+            String skuCd,
+            BigDecimal grossAmt,
+            BigDecimal discountAmt,
+            BigDecimal shippingFee,
+            BigDecimal payAmt,
+            LocalDateTime ordTime,
+            LocalDateTime payTime,
+            LocalDateTime wdate,
+            String ordStatus
+    ) {
+        this.brandId = brandId;
+        this.shopId = shopId;
+        this.productId = productId;
+        this.skuCd = skuCd;
+        this.grossAmt = grossAmt != null ? grossAmt : BigDecimal.ZERO;
+        this.discountAmt = discountAmt != null ? discountAmt : BigDecimal.ZERO;
+        this.shippingFee = shippingFee != null ? shippingFee : BigDecimal.ZERO;
+        this.payAmt = payAmt != null ? payAmt : BigDecimal.ZERO;
+        this.ordTime = ordTime;
+        this.payTime = payTime;
+        this.wdate = wdate;
+        updateStatus(ordStatus);
+    }
+
+    public void clearCancelAmt() {
+        this.cancelAmt = BigDecimal.ZERO;
     }
 
     public void updateStatus(String status) {

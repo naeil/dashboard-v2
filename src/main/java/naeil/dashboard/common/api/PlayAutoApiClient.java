@@ -2,14 +2,17 @@ package naeil.dashboard.common.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import naeil.dashboard.common.exception.CustomException;
 import naeil.dashboard.dto.PlayAutoShopResponseDTO;
-import naeil.dashboard.dto.PlayAutoStockInoutResponseDTO;
-import naeil.dashboard.dto.PlayAutoStockResponseDTO;
+import naeil.dashboard.dto.PlayAutoStockConditionResponseDTO;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -25,6 +28,9 @@ import org.springframework.web.util.UriComponentsBuilder;
 @Component
 @RequiredArgsConstructor
 public class PlayAutoApiClient {
+
+    private static final int STOCK_LIST_PAGE_SIZE = 100;
+    private static final DateTimeFormatter ISO_DATE_FORMATTER = DateTimeFormatter.ISO_DATE;
 
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -97,53 +103,54 @@ public class PlayAutoApiClient {
         }
     }
 
-    public PlayAutoStockResponseDTO getStockList(String token, String apiKey, String sDate, String eDate) {
+    public PlayAutoStockConditionResponseDTO getStockConditionList(String token, String apiKey) {
         HttpHeaders headers = createHeaders(token, apiKey);
-
-        Map<String, Object> body = new HashMap<>();
-        body.put("start", 0);
-        body.put("limit", 100);
-        body.put("search_key", "all");
-        body.put("search_word", new String[0]);
-        body.put("search_type", "partial");
-        body.put("date_type", "mdate");
-        body.put("sdate", sDate);
-        body.put("edate", eDate);
-
-        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
-        String url = "https://openapi.playauto.io/api/stock/list/v1.2";
+        String url = "https://openapi.playauto.io/api/stock/condition";
+        String today = LocalDate.now().format(ISO_DATE_FORMATTER);
 
         try {
-            ResponseEntity<PlayAutoStockResponseDTO> response =
-                    restTemplate.postForEntity(url, request, PlayAutoStockResponseDTO.class);
-            return response.getBody();
+            List<PlayAutoStockConditionResponseDTO.StockConditionItem> allResults = new ArrayList<>();
+            Integer total = null;
+            int start = 0;
+
+            while (true) {
+                Map<String, Object> body = new HashMap<>();
+                body.put("start", start);
+                body.put("limit", STOCK_LIST_PAGE_SIZE);
+                body.put("date_type", "mdate");
+                body.put("edate", today);
+
+                HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+                ResponseEntity<PlayAutoStockConditionResponseDTO> response =
+                        restTemplate.postForEntity(url, request, PlayAutoStockConditionResponseDTO.class);
+                PlayAutoStockConditionResponseDTO page = response.getBody();
+                if (page == null || page.getResults() == null || page.getResults().isEmpty()) {
+                    break;
+                }
+
+                if (total == null && page.getRecordsTotal() > 0) {
+                    total = page.getRecordsTotal();
+                }
+
+                allResults.addAll(page.getResults());
+
+                if (page.getResults().size() < STOCK_LIST_PAGE_SIZE) {
+                    break;
+                }
+
+                if (total != null && allResults.size() >= total) {
+                    break;
+                }
+
+                start += STOCK_LIST_PAGE_SIZE;
+            }
+
+            PlayAutoStockConditionResponseDTO merged = new PlayAutoStockConditionResponseDTO();
+            merged.setResults(allResults);
+            merged.setRecordsTotal(total != null ? total : allResults.size());
+            return merged;
         } catch (RestClientException e) {
-            handleException("getStockList", e);
-            return null;
-        }
-    }
-
-    public PlayAutoStockInoutResponseDTO getStockInout(String token, String apiKey, String sDate, String eDate) {
-        HttpHeaders headers = createHeaders(token, apiKey);
-
-        Map<String, Object> body = new HashMap<>();
-        body.put("search_key", "");
-        body.put("search_word", "");
-        body.put("search_type", "partial");
-        body.put("date_type", "wdate");
-        body.put("inout_type", "");
-        body.put("sdate", sDate);
-        body.put("edate", eDate);
-
-        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
-        String url = "https://openapi.playauto.io/api/stock/inout";
-
-        try {
-            ResponseEntity<PlayAutoStockInoutResponseDTO> response =
-                    restTemplate.postForEntity(url, request, PlayAutoStockInoutResponseDTO.class);
-            return response.getBody();
-        } catch (RestClientException e) {
-            handleException("getStockInout", e);
+            handleException("getStockConditionList", e);
             return null;
         }
     }
@@ -154,8 +161,8 @@ public class PlayAutoApiClient {
         Map<String, Object> body = new HashMap<>();
         body.put("start", 0);
         body.put("length", 1000);
-        body.put("orderby", "wdate asc");
-        body.put("date_type", "ord_status_mdate");
+        body.put("orderby", "mdate asc");
+        body.put("date_type", "mdate");
         body.put("sdate", sDate);
         body.put("edate", eDate);
         body.put("delay_status", false);

@@ -22,8 +22,8 @@ public interface OrdersRepository extends JpaRepository<Orders, String> {
           AND (:brandId IS NULL OR o.brandId = :brandId)
           AND o.customerId IS NOT NULL
           AND o.ordStatus IN :includedStatuses
-          AND o.wdate >= :startDateTime
-          AND o.wdate < :endDateTime
+          AND COALESCE(o.ordTime, o.wdate) >= :startDateTime
+          AND COALESCE(o.ordTime, o.wdate) < :endDateTime
         """)
     Long countDistinctCustomersInPeriod(
             @Param("companyId") Long companyId,

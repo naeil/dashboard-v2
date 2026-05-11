@@ -39,3 +39,4 @@ frontend/.env.production.local
 # OS files
 .DS_Store
 Thumbs.db
+docs/
