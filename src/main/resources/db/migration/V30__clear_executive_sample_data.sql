@@ -1,0 +1,21 @@
+DELETE FROM executive_issue_log;
+DELETE FROM executive_ad_performance;
+DELETE FROM executive_export_pipeline;
+DELETE FROM executive_debt;
+DELETE FROM executive_operating_expense;
+DELETE FROM executive_receivable;
+DELETE FROM executive_channel_performance;
+DELETE FROM executive_product_profit;
+DELETE FROM executive_cash_flow;
+DELETE FROM executive_cash_account;
+
+ALTER SEQUENCE executive_issue_log_id_seq RESTART WITH 1;
+ALTER SEQUENCE executive_ad_performance_id_seq RESTART WITH 1;
+ALTER SEQUENCE executive_export_pipeline_id_seq RESTART WITH 1;
+ALTER SEQUENCE executive_debt_id_seq RESTART WITH 1;
+ALTER SEQUENCE executive_operating_expense_id_seq RESTART WITH 1;
+ALTER SEQUENCE executive_receivable_id_seq RESTART WITH 1;
+ALTER SEQUENCE executive_channel_performance_id_seq RESTART WITH 1;
+ALTER SEQUENCE executive_product_profit_id_seq RESTART WITH 1;
+ALTER SEQUENCE executive_cash_flow_id_seq RESTART WITH 1;
+ALTER SEQUENCE executive_cash_account_id_seq RESTART WITH 1;

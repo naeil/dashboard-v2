@@ -18,9 +18,11 @@ public class PlayAutoCollectionService {
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_DATE;
     private static final int ORDER_COLLECTION_CHUNK_DAYS = 7;
+    private static final long ORDER_COLLECTION_CHUNK_DELAY_MILLIS = 750L;
 
     private final IntegrationSettingService integrationSettingService;
     private final PlayAutoSyncService playAutoSyncService;
+    private final ExecutiveDashboardService executiveDashboardService;
 
     public void runOrderCollection(Long companyId, boolean automatic) {
         IntegrationSettingService.CollectionWindow window =
@@ -92,6 +94,7 @@ public class PlayAutoCollectionService {
 
             playAutoSyncService.remapOrdersToResolvedProducts(companyId);
             playAutoSyncService.rebuildDailySalesStats(companyId);
+            executiveDashboardService.importPlayAutoChannelSales(companyId);
 
             LocalDateTime finishedAt = LocalDateTime.now();
             integrationSettingService.markOrderCollectionCompleted(companyId, finishedAt);
@@ -204,6 +207,19 @@ public class PlayAutoCollectionService {
                     chunk.startDate(),
                     chunk.endDate()
             );
+
+            if (chunkNumber < chunks.size()) {
+                pauseBetweenOrderChunks();
+            }
+        }
+    }
+
+    private void pauseBetweenOrderChunks() {
+        try {
+            Thread.sleep(ORDER_COLLECTION_CHUNK_DELAY_MILLIS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("PlayAuto order collection interrupted", e);
         }
     }
 

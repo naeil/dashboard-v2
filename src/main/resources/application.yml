@@ -48,6 +48,19 @@ app:
   cors:
     allowed-origin-patterns: ${APP_CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:5173,http://localhost:3000}
 
+naver:
+  client-id: ${NAVER_CLIENT_ID:}
+  client-secret: ${NAVER_CLIENT_SECRET:}
+
+naver-ad:
+  customer-id: ${NAVER_AD_CUSTOMER_ID:}
+  access-license: ${NAVER_AD_ACCESS_LICENSE:}
+  secret-key: ${NAVER_AD_SECRET_KEY:}
+
+meta:
+  access-token: ${META_ACCESS_TOKEN:}
+  ad-account-id: ${META_AD_ACCOUNT_ID:}
+
 server:
   port: ${PORT:${SERVER_PORT:8080}}
 

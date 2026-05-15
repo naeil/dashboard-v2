@@ -19,6 +19,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
@@ -30,6 +31,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 public class PlayAutoApiClient {
 
     private static final int STOCK_LIST_PAGE_SIZE = 100;
+    private static final int ORDER_LIST_MAX_RETRIES = 3;
     private static final DateTimeFormatter ISO_DATE_FORMATTER = DateTimeFormatter.ISO_DATE;
 
     private final RestTemplate restTemplate = new RestTemplate();
@@ -168,22 +170,37 @@ public class PlayAutoApiClient {
         body.put("delay_status", false);
         body.put("multi_type", "shop_sale_no");
 
-        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
         String url = "https://openapi.playauto.io/api/orders";
 
-        try {
-            ResponseEntity<JsonNode> response = restTemplate.postForEntity(url, request, JsonNode.class);
-            JsonNode rootNode = response.getBody();
-            if (rootNode == null) {
-                throw new CustomException(502, "Invalid orders response");
-            }
+        for (int attempt = 1; attempt <= ORDER_LIST_MAX_RETRIES; attempt++) {
+            try {
+                HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+                ResponseEntity<JsonNode> response = restTemplate.postForEntity(url, request, JsonNode.class);
+                JsonNode rootNode = response.getBody();
+                if (rootNode == null) {
+                    throw new CustomException(502, "Invalid orders response");
+                }
 
-            handleError(rootNode);
-            return rootNode;
-        } catch (RestClientException e) {
-            handleException("getOrderList", e);
-            return null;
+                try {
+                    handleError(rootNode);
+                } catch (CustomException e) {
+                    if (shouldRetryWithoutMultiType(e, body)) {
+                        log.warn("Retrying PlayAuto order list without multi_type. sdate={}, edate={}", sDate, eDate);
+                        body.remove("multi_type");
+                        continue;
+                    }
+                    throw e;
+                }
+                return rootNode;
+            } catch (RestClientException e) {
+                if (isTooManyRequests(e) && attempt < ORDER_LIST_MAX_RETRIES) {
+                    sleepForRateLimit(attempt);
+                    continue;
+                }
+                handleException("getOrderList", e);
+            }
         }
+        return null;
     }
 
     private HttpHeaders createHeaders(String token, String apiKey) {
@@ -208,5 +225,29 @@ public class PlayAutoApiClient {
             throw customException;
         }
         throw new CustomException(502, "External API communication failed: " + e.getMessage());
+    }
+
+    private boolean isTooManyRequests(RestClientException e) {
+        if (e instanceof HttpStatusCodeException statusException) {
+            return statusException.getStatusCode().value() == 429;
+        }
+        return e.getMessage() != null && e.getMessage().contains("429");
+    }
+
+    private void sleepForRateLimit(int attempt) {
+        long delayMillis = attempt * 5_000L;
+        log.warn("PlayAuto rate limit reached. Retrying after {} ms. attempt={}", delayMillis, attempt + 1);
+        try {
+            Thread.sleep(delayMillis);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+            throw new CustomException(502, "PlayAuto retry interrupted");
+        }
+    }
+
+    private boolean shouldRetryWithoutMultiType(CustomException e, Map<String, Object> body) {
+        return body.containsKey("multi_type")
+                && e.getMessage() != null
+                && e.getMessage().contains("startsWith");
     }
 }
