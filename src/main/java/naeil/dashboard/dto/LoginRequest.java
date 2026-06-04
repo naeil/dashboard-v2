@@ -1,7 +1,9 @@
 package naeil.dashboard.dto;
 
-public record LoginRequest(
-        String username,
-        String password
-) {
+import org.springframework.util.StringUtils;
+
+public record LoginRequest(String loginId, String username, String password) {
+    public String resolvedLoginId() {
+        return StringUtils.hasText(loginId) ? loginId : username;
+    }
 }

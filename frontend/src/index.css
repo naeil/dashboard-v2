@@ -4,6 +4,23 @@
 
 @layer base {
     body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
+    input[type="date"] {
+        color-scheme: light;
+        cursor: pointer;
+        min-width: 0;
+    }
+    input[type="date"]::-webkit-calendar-picker-indicator {
+        cursor: pointer;
+        filter: none;
+        opacity: 0.95;
+        width: 18px;
+        height: 18px;
+    }
+    input[type="date"]:hover::-webkit-calendar-picker-indicator,
+    input[type="date"]:focus::-webkit-calendar-picker-indicator {
+        filter: none;
+        opacity: 1;
+    }
 }
 
 @layer utilities {
@@ -33,5 +50,388 @@
     }
     .inventory-scroll::-webkit-scrollbar-thumb:hover {
         background: #c5c6cd;
+    }
+
+    .app-light {
+        color: #0f172a;
+        background:
+            radial-gradient(circle at top right, rgba(14, 165, 233, 0.10), transparent 28%),
+            linear-gradient(180deg, #f8fafc 0%, #eef4f8 100%);
+    }
+
+    .app-light main {
+        background:
+            radial-gradient(circle at top right, rgba(14, 165, 233, 0.10), transparent 28%),
+            linear-gradient(180deg, #f8fafc 0%, #eef4f8 100%) !important;
+    }
+
+    .app-light .bg-slate-950,
+    .app-light .bg-slate-950\/45,
+    .app-light .bg-slate-950\/40,
+    .app-light .bg-slate-950\/70,
+    .app-light .bg-slate-900,
+    .app-light .bg-slate-900\/70 {
+        background-color: #ffffff !important;
+    }
+
+    .app-light .bg-white\/\[0\.04\],
+    .app-light .bg-white\/5,
+    .app-light .hover\:bg-white\/5:hover,
+    .app-light .hover\:bg-white\/10:hover,
+    .app-light .hover\:bg-white\/\[0\.04\]:hover {
+        background-color: #f8fafc !important;
+    }
+
+    .app-light .bg-slate-800,
+    .app-light .bg-slate-700 {
+        background-color: #e2e8f0 !important;
+    }
+
+    .app-light .border-white\/10,
+    .app-light .border-slate-700,
+    .app-light .border-slate-800 {
+        border-color: #e2e8f0 !important;
+    }
+
+    .app-light .text-white,
+    .app-light .text-slate-100,
+    .app-light .text-slate-200,
+    .app-light .text-slate-300 {
+        color: #0f172a !important;
+    }
+
+    .app-light .text-slate-400,
+    .app-light .text-slate-500,
+    .app-light .placeholder\:text-slate-600::placeholder {
+        color: #64748b !important;
+    }
+
+    .app-light input,
+    .app-light select,
+    .app-light textarea {
+        background-color: #ffffff !important;
+        border-color: #cbd5e1 !important;
+        color: #0f172a !important;
+        box-shadow: none;
+    }
+
+    .app-light input:focus,
+    .app-light select:focus,
+    .app-light textarea:focus {
+        border-color: #38bdf8 !important;
+        box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.14);
+    }
+
+    .app-light table thead,
+    .app-light .divide-white\/10 > :not([hidden]) ~ :not([hidden]) {
+        border-color: #e2e8f0 !important;
+    }
+
+    .app-light .shadow-slate-950\/20,
+    .app-light .shadow-slate-950\/40,
+    .app-light .shadow-sky-950\/30 {
+        --tw-shadow-color: rgba(15, 23, 42, 0.08) !important;
+        --tw-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.06) !important;
+    }
+
+    .executive-hybrid main {
+        background:
+            radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 28%),
+            linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%) !important;
+    }
+
+    .app-light h1,
+    .app-light h2,
+    .app-light h3,
+    .app-light h4,
+    .app-light .text-slate-950,
+    .app-light .text-slate-900 {
+        color: #0f172a !important;
+    }
+
+    .app-light p,
+    .app-light td,
+    .app-light label,
+    .app-light span {
+        color: inherit;
+    }
+
+    .app-light .text-slate-600,
+    .app-light .text-slate-700,
+    .app-light .text-slate-800 {
+        color: #334155 !important;
+    }
+
+    .app-light .text-slate-400,
+    .app-light .text-slate-500 {
+        color: #64748b !important;
+    }
+
+    .app-light .text-sky-100,
+    .app-light .text-sky-200,
+    .app-light .text-sky-300,
+    .app-light .text-cyan-100,
+    .app-light .text-cyan-200,
+    .app-light .text-blue-100,
+    .app-light .text-blue-200 {
+        color: #0369a1 !important;
+    }
+
+    .app-light .text-emerald-100,
+    .app-light .text-emerald-200,
+    .app-light .text-emerald-300,
+    .app-light .text-emerald-400 {
+        color: #047857 !important;
+    }
+
+    .app-light .text-amber-100,
+    .app-light .text-amber-200,
+    .app-light .text-amber-300,
+    .app-light .text-yellow-100,
+    .app-light .text-yellow-200,
+    .app-light .text-yellow-300 {
+        color: #b45309 !important;
+    }
+
+    .app-light .text-rose-100,
+    .app-light .text-rose-200,
+    .app-light .text-rose-300,
+    .app-light .text-red-100,
+    .app-light .text-red-200,
+    .app-light .text-red-300 {
+        color: #be123c !important;
+    }
+
+    .app-light .bg-sky-400,
+    .app-light .bg-sky-500 {
+        background-color: #0284c7 !important;
+        color: #ffffff !important;
+    }
+
+    .app-light .hover\:bg-sky-300:hover,
+    .app-light .hover\:bg-sky-600:hover {
+        background-color: #0369a1 !important;
+        color: #ffffff !important;
+    }
+
+    .app-light .bg-emerald-400\/10,
+    .app-light .bg-emerald-500\/15 {
+        background-color: #ecfdf5 !important;
+    }
+
+    .app-light .bg-rose-400\/10,
+    .app-light .bg-rose-500\/15 {
+        background-color: #fff1f2 !important;
+    }
+
+    .app-light .bg-amber-400\/10,
+    .app-light .bg-amber-500\/15,
+    .app-light .bg-yellow-400\/10 {
+        background-color: #fffbeb !important;
+    }
+
+    .app-light .bg-sky-400\/10,
+    .app-light .bg-sky-400\/15,
+    .app-light .bg-sky-500\/15,
+    .app-light .bg-cyan-400\/10 {
+        background-color: #f0f9ff !important;
+    }
+
+    .app-light .bg-slate-500\/15,
+    .app-light .bg-slate-400\/10 {
+        background-color: #f1f5f9 !important;
+    }
+
+    .app-light .border-sky-400\/20,
+    .app-light .border-sky-400\/30,
+    .app-light .border-sky-400\/40,
+    .app-light .border-sky-500\/20 {
+        border-color: #bae6fd !important;
+    }
+
+    .app-light .border-emerald-400\/20,
+    .app-light .border-emerald-400\/30,
+    .app-light .border-emerald-500\/20 {
+        border-color: #a7f3d0 !important;
+    }
+
+    .app-light .border-rose-400\/20,
+    .app-light .border-rose-400\/25,
+    .app-light .border-rose-400\/30,
+    .app-light .border-rose-500\/20 {
+        border-color: #fecdd3 !important;
+    }
+
+    .app-light .border-amber-400\/20,
+    .app-light .border-amber-400\/30,
+    .app-light .border-amber-500\/20 {
+        border-color: #fde68a !important;
+    }
+
+    .app-light button.bg-sky-400,
+    .app-light button.bg-sky-500,
+    .app-light a.bg-sky-400,
+    .app-light a.bg-sky-500,
+    .app-light .bg-sky-400 *,
+    .app-light .bg-sky-500 * {
+        color: #ffffff !important;
+    }
+
+    .app-light button:disabled,
+    .app-light .disabled\:bg-slate-700:disabled,
+    .app-light .disabled\:bg-slate-200:disabled {
+        background-color: #e2e8f0 !important;
+        color: #94a3b8 !important;
+    }
+
+    .product-cost-page {
+        background: #f8fafc !important;
+        color: #0f172a !important;
+    }
+
+    .product-cost-page .product-cost-content,
+    .product-cost-page .product-cost-formula {
+        background-color: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+    }
+
+    .product-cost-page .product-cost-header {
+        color: #0f172a !important;
+    }
+
+    .product-cost-page h1,
+    .product-cost-page h2,
+    .product-cost-page h3 {
+        color: #0f172a !important;
+    }
+
+    .product-cost-page p,
+    .product-cost-page div,
+    .product-cost-page span,
+    .product-cost-page label,
+    .product-cost-page td {
+        color: #334155 !important;
+    }
+
+    .product-cost-page table {
+        overflow: hidden;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 8px;
+        background-color: #ffffff !important;
+    }
+
+    .product-cost-page thead tr,
+    .product-cost-page th {
+        background-color: #eff6ff !important;
+        color: #1e3a8a !important;
+        border-color: #bfdbfe !important;
+        font-weight: 800 !important;
+    }
+
+    .product-cost-page tbody tr {
+        background-color: #ffffff !important;
+        border-color: #e2e8f0 !important;
+    }
+
+    .product-cost-page tbody tr:hover {
+        background-color: #f8fafc !important;
+    }
+
+    .product-cost-page td {
+        border-color: #e2e8f0 !important;
+        font-weight: 600;
+    }
+
+    .product-cost-page input,
+    .product-cost-page select {
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        color: #0f172a !important;
+    }
+
+    .product-cost-page input::placeholder {
+        color: #94a3b8 !important;
+    }
+
+    .product-cost-page input:focus,
+    .product-cost-page select:focus {
+        border-color: #0284c7 !important;
+        box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.14);
+    }
+
+    .product-cost-page button,
+    .product-cost-page label[for="cost-excel-upload"] {
+        border-radius: 8px !important;
+        font-weight: 800 !important;
+    }
+
+    .product-cost-page label[for="cost-excel-upload"] {
+        background-color: #0284c7 !important;
+        color: #ffffff !important;
+        box-shadow: 0 1px 2px rgba(2, 132, 199, 0.18);
+    }
+
+    .product-cost-page label[for="cost-excel-upload"] span {
+        color: #ffffff !important;
+    }
+
+    .product-cost-page button[style*="dashed"] {
+        background-color: #ffffff !important;
+        border-color: #38bdf8 !important;
+        color: #0369a1 !important;
+    }
+
+    .product-cost-page button[style*="none"] {
+        color: #0369a1 !important;
+    }
+
+    .product-cost-page button[style*="e57373"] {
+        color: #dc2626 !important;
+    }
+
+    .product-cost-page .product-cost-tabs {
+        background-color: transparent !important;
+        border-color: #e2e8f0 !important;
+        box-shadow: none;
+    }
+
+    .product-cost-page .product-cost-tabs button {
+        background-color: transparent !important;
+        color: #475569 !important;
+        border-color: transparent !important;
+    }
+
+    .product-cost-page .product-cost-tabs button.is-active {
+        background-color: #e0f2fe !important;
+        color: #0369a1 !important;
+        border-color: #0284c7 !important;
+    }
+
+    .product-cost-page .product-cost-tabs button span {
+        color: #0284c7 !important;
+    }
+
+    .product-cost-page .product-cost-formula {
+        background-color: #f0f9ff !important;
+        border-color: #bae6fd !important;
+    }
+
+    .product-cost-page .product-cost-formula span {
+        color: #0369a1 !important;
+        font-weight: 800;
+    }
+
+    .product-cost-page td.calculated-profit {
+        background-color: #f8fafc !important;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .product-cost-page td.calculated-profit.is-positive {
+        color: #047857 !important;
+    }
+
+    .product-cost-page td.calculated-profit.is-negative {
+        color: #dc2626 !important;
     }
 }

@@ -16,7 +16,7 @@ import java.util.Arrays;
  * and separate frontend deployments such as Vercel or Netlify.
  */
 @Configuration
-@EnableConfigurationProperties(AuthProperties.class)
+@EnableConfigurationProperties({AuthProperties.class, DaouProperties.class})
 public class WebConfig implements WebMvcConfigurer {
 
     private final AuthInterceptor authInterceptor;
@@ -32,9 +32,10 @@ public class WebConfig implements WebMvcConfigurer {
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
                 .allowedOriginPatterns(parseCsv(allowedOriginPatterns))
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .exposedHeaders("Authorization")
+                .allowCredentials(true)
                 .maxAge(3600);
     }
 

@@ -5,7 +5,7 @@ export const count = (value, suffix = '') => `${Math.round(Number(value ?? 0)).t
 export const pct = (value) => `${Number(value ?? 0).toFixed(1)}%`
 
 export const riskClass = (value) => {
-  if (['위험', '회수 필요', 'CRITICAL', 'HIGH', 'DELAYED', 'LOW_MARGIN'].includes(value)) {
+  if (['위험', '필수 필요', 'CRITICAL', 'HIGH', 'DELAYED', 'LOW_MARGIN'].includes(value)) {
     return 'border-rose-500/30 bg-rose-500/15 text-rose-200'
   }
   if (['주의', 'WATCH', 'LOW_STOCK', 'OVER_STOCK', 'EXPECTED', 'SCHEDULED', 'CONSERVATIVE'].includes(value)) {
@@ -19,7 +19,7 @@ export const statusLabel = (value) => {
     NORMAL: '정상',
     WATCH: '주의',
     HIGH: '위험',
-    CRITICAL: '회수 필요',
+    CRITICAL: '필수 필요',
     EXPECTED: '예정',
     SCHEDULED: '예정',
     CONFIRMED: '확정',

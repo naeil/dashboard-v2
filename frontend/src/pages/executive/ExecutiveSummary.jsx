@@ -413,13 +413,21 @@ export default function ExecutiveSummary({ onNavigate }) {
         <Panel title="월 매출 / 영업이익" right={<StatusBadge value={summary.cashRiskStatus} />}>
           <div className="flex h-72 items-end gap-4">
             {monthly.map((row) => {
-              const salesHeight = chartMax > 0 ? (Number(row.sales_amount || 0) / chartMax) * 100 : 0
-              const profitHeight = chartMax > 0 ? (Number(row.operating_profit || 0) / chartMax) * 100 : 0
+              const salesValue = Number(row.sales_amount || 0)
+              const profitValue = Number(row.operating_profit || 0)
+              const salesHeight = chartMax > 0 ? (salesValue / chartMax) * 100 : 0
+              const profitHeight = chartMax > 0 ? (profitValue / chartMax) * 100 : 0
               return (
                 <div key={row.report_month} className="flex min-w-0 flex-1 flex-col items-center gap-3">
                   <div className="flex h-56 w-full items-end justify-center gap-1 rounded-lg bg-slate-950/50 px-2">
-                    <div className="w-1/2 rounded-t-md bg-sky-400" style={{ height: `${Math.max(4, salesHeight)}%` }} />
-                    <div className="w-1/2 rounded-t-md bg-emerald-400" style={{ height: `${Math.max(4, profitHeight)}%` }} />
+                    <div
+                      className="w-1/2 rounded-t-md bg-sky-400"
+                      style={{ height: `${salesValue > 0 ? Math.max(4, salesHeight) : 0}%` }}
+                    />
+                    <div
+                      className="w-1/2 rounded-t-md bg-emerald-400"
+                      style={{ height: `${profitValue > 0 ? Math.max(4, profitHeight) : 0}%` }}
+                    />
                   </div>
                   <span className="block truncate text-xs font-bold text-slate-500">{String(row.report_month).slice(0, 7)}</span>
                 </div>

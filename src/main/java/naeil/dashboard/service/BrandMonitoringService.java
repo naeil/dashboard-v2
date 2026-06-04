@@ -90,6 +90,7 @@ public class BrandMonitoringService {
                 searchedAt,
                 summary,
                 buildInsights(summary),
+                List.of(),
                 results
         );
     }

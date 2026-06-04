@@ -9,14 +9,12 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Base64;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import naeil.dashboard.common.exception.CustomException;
 import naeil.dashboard.dto.BrandMonitoringResultDto;
 import naeil.dashboard.dto.BrandMonitoringSearchResponse;
@@ -24,6 +22,7 @@ import naeil.dashboard.dto.BrandMonitoringSummaryDto;
 import naeil.dashboard.entity.KeywordTrendLog;
 import naeil.dashboard.repository.KeywordTrendLogRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -38,9 +37,9 @@ import org.springframework.web.util.UriComponentsBuilder;
 public class MarketingService {
 
     private static final String NAVER_SEARCH_BASE_URL = "https://openapi.naver.com/v1/search";
-    private static final String NAVER_AD_BASE_URL = "https://api.searchad.naver.com";
+    private static final String META_GRAPH_BASE_URL = "https://graph.facebook.com/v19.0";
     private static final int DISPLAY_COUNT = 10;
-    private static final int NAVER_AD_ID_CHUNK_SIZE = 100;
+    private static final int RECENT_POSTING_DISPLAY_COUNT = 100;
 
     private final KeywordTrendLogRepository keywordTrendLogRepository;
     private final JdbcTemplate jdbcTemplate;
@@ -48,9 +47,6 @@ public class MarketingService {
     private final RestClient restClient;
     private final String naverClientId;
     private final String naverClientSecret;
-    private final String naverAdCustomerId;
-    private final String naverAdAccessLicense;
-    private final String naverAdSecretKey;
     private final String metaAccessToken;
     private final String metaAdAccountId;
 
@@ -61,9 +57,6 @@ public class MarketingService {
             RestClient.Builder restClientBuilder,
             @Value("${naver.client-id:}") String naverClientId,
             @Value("${naver.client-secret:}") String naverClientSecret,
-            @Value("${naver-ad.customer-id:}") String naverAdCustomerId,
-            @Value("${naver-ad.access-license:}") String naverAdAccessLicense,
-            @Value("${naver-ad.secret-key:}") String naverAdSecretKey,
             @Value("${meta.access-token:}") String metaAccessToken,
             @Value("${meta.ad-account-id:}") String metaAdAccountId
     ) {
@@ -73,9 +66,6 @@ public class MarketingService {
         this.restClient = restClientBuilder.build();
         this.naverClientId = naverClientId;
         this.naverClientSecret = naverClientSecret;
-        this.naverAdCustomerId = naverAdCustomerId;
-        this.naverAdAccessLicense = naverAdAccessLicense;
-        this.naverAdSecretKey = naverAdSecretKey;
         this.metaAccessToken = metaAccessToken;
         this.metaAdAccountId = metaAdAccountId;
     }
@@ -87,14 +77,20 @@ public class MarketingService {
             throw new CustomException(400, "검색 키워드를 입력해주세요.");
         }
         if (isBlank(naverClientId) || isBlank(naverClientSecret)) {
-            throw new CustomException(400, "NAVER API 키가 설정되지 않았습니다");
+            throw new CustomException(400, "NAVER API 키가 설정되지 않았습니다.");
         }
 
         LocalDateTime searchedAt = LocalDateTime.now();
+        SearchChannelResult blogResult = searchChannel("BLOG", "blog", normalizedKeyword, null, DISPLAY_COUNT);
+        SearchChannelResult newsResult = searchChannel("NEWS", "news", normalizedKeyword, null, DISPLAY_COUNT);
+        SearchChannelResult webResult = searchChannel("WEB", "webkr", normalizedKeyword, null, DISPLAY_COUNT);
+        SearchChannelResult recentBlogResult = searchChannel("BLOG", "blog", normalizedKeyword, "date", RECENT_POSTING_DISPLAY_COUNT);
+        SearchChannelResult recentNewsResult = searchChannel("NEWS", "news", normalizedKeyword, "date", RECENT_POSTING_DISPLAY_COUNT);
+
         List<BrandMonitoringResultDto> results = new ArrayList<>();
-        results.addAll(searchChannel("BLOG", "blog", normalizedKeyword));
-        results.addAll(searchChannel("NEWS", "news", normalizedKeyword));
-        results.addAll(searchChannel("WEB", "webkr", normalizedKeyword));
+        results.addAll(blogResult.results());
+        results.addAll(newsResult.results());
+        results.addAll(webResult.results());
 
         keywordTrendLogRepository.saveAll(results.stream()
                 .map(result -> new KeywordTrendLog(
@@ -108,40 +104,102 @@ public class MarketingService {
                 ))
                 .toList());
 
-        int blogCount = countByChannel(results, "BLOG");
-        int newsCount = countByChannel(results, "NEWS");
-        int webCount = countByChannel(results, "WEB");
-        BrandMonitoringSummaryDto summary = new BrandMonitoringSummaryDto(results.size(), blogCount, newsCount, webCount);
+        int blogCount = safeTotalCount(blogResult.totalCount());
+        int newsCount = safeTotalCount(newsResult.totalCount());
+        int webCount = safeTotalCount(webResult.totalCount());
+        BrandMonitoringSummaryDto summary = new BrandMonitoringSummaryDto(
+                safeTotalCount((long) blogCount + newsCount + webCount),
+                blogCount,
+                newsCount,
+                webCount
+        );
+
+        List<BrandMonitoringResultDto> recentResults = new ArrayList<>();
+        recentResults.addAll(recentBlogResult.results());
+        recentResults.addAll(recentNewsResult.results());
 
         return new BrandMonitoringSearchResponse(
                 normalizedKeyword,
                 searchedAt,
                 summary,
                 buildKeywordInsights(summary),
+                buildPostingWindows(recentResults),
                 results
         );
     }
 
-    @Transactional
-    public Map<String, Object> getNaverCpcPerformance(LocalDate from, LocalDate to) {
-        validateRange(from, to);
-        if (isBlank(naverAdCustomerId) || isBlank(naverAdAccessLicense) || isBlank(naverAdSecretKey)) {
-            throw new CustomException(400, "API 키가 설정되지 않았습니다");
-        }
-
-        List<Map<String, Object>> liveRows = fetchNaverCpcRows(from, to);
-        replaceNaverCpcRows(from, to, liveRows);
-
-        List<Map<String, Object>> rows = loadNaverCpcRows(from, to);
-        return performanceResponse("NAVER_CPC", from, to, rows, summarizeNaverRows(rows));
+    public Map<String, Object> getLinkedSearchKeywords(String adType, int limit) {
+        int safeLimit = Math.max(1, Math.min(limit <= 0 ? 30 : limit, 100));
+        String normalizedAdType = normalizeNaverAdType(adType);
+        List<Map<String, Object>> rows = loadRecentPerformanceKeywords(normalizedAdType, safeLimit);
+        return Map.of(
+                "source", "NAVER_SEARCH_AD_LINKED_KEYWORDS",
+                "adType", normalizedAdType,
+                "count", rows.size(),
+                "keywords", rows
+        );
     }
 
-    public Map<String, Object> getMetaAdsPerformance(LocalDate from, LocalDate to) {
+    public Map<String, Object> getNaverCpcPerformance(LocalDate from, LocalDate to, String adType) {
+        return getNaverCpcPerformance(from, to, adType, null);
+    }
+
+    public Map<String, Object> getNaverCpcPerformance(LocalDate from, LocalDate to, String adType, String query) {
         validateRange(from, to);
-        if (isBlank(metaAccessToken) || isBlank(metaAdAccountId)) {
-            throw new CustomException(400, "API 키가 설정되지 않았습니다");
+        String normalizedAdType = normalizeNaverAdType(adType);
+        List<Map<String, Object>> rows = loadNaverCpcRows(from, to, normalizedAdType, query);
+        Map<String, Object> response = performanceResponse("NAVER_CPC", from, to, rows, summarizeNaverRows(rows));
+        response.put("adType", normalizedAdType);
+        response.put("query", query == null ? "" : query.trim());
+        return response;
+    }
+
+    @Cacheable(value = "metaAdsPerformance", key = "#from + ':' + #to + ':' + #level")
+    public Map<String, Object> getMetaAdsPerformance(String from, String to, String level) {
+        LocalDate fromDate = parseDate(from, "from");
+        LocalDate toDate = parseDate(to, "to");
+        validateRange(fromDate, toDate);
+        if (isBlank(metaAccessToken)) {
+            throw new CustomException(400, "Meta 액세스 토큰이 설정되지 않았습니다.");
+        }
+        if (isBlank(metaAdAccountId)) {
+            throw new CustomException(400, "Meta 광고 계정 ID가 설정되지 않았습니다.");
         }
 
+        String normalizedLevel = normalizeMetaLevel(level);
+        List<Map<String, Object>> rows = fetchMetaAdsRows(fromDate, toDate, normalizedLevel);
+        Map<String, Object> response = performanceResponse("META_ADS", fromDate, toDate, rows, summarizeMetaRows(rows));
+        response.put("level", normalizedLevel);
+        return response;
+    }
+
+    @Cacheable(value = "metaAdCreatives", key = "#from + ':' + #to")
+    public Map<String, Object> getMetaAdCreatives(String from, String to) {
+        LocalDate fromDate = parseDate(from, "from");
+        LocalDate toDate = parseDate(to, "to");
+        validateRange(fromDate, toDate);
+        if (isBlank(metaAccessToken)) {
+            throw new CustomException(400, "Meta 액세스 토큰이 설정되지 않았습니다.");
+        }
+        if (isBlank(metaAdAccountId)) {
+            throw new CustomException(400, "Meta 광고 계정 ID가 설정되지 않았습니다.");
+        }
+
+        List<Map<String, Object>> rows = fetchMetaAdCreativeRows(fromDate, toDate);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("source", "META_AD_CREATIVES");
+        response.put("from", fromDate);
+        response.put("to", toDate);
+        response.put("rows", rows);
+        if (rows.isEmpty()) {
+            response.put("message", "표시할 광고 소재가 없습니다.");
+        }
+        return response;
+    }
+
+    @Deprecated
+    private Map<String, Object> getMetaAdsPerformanceFromDb(LocalDate from, LocalDate to) {
+        validateRange(from, to);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT date,
                        campaign_name AS "campaignName",
@@ -160,19 +218,20 @@ public class MarketingService {
                  ORDER BY date DESC, cost DESC
                 """, from, to);
 
-        return performanceResponse("META_ADS", from, to, addMetaCpa(rows), summarizeMetaRows(rows));
+        return performanceResponse("META_ADS_DB_DEPRECATED", from, to, addMetaCpa(rows), summarizeMetaRows(rows));
     }
 
     @Transactional
     public Map<String, Object> getAiAnalysisSummary(LocalDate from, LocalDate to) {
         validateRange(from, to);
 
-        Map<String, Object> naverSummary = summarizeNaverRows(loadNaverCpcRows(from, to));
-        Map<String, Object> metaSummary = summarizeMetaRows(jdbcTemplate.queryForList("""
-                SELECT impressions, clicks, ctr, cpc, cpm, cost, conversions, roas, campaign_name AS "campaignName"
-                  FROM meta_ads_daily_stats
-                 WHERE date BETWEEN ? AND ?
-                """, from, to));
+        Map<String, Object> naverSummary = summarizeNaverRows(loadNaverCpcRows(from, to, "ALL"));
+        Map<String, Object> metaSummary;
+        try {
+            metaSummary = summarizeMetaRows(fetchMetaAdsRows(from, to, "campaign"));
+        } catch (CustomException e) {
+            metaSummary = summarizeMetaRows(List.of());
+        }
         Map<String, Object> keywordSummary = keywordExposureSummary(from, to);
 
         List<String> risks = new ArrayList<>();
@@ -184,37 +243,33 @@ public class MarketingService {
         );
 
         if (totalAdCost.compareTo(BigDecimal.ZERO) == 0) {
-            risks.add("해당 기간 광고비 데이터가 없습니다. 네이버 CPC와 Meta 광고 데이터 적재 상태를 확인해야 합니다.");
-            actions.add("광고 API 연결과 일별 성과 적재를 먼저 확인해 캠페인별 손익 판단 기준을 만드세요.");
+            risks.add("해당 기간 광고 데이터가 없습니다. 네이버 CPC와 Meta 광고 연동 상태를 확인해야 합니다.");
+            actions.add("광고 API 연결과 캠페인 성과 적재를 먼저 확인하고 캠페인별 목표를 설정하세요.");
         } else {
             if (blendedCtr.compareTo(BigDecimal.valueOf(1.0)) < 0) {
-                risks.add("전체 CTR이 1% 미만입니다. 노출 대비 클릭 부족 캠페인을 우선 점검해야 합니다.");
-                actions.add("CTR 낮은 캠페인은 소재, 타겟, 키워드를 분리해 예산을 즉시 제한하세요.");
+                risks.add("전체 CTR이 1% 미만입니다. 노출 대비 클릭이 부족한 캠페인을 우선 점검해야 합니다.");
+                actions.add("CTR이 낮은 캠페인의 소재, 타겟, 키워드를 분리하고 예산을 조정하세요.");
             }
             if (decimal(naverSummary.get("avgCpc")).compareTo(BigDecimal.valueOf(800)) > 0) {
-                risks.add("네이버 평균 CPC가 800원을 초과했습니다. CPC 과다 키워드가 있을 가능성이 높습니다.");
-                actions.add("고CPC 키워드는 전환 데이터가 없으면 입찰가를 낮추고 브랜드/제품명 키워드 중심으로 재배치하세요.");
+                risks.add("네이버 평균 CPC가 800원을 초과했습니다. 고비용 키워드가 있는지 확인하세요.");
+                actions.add("고CPC 키워드는 전환 데이터와 함께 검토하고 브랜드/제품명 중심으로 재배치하세요.");
             }
         }
 
-        if (intValue(keywordSummary.get("blogCount")) < 5) {
-            risks.add("블로그 노출이 부족합니다. 키워드 콘텐츠 확장이 필요합니다.");
-            actions.add("단백깡, 하이프리, 단백질 과자 중심으로 후기형 콘텐츠를 늘리세요.");
+        if (longValue(keywordSummary.get("blogCount")) < 5) {
+            risks.add("블로그 노출이 부족합니다. 후기, 비교, 제품 사용 맥락 콘텐츠를 보강하세요.");
         }
-        if (intValue(keywordSummary.get("newsCount")) < 3) {
-            risks.add("뉴스 노출이 부족합니다. 브랜드 검색 신뢰도 확보가 약합니다.");
-            actions.add("보도자료나 유통/수출 성과 메시지를 준비해 검색 노출 채널을 보강하세요.");
+        if (longValue(keywordSummary.get("newsCount")) < 3) {
+            risks.add("뉴스 노출이 부족합니다. 보도자료 또는 브랜드 신뢰 콘텐츠가 필요합니다.");
         }
-
         if (risks.isEmpty()) {
-            risks.add("현재 기간에는 규칙 기준의 중대 마케팅 위험이 감지되지 않았습니다.");
+            risks.add("현재 기간에는 주요 마케팅 위험이 감지되지 않았습니다.");
         }
         if (actions.isEmpty()) {
-            actions.add("성과가 확인되는 온라인 채널 예산을 유지하고, 수출/국내 집중 방향은 채널별 매출 데이터와 함께 판단하세요.");
+            actions.add("성과가 확인되는 채널 예산은 유지하고, 검색 노출 공백 키워드를 보강하세요.");
         }
 
-        String summary = "광고비, CTR, CPC, 브랜드 검색 노출을 기준으로 점검했습니다. "
-                + "의사결정은 온라인 판매 기여도와 키워드 노출 부족 여부를 우선 기준으로 보세요.";
+        String summary = "광고비, CTR, CPC, 브랜드 검색 노출을 기준으로 마케팅 상태를 분석했습니다.";
 
         jdbcTemplate.update("""
                 INSERT INTO marketing_ai_analysis_logs (from_date, to_date, analysis_type, summary, risks, recommended_actions)
@@ -235,333 +290,251 @@ public class MarketingService {
         );
     }
 
-    private List<Map<String, Object>> fetchNaverCpcRows(LocalDate from, LocalDate to) {
-        List<NaverCampaign> campaigns = fetchNaverCampaigns();
-        Map<String, NaverCampaign> campaignById = campaigns.stream()
-                .collect(LinkedHashMap::new, (map, campaign) -> map.put(campaign.id(), campaign), Map::putAll);
-        List<NaverAdGroup> adGroups = fetchNaverAdGroups(campaigns);
-        Map<String, NaverAdGroup> adGroupById = adGroups.stream()
-                .collect(LinkedHashMap::new, (map, adGroup) -> map.put(adGroup.id(), adGroup), Map::putAll);
-        List<NaverKeyword> keywords = fetchNaverKeywords(adGroups);
-
-        List<Map<String, Object>> rows = new ArrayList<>();
-        if (!keywords.isEmpty()) {
-            for (List<NaverKeyword> chunk : chunks(keywords, NAVER_AD_ID_CHUNK_SIZE)) {
-                rows.addAll(fetchNaverKeywordStats(from, to, chunk, campaignById, adGroupById));
-            }
-            if (!rows.isEmpty()) {
-                return rows;
-            }
-        }
-
-        for (List<NaverCampaign> chunk : chunks(campaigns, NAVER_AD_ID_CHUNK_SIZE)) {
-            rows.addAll(fetchNaverCampaignStats(from, to, chunk));
-        }
-        return rows;
-    }
-
-    private List<NaverCampaign> fetchNaverCampaigns() {
-        JsonNode body = naverAdGet("/ncc/campaigns", Map.of());
-        List<NaverCampaign> campaigns = new ArrayList<>();
-        if (body.isArray()) {
-            for (JsonNode item : body) {
-                String id = item.path("nccCampaignId").asText("");
-                if (!id.isBlank()) {
-                    campaigns.add(new NaverCampaign(id, item.path("name").asText(item.path("campaignName").asText(id))));
-                }
-            }
-        }
-        return campaigns;
-    }
-
-    private List<NaverAdGroup> fetchNaverAdGroups(List<NaverCampaign> campaigns) {
-        List<NaverAdGroup> adGroups = new ArrayList<>();
-        for (NaverCampaign campaign : campaigns) {
-            JsonNode body = naverAdGet("/ncc/adgroups", Map.of("nccCampaignId", campaign.id()));
-            if (!body.isArray()) {
-                continue;
-            }
-            for (JsonNode item : body) {
-                String id = item.path("nccAdgroupId").asText("");
-                if (!id.isBlank()) {
-                    String campaignId = item.path("nccCampaignId").asText(campaign.id());
-                    String name = item.path("name").asText(item.path("adgroupName").asText(id));
-                    adGroups.add(new NaverAdGroup(id, campaignId, name));
-                }
-            }
-        }
-        return adGroups;
-    }
-
-    private List<NaverKeyword> fetchNaverKeywords(List<NaverAdGroup> adGroups) {
-        List<NaverKeyword> keywords = new ArrayList<>();
-        for (NaverAdGroup adGroup : adGroups) {
-            JsonNode body = naverAdGet("/ncc/keywords", Map.of("nccAdgroupId", adGroup.id()));
-            if (!body.isArray()) {
-                continue;
-            }
-            for (JsonNode item : body) {
-                String id = item.path("nccKeywordId").asText("");
-                if (!id.isBlank()) {
-                    String text = item.path("keyword").asText(item.path("name").asText(id));
-                    keywords.add(new NaverKeyword(id, adGroup.id(), text));
-                }
-            }
-        }
-        return keywords;
-    }
-
-    private List<Map<String, Object>> fetchNaverKeywordStats(
-            LocalDate from,
-            LocalDate to,
-            List<NaverKeyword> keywords,
-            Map<String, NaverCampaign> campaignById,
-            Map<String, NaverAdGroup> adGroupById
-    ) {
-        Map<String, NaverKeyword> keywordById = keywords.stream()
-                .collect(HashMap::new, (map, keyword) -> map.put(keyword.id(), keyword), Map::putAll);
-        JsonNode body = naverStatsGet(from, to, keywordById.keySet().stream().toList());
-
-        List<Map<String, Object>> rows = new ArrayList<>();
-        for (JsonNode stat : statsItems(body)) {
-            String keywordId = stat.path("id").asText(stat.path("nccKeywordId").asText(""));
-            NaverKeyword keyword = keywordById.get(keywordId);
-            if (keyword == null) {
-                continue;
-            }
-            NaverAdGroup adGroup = adGroupById.get(keyword.adGroupId());
-            NaverCampaign campaign = adGroup == null ? null : campaignById.get(adGroup.campaignId());
-            rows.add(naverStatRow(
-                    from,
-                    campaign == null ? "미확인 캠페인" : campaign.name(),
-                    adGroup == null ? "미확인 광고그룹" : adGroup.name(),
-                    keyword.text(),
-                    stat
-            ));
-        }
-        return rows;
-    }
-
-    private List<Map<String, Object>> fetchNaverCampaignStats(
-            LocalDate from,
-            LocalDate to,
-            List<NaverCampaign> campaigns
-    ) {
-        Map<String, NaverCampaign> campaignById = campaigns.stream()
-                .collect(HashMap::new, (map, campaign) -> map.put(campaign.id(), campaign), Map::putAll);
-        JsonNode body = naverStatsGet(from, to, campaignById.keySet().stream().toList());
-
-        List<Map<String, Object>> rows = new ArrayList<>();
-        for (JsonNode stat : statsItems(body)) {
-            String campaignId = stat.path("id").asText("");
-            NaverCampaign campaign = campaignById.get(campaignId);
-            rows.add(naverStatRow(
-                    from,
-                    campaign == null ? "미확인 캠페인" : campaign.name(),
-                    "-",
-                    "-",
-                    stat
-            ));
-        }
-        return rows;
-    }
-
-    private JsonNode naverStatsGet(LocalDate from, LocalDate to, List<String> ids) {
-        URI uri = buildNaverStatsUri(from, to, ids);
-        Map<String, String> headers = naverAdHeaders("GET", "/stats");
+    private SearchChannelResult searchChannel(String channel, String endpoint, String keyword, String sort, int displayCount) {
+        URI uri = UriComponentsBuilder.fromHttpUrl(NAVER_SEARCH_BASE_URL + "/" + endpoint + ".json")
+                .queryParam("query", keyword)
+                .queryParam("display", displayCount)
+                .queryParam("start", 1)
+                .queryParam("sort", sort == null ? "sim" : sort)
+                .build()
+                .encode(StandardCharsets.UTF_8)
+                .toUri();
         try {
             String body = restClient.get()
                     .uri(uri)
-                    .headers(httpHeaders -> headers.forEach(httpHeaders::set))
+                    .header("X-Naver-Client-Id", naverClientId)
+                    .header("X-Naver-Client-Secret", naverClientSecret)
+                    .header(HttpHeaders.CONTENT_TYPE, "application/json; charset=UTF-8")
                     .retrieve()
                     .body(String.class);
-            return objectMapper.readTree(body == null ? "{}" : body);
+            JsonNode root = objectMapper.readTree(body == null ? "{}" : body);
+            List<BrandMonitoringResultDto> results = new ArrayList<>();
+            for (JsonNode item : root.path("items")) {
+                results.add(new BrandMonitoringResultDto(
+                        channel,
+                        cleanHtml(item.path("title").asText("")),
+                        cleanHtml(item.path("description").asText("")),
+                        item.path("link").asText(""),
+                        firstText(item, "postdate", "pubDate")
+                ));
+            }
+            return new SearchChannelResult(results, root.path("total").asLong(results.size()));
         } catch (RestClientResponseException e) {
-            throw new CustomException(502, "네이버 검색광고 API 실패: /stats / "
-                    + e.getStatusCode().value() + " / " + safeNaverErrorBody(e.getResponseBodyAsString()));
-        } catch (RestClientException e) {
-            throw new CustomException(502, "네이버 검색광고 API 통신 실패: /stats");
-        } catch (JsonProcessingException e) {
-            throw new CustomException(502, "네이버 검색광고 응답을 처리하지 못했습니다");
+            throw new CustomException(502, "네이버 검색 API 실패: " + e.getStatusCode().value());
+        } catch (RestClientException | JsonProcessingException e) {
+            throw new CustomException(502, "네이버 검색 데이터를 불러오지 못했습니다.");
         }
     }
 
-    private URI buildNaverStatsUri(LocalDate from, LocalDate to, List<String> ids) {
-        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(NAVER_AD_BASE_URL + "/stats");
-        ids.forEach(id -> builder.queryParam("ids", id));
-        builder.queryParam("fields", toJson(List.of("impCnt", "clkCnt", "ctr", "cpc", "salesAmt", "ccnt")));
-        builder.queryParam("timeRange", "{\"since\":\"" + from + "\",\"until\":\"" + to + "\"}");
-        return builder.build().encode().toUri();
-    }
-
-    private JsonNode naverAdGet(String path, Map<String, String> params) {
-        URI uri = buildNaverAdUri(path, params);
-        Map<String, String> headers = naverAdHeaders("GET", path);
+    private List<Map<String, Object>> fetchMetaAdsRows(LocalDate from, LocalDate to, String level) {
+        URI uri = buildMetaAdsInsightsUri(from, to, level);
         try {
             String body = restClient.get()
                     .uri(uri)
-                    .headers(httpHeaders -> headers.forEach(httpHeaders::set))
+                    .header(HttpHeaders.CONTENT_TYPE, "application/json; charset=UTF-8")
                     .retrieve()
                     .body(String.class);
-            return objectMapper.readTree(body == null ? "[]" : body);
+            JsonNode data = objectMapper.readTree(body == null ? "{}" : body).path("data");
+            if (!data.isArray()) {
+                return List.of();
+            }
+
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (JsonNode item : data) {
+                rows.add(metaAdsRow(item));
+            }
+            return rows;
         } catch (RestClientResponseException e) {
-            throw new CustomException(502, "네이버 검색광고 API 실패: " + path + " / "
-                    + e.getStatusCode().value() + " / " + safeNaverErrorBody(e.getResponseBodyAsString()));
+            throw metaAdsException(e.getResponseBodyAsString(StandardCharsets.UTF_8));
         } catch (RestClientException e) {
-            throw new CustomException(502, "네이버 검색광고 API 통신 실패: " + path);
+            throw new CustomException(502, "Meta 광고 API 통신 실패: " + e.getMessage());
         } catch (JsonProcessingException e) {
-            throw new CustomException(502, "네이버 검색광고 응답을 처리하지 못했습니다");
+            throw new CustomException(502, "Meta 광고 응답을 처리하지 못했습니다.");
         }
     }
 
-    private String safeNaverErrorBody(String body) {
-        if (body == null || body.isBlank()) {
-            return "응답 본문 없음";
-        }
-        return body.length() > 300 ? body.substring(0, 300) : body;
+    private URI buildMetaAdsInsightsUri(LocalDate from, LocalDate to, String level) {
+        String timeRange = "{\"since\":\"" + from + "\",\"until\":\"" + to + "\"}";
+        return UriComponentsBuilder.fromHttpUrl(META_GRAPH_BASE_URL + "/" + normalizeMetaAccountId(metaAdAccountId) + "/insights")
+                .queryParam("access_token", metaAccessToken)
+                .queryParam("fields", "campaign_name,spend,impressions,clicks,ctr,cpc,reach,actions")
+                .queryParam("time_range", timeRange)
+                .queryParam("level", level)
+                .build()
+                .encode(StandardCharsets.UTF_8)
+                .toUri();
     }
 
-    private URI buildNaverAdUri(String path, Map<String, String> params) {
-        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(NAVER_AD_BASE_URL + path);
-        params.forEach(builder::queryParam);
-        return builder.build().encode().toUri();
-    }
-
-    private Map<String, String> naverAdHeaders(String method, String path) {
-        String timestamp = String.valueOf(System.currentTimeMillis());
-        String message = timestamp + "." + method + "." + path;
-        String signature = hmacSha256Base64(naverAdSecretKey, message);
-        Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("X-Timestamp", timestamp);
-        headers.put("X-API-KEY", naverAdAccessLicense);
-        headers.put("X-Customer", naverAdCustomerId);
-        headers.put("X-Signature", signature);
-        headers.put(HttpHeaders.CONTENT_TYPE, "application/json; charset=UTF-8");
-        return headers;
-    }
-
-    private String hmacSha256Base64(String secretKey, String message) {
-        try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            return Base64.getEncoder().encodeToString(mac.doFinal(message.getBytes(StandardCharsets.UTF_8)));
-        } catch (Exception e) {
-            throw new CustomException(500, "네이버 검색광고 서명 생성에 실패했습니다");
-        }
-    }
-
-    private String toJson(Object value) {
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (JsonProcessingException e) {
-            throw new CustomException(500, "요청 파라미터 생성에 실패했습니다");
-        }
-    }
-
-    private Iterable<JsonNode> statsItems(JsonNode body) {
-        JsonNode data = body.has("data") ? body.path("data") : body;
-        if (!data.isArray()) {
-            return List.of();
-        }
-        List<JsonNode> items = new ArrayList<>();
-        data.forEach(items::add);
-        return items;
-    }
-
-    private Map<String, Object> naverStatRow(
-            LocalDate date,
-            String campaignName,
-            String adGroupName,
-            String keyword,
-            JsonNode stat
-    ) {
-        long impressions = metricLong(stat, "impCnt");
-        long clicks = metricLong(stat, "clkCnt");
-        BigDecimal cost = metricDecimal(stat, "salesAmt");
-        BigDecimal ctr = metricDecimal(stat, "ctr");
-        if (ctr.compareTo(BigDecimal.ZERO) == 0) {
-            ctr = weightedCtr(impressions, clicks);
-        }
-        BigDecimal avgCpc = metricDecimal(stat, "cpc");
-        if (avgCpc.compareTo(BigDecimal.ZERO) == 0 && clicks > 0) {
-            avgCpc = cost.divide(BigDecimal.valueOf(clicks), 2, RoundingMode.HALF_UP);
-        }
+    private Map<String, Object> metaAdsRow(JsonNode item) {
+        BigDecimal cost = decimal(item.path("spend").asText("0"));
+        long conversions = metaActionValue(item.path("actions"), List.of(
+                "purchase",
+                "omni_purchase",
+                "offsite_conversion.fb_pixel_purchase",
+                "onsite_conversion.purchase"
+        ));
 
         Map<String, Object> row = new LinkedHashMap<>();
-        row.put("date", date);
-        row.put("campaignName", campaignName);
-        row.put("adGroupName", adGroupName);
-        row.put("keyword", keyword);
-        row.put("impressions", impressions);
-        row.put("clicks", clicks);
-        row.put("ctr", ctr);
-        row.put("avgCpc", avgCpc);
+        row.put("campaignName", item.path("campaign_name").asText("-"));
+        row.put("spend", cost);
         row.put("cost", cost);
-        row.put("conversions", metricNullableLong(stat, "ccnt"));
+        row.put("impressions", item.path("impressions").asLong(0));
+        row.put("reach", item.path("reach").asLong(0));
+        row.put("clicks", item.path("clicks").asLong(0));
+        row.put("ctr", decimal(item.path("ctr").asText("0")));
+        row.put("cpc", decimal(item.path("cpc").asText("0")));
+        row.put("conversions", conversions);
+        row.put("cpa", conversions > 0 ? cost.divide(BigDecimal.valueOf(conversions), 2, RoundingMode.HALF_UP) : null);
+        row.put("roas", BigDecimal.ZERO);
         return row;
     }
 
-    private long metricLong(JsonNode node, String key) {
-        return metricDecimal(node, key).longValue();
+    private RuntimeException metaAdsException(String responseBody) {
+        String message = responseBody == null || responseBody.isBlank() ? "응답 본문 없음" : responseBody;
+        int code = 0;
+        try {
+            JsonNode error = objectMapper.readTree(responseBody == null ? "{}" : responseBody).path("error");
+            code = error.path("code").asInt(0);
+            message = error.path("message").asText(message);
+        } catch (JsonProcessingException ignored) {
+            // 원본 응답 메시지를 그대로 사용합니다.
+        }
+
+        if (code == 190) {
+            return new CustomException(401, "Meta 토큰 만료. 갱신 필요.");
+        }
+        if (code == 200) {
+            return new CustomException(403, "광고 계정 권한 없음");
+        }
+        if (code == 17 || code == 80004) {
+            return new CustomException(429, "잠시 후 재시도");
+        }
+        return new CustomException(502, "Meta 광고 API 오류: " + message);
     }
 
-    private Long metricNullableLong(JsonNode node, String key) {
-        JsonNode value = metricNode(node, key);
-        if (value == null || value.isMissingNode() || value.isNull()) {
-            return null;
-        }
-        return value.asLong(0L);
-    }
-
-    private BigDecimal metricDecimal(JsonNode node, String key) {
-        JsonNode value = metricNode(node, key);
-        if (value == null || value.isMissingNode() || value.isNull()) {
-            return BigDecimal.ZERO;
-        }
-        if (value.isNumber()) {
-            return value.decimalValue();
-        }
-        String text = value.asText("").replace(",", "").trim();
-        if (text.isBlank()) {
-            return BigDecimal.ZERO;
-        }
-        return new BigDecimal(text);
-    }
-
-    private JsonNode metricNode(JsonNode node, String key) {
-        if (node.has(key)) {
-            return node.path(key);
-        }
-        if (node.has("metrics") && node.path("metrics").has(key)) {
-            return node.path("metrics").path(key);
-        }
-        return node.path("summary").path(key);
-    }
-
-    private void replaceNaverCpcRows(LocalDate from, LocalDate to, List<Map<String, Object>> rows) {
-        jdbcTemplate.update("DELETE FROM naver_cpc_daily_stats WHERE date BETWEEN ? AND ?", from, to);
-        for (Map<String, Object> row : rows) {
-            jdbcTemplate.update("""
-                    INSERT INTO naver_cpc_daily_stats
-                    (date, campaign_name, ad_group_name, keyword, impressions, clicks, ctr, avg_cpc, cost, conversions)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    row.get("date"),
-                    row.get("campaignName"),
-                    row.get("adGroupName"),
-                    row.get("keyword"),
-                    row.get("impressions"),
-                    row.get("clicks"),
-                    row.get("ctr"),
-                    row.get("avgCpc"),
-                    row.get("cost"),
-                    row.get("conversions"));
+    private List<Map<String, Object>> fetchMetaAdCreativeRows(LocalDate from, LocalDate to) {
+        URI uri = buildMetaAdCreativesUri(from, to);
+        try {
+            String body = restClient.get()
+                    .uri(uri)
+                    .header(HttpHeaders.CONTENT_TYPE, "application/json; charset=UTF-8")
+                    .retrieve()
+                    .body(String.class);
+            JsonNode data = objectMapper.readTree(body == null ? "{}" : body).path("data");
+            if (!data.isArray()) {
+                return List.of();
+            }
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (JsonNode item : data) {
+                rows.add(metaAdCreativeRow(item));
+            }
+            rows.sort((left, right) -> decimal(right.get("cost")).compareTo(decimal(left.get("cost"))));
+            return rows;
+        } catch (RestClientResponseException e) {
+            throw metaAdsException(e.getResponseBodyAsString(StandardCharsets.UTF_8));
+        } catch (RestClientException e) {
+            throw new CustomException(502, "Meta 광고 소재 API 통신 실패: " + e.getMessage());
+        } catch (JsonProcessingException e) {
+            throw new CustomException(502, "Meta 광고 소재 응답을 처리하지 못했습니다.");
         }
     }
 
-    private List<Map<String, Object>> loadNaverCpcRows(LocalDate from, LocalDate to) {
+    private URI buildMetaAdCreativesUri(LocalDate from, LocalDate to) {
+        String timeRange = "{\"since\":\"" + from + "\",\"until\":\"" + to + "\"}";
+        String fields = "name,effective_status,"
+                + "campaign{name},"
+                + "creative{thumbnail_url,image_url,title,body,object_story_spec},"
+                + "insights.time_range(" + timeRange + "){spend,impressions,clicks,ctr,cpc,reach}";
+        return UriComponentsBuilder.fromHttpUrl(META_GRAPH_BASE_URL + "/" + normalizeMetaAccountId(metaAdAccountId) + "/ads")
+                .queryParam("access_token", metaAccessToken)
+                .queryParam("fields", fields)
+                .queryParam("limit", 50)
+                .queryParam("thumbnail_width", 800)
+                .queryParam("thumbnail_height", 800)
+                .build()
+                .encode(StandardCharsets.UTF_8)
+                .toUri();
+    }
+
+    private Map<String, Object> metaAdCreativeRow(JsonNode item) {
+        JsonNode creative = item.path("creative");
+        JsonNode storySpec = creative.path("object_story_spec");
+        JsonNode linkData = storySpec.path("link_data");
+        JsonNode videoData = storySpec.path("video_data");
+
+        String thumbnail = firstNonBlank(
+                creative.path("image_url").asText(""),
+                creative.path("thumbnail_url").asText(""),
+                linkData.path("picture").asText("")
+        );
+        String title = firstNonBlank(
+                creative.path("title").asText(""),
+                linkData.path("name").asText(""),
+                videoData.path("title").asText("")
+        );
+        String bodyText = firstNonBlank(
+                creative.path("body").asText(""),
+                linkData.path("message").asText(""),
+                videoData.path("message").asText("")
+        );
+
+        JsonNode insightData = item.path("insights").path("data");
+        JsonNode metric = insightData.isArray() && insightData.size() > 0
+                ? insightData.get(0)
+                : objectMapper.createObjectNode();
+        BigDecimal cost = decimal(metric.path("spend").asText("0"));
+
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("adName", item.path("name").asText("-"));
+        row.put("campaignName", item.path("campaign").path("name").asText("-"));
+        row.put("status", item.path("effective_status").asText("-"));
+        row.put("thumbnailUrl", thumbnail);
+        row.put("title", title);
+        row.put("body", bodyText);
+        row.put("cost", cost);
+        row.put("spend", cost);
+        row.put("impressions", metric.path("impressions").asLong(0));
+        row.put("reach", metric.path("reach").asLong(0));
+        row.put("clicks", metric.path("clicks").asLong(0));
+        row.put("ctr", decimal(metric.path("ctr").asText("0")));
+        row.put("cpc", decimal(metric.path("cpc").asText("0")));
+        return row;
+    }
+
+    private List<Map<String, Object>> loadNaverCpcRows(LocalDate from, LocalDate to, String adType) {
+        return loadNaverCpcRows(from, to, adType, null);
+    }
+
+    private List<Map<String, Object>> loadNaverCpcRows(LocalDate from, LocalDate to, String adType, String query) {
+        String normalizedQuery = query == null || query.trim().isEmpty() ? null : query.trim();
+        List<Object> params = new ArrayList<>();
+        params.add(from);
+        params.add(to);
+        String filterSql = "";
+        if (!"ALL".equals(adType)) {
+            filterSql += " AND ad_type = ? ";
+            params.add(adType);
+        }
+        if (normalizedQuery != null) {
+            filterSql += """
+                     AND (
+                         campaign_name ILIKE CONCAT('%', ?::text, '%')
+                         OR ad_group_name ILIKE CONCAT('%', ?::text, '%')
+                         OR keyword ILIKE CONCAT('%', ?::text, '%')
+                     )
+                    """;
+            params.add(normalizedQuery);
+            params.add(normalizedQuery);
+            params.add(normalizedQuery);
+        }
         return jdbcTemplate.queryForList("""
                 SELECT date,
+                       ad_type AS "adType",
+                       CASE ad_type
+                           WHEN 'POWERLINK' THEN '파워링크'
+                           WHEN 'SHOPPING_SEARCH' THEN '쇼핑검색'
+                           ELSE '기타'
+                       END AS "adTypeLabel",
                        campaign_name AS "campaignName",
                        ad_group_name AS "adGroupName",
                        keyword,
@@ -570,92 +543,45 @@ public class MarketingService {
                        ctr,
                        avg_cpc AS "avgCpc",
                        cost,
-                       conversions
-                  FROM naver_cpc_daily_stats
+                       conversions,
+                       conversion_value AS "conversionValue",
+                       roas
+                 FROM naver_cpc_daily_stats
                  WHERE date BETWEEN ? AND ?
+                """ + filterSql + """
                  ORDER BY date DESC, cost DESC
-                """, from, to);
+                """, params.toArray());
     }
 
-    private List<BrandMonitoringResultDto> searchChannel(String channel, String naverPath, String keyword) {
-        String url = UriComponentsBuilder.fromHttpUrl(NAVER_SEARCH_BASE_URL + "/" + naverPath + ".json")
-                .queryParam("query", keyword)
-                .queryParam("display", DISPLAY_COUNT)
-                .queryParam("start", 1)
-                .queryParam("sort", "sim")
-                .build()
-                .encode()
-                .toUriString();
-
-        try {
-            String body = restClient.get()
-                    .uri(url)
-                    .header("X-Naver-Client-Id", naverClientId)
-                    .header("X-Naver-Client-Secret", naverClientSecret)
-                    .header(HttpHeaders.ACCEPT, "application/json")
-                    .retrieve()
-                    .body(String.class);
-            return parseResults(channel, body);
-        } catch (RestClientException e) {
-            throw new CustomException(502, "데이터를 불러오지 못했습니다");
-        }
-    }
-
-    private List<BrandMonitoringResultDto> parseResults(String channel, String body) {
-        try {
-            JsonNode items = objectMapper.readTree(body).path("items");
-            List<BrandMonitoringResultDto> results = new ArrayList<>();
-            if (!items.isArray()) {
-                return results;
-            }
-
-            for (JsonNode item : items) {
-                results.add(new BrandMonitoringResultDto(
-                        channel,
-                        cleanText(item.path("title").asText("")),
-                        cleanText(item.path("description").asText("")),
-                        item.path("link").asText(""),
-                        publishedAt(channel, item)
-                ));
-            }
-            return results;
-        } catch (Exception e) {
-            throw new CustomException(502, "데이터를 불러오지 못했습니다");
-        }
-    }
-
-    private String publishedAt(String channel, JsonNode item) {
-        if ("BLOG".equals(channel)) {
-            return item.path("postdate").asText("");
-        }
-        if ("NEWS".equals(channel)) {
-            return item.path("pubDate").asText("");
-        }
-        return "";
-    }
-
-    private String cleanText(String value) {
-        String withoutTags = value.replaceAll("<[^>]*>", "");
-        return HtmlUtils.htmlUnescape(withoutTags).trim();
-    }
-
-    private List<String> buildKeywordInsights(BrandMonitoringSummaryDto summary) {
-        List<String> insights = new ArrayList<>();
-        insights.add("블로그 노출 " + summary.blogCount() + "건, 뉴스 노출 "
-                + summary.newsCount() + "건, 웹문서 노출 " + summary.webCount() + "건입니다.");
-        if (summary.newsCount() < 3) {
-            insights.add("뉴스 노출이 부족합니다. 보도자료 또는 브랜드 신뢰 콘텐츠가 필요합니다.");
-        }
-        if (summary.blogCount() < 5) {
-            insights.add("블로그 콘텐츠 확장이 필요합니다. 후기, 비교, 제품 사용 맥락 콘텐츠를 보강하세요.");
-        }
-        if (summary.webCount() < 3) {
-            insights.add("웹문서 노출이 약합니다. 브랜드/제품 상세 페이지의 검색 노출 구조를 점검하세요.");
-        }
-        if (summary.totalCount() == 0) {
-            insights.add("검색 결과가 없습니다. 키워드 범위를 넓히거나 브랜드명 조합을 바꿔 확인하세요.");
-        }
-        return insights;
+    private List<Map<String, Object>> loadRecentPerformanceKeywords(String adType, int limit) {
+        Object[] params = "ALL".equals(adType)
+                ? new Object[] { limit }
+                : new Object[] { adType, limit };
+        String filterSql = "ALL".equals(adType) ? "" : " AND ad_type = ? ";
+        return jdbcTemplate.queryForList("""
+                SELECT keyword,
+                       ad_type AS "adType",
+                       CASE ad_type
+                           WHEN 'POWERLINK' THEN '파워링크'
+                           WHEN 'SHOPPING_SEARCH' THEN '쇼핑검색'
+                           ELSE '기타'
+                       END AS "adTypeLabel",
+                       'PERFORMANCE_KEYWORD' AS "sourceType",
+                       MAX(campaign_name) AS "campaignName",
+                       MAX(ad_group_name) AS "adGroupName",
+                       SUM(cost) AS "cost",
+                       SUM(clicks) AS "clicks",
+                       MAX(date) AS "lastSeenDate"
+                  FROM naver_cpc_daily_stats
+                 WHERE keyword IS NOT NULL
+                   AND keyword <> '-'
+                   AND keyword <> ''
+                   AND date >= CURRENT_DATE - INTERVAL '120 days'
+                """ + filterSql + """
+                 GROUP BY keyword, ad_type
+                 ORDER BY SUM(cost) DESC, SUM(clicks) DESC, MAX(date) DESC
+                 LIMIT ?
+                """, params);
     }
 
     private Map<String, Object> performanceResponse(
@@ -672,7 +598,7 @@ public class MarketingService {
         response.put("summary", summary);
         response.put("rows", rows);
         if (rows.isEmpty()) {
-            response.put("message", "데이터가 없습니다. 전환 데이터 없음");
+            response.put("message", "표시할 데이터가 없습니다.");
         }
         return response;
     }
@@ -681,17 +607,22 @@ public class MarketingService {
         long impressions = rows.stream().mapToLong(row -> longValue(row.get("impressions"))).sum();
         long clicks = rows.stream().mapToLong(row -> longValue(row.get("clicks"))).sum();
         BigDecimal cost = rows.stream().map(row -> decimal(row.get("cost"))).reduce(BigDecimal.ZERO, BigDecimal::add);
-        long conversions = rows.stream().filter(row -> row.get("conversions") != null)
-                .mapToLong(row -> longValue(row.get("conversions"))).sum();
+        long conversions = rows.stream().mapToLong(row -> longValue(row.get("conversions"))).sum();
+        BigDecimal conversionValue = rows.stream().map(row -> decimal(row.get("conversionValue"))).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal ctr = weightedCtr(impressions, clicks);
         BigDecimal avgCpc = clicks > 0 ? cost.divide(BigDecimal.valueOf(clicks), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+        BigDecimal roas = cost.compareTo(BigDecimal.ZERO) > 0
+                ? conversionValue.multiply(BigDecimal.valueOf(100)).divide(cost, 2, RoundingMode.HALF_UP)
+                : average(rows, "roas");
         return Map.of(
                 "impressions", impressions,
                 "clicks", clicks,
                 "ctr", ctr,
                 "avgCpc", avgCpc,
                 "cost", cost,
-                "conversions", conversions
+                "conversions", conversions,
+                "conversionValue", conversionValue,
+                "roas", roas
         );
     }
 
@@ -699,8 +630,7 @@ public class MarketingService {
         long impressions = rows.stream().mapToLong(row -> longValue(row.get("impressions"))).sum();
         long clicks = rows.stream().mapToLong(row -> longValue(row.get("clicks"))).sum();
         BigDecimal cost = rows.stream().map(row -> decimal(row.get("cost"))).reduce(BigDecimal.ZERO, BigDecimal::add);
-        long conversions = rows.stream().filter(row -> row.get("conversions") != null)
-                .mapToLong(row -> longValue(row.get("conversions"))).sum();
+        long conversions = rows.stream().mapToLong(row -> longValue(row.get("conversions"))).sum();
         BigDecimal ctr = weightedCtr(impressions, clicks);
         BigDecimal cpc = clicks > 0 ? cost.divide(BigDecimal.valueOf(clicks), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
         BigDecimal roas = average(rows, "roas");
@@ -719,12 +649,8 @@ public class MarketingService {
         return rows.stream()
                 .map(row -> {
                     Map<String, Object> copy = new LinkedHashMap<>(row);
-                    Long conversions = row.get("conversions") == null ? null : longValue(row.get("conversions"));
-                    if (conversions == null || conversions == 0) {
-                        copy.put("cpa", null);
-                    } else {
-                        copy.put("cpa", decimal(row.get("cost")).divide(BigDecimal.valueOf(conversions), 2, RoundingMode.HALF_UP));
-                    }
+                    long conversions = longValue(row.get("conversions"));
+                    copy.put("cpa", conversions == 0 ? null : decimal(row.get("cost")).divide(BigDecimal.valueOf(conversions), 2, RoundingMode.HALF_UP));
                     return copy;
                 })
                 .toList();
@@ -745,6 +671,187 @@ public class MarketingService {
                 "newsCount", longValue(rows.get("news_count")),
                 "webCount", longValue(rows.get("web_count"))
         );
+    }
+
+    private List<String> buildKeywordInsights(BrandMonitoringSummaryDto summary) {
+        List<String> insights = new ArrayList<>();
+        insights.add("블로그 노출 " + summary.blogCount() + "건, 뉴스 노출 "
+                + summary.newsCount() + "건, 웹문서 노출 " + summary.webCount() + "건입니다.");
+        if (summary.newsCount() < 3) {
+            insights.add("뉴스 노출이 부족합니다. 보도자료 또는 브랜드 신뢰 콘텐츠가 필요합니다.");
+        }
+        if (summary.blogCount() < 5) {
+            insights.add("블로그 콘텐츠 확장이 필요합니다. 후기, 비교, 제품 사용 맥락 콘텐츠를 보강하세요.");
+        }
+        if (summary.webCount() < 5) {
+            insights.add("웹문서 노출이 약합니다. 브랜드/제품 상세 페이지의 검색 노출 구조를 점검하세요.");
+        }
+        return insights;
+    }
+
+    private List<Map<String, Object>> buildPostingWindows(List<BrandMonitoringResultDto> results) {
+        return List.of(
+                postingWindow("최근 7일", 7, results),
+                postingWindow("최근 30일", 30, results),
+                postingWindow("최근 3개월", 90, results)
+        );
+    }
+
+    private Map<String, Object> postingWindow(String label, int days, List<BrandMonitoringResultDto> results) {
+        LocalDate since = LocalDate.now().minusDays(days - 1L);
+        int blogCount = 0;
+        int newsCount = 0;
+        int totalCount = 0;
+
+        for (BrandMonitoringResultDto result : results) {
+            LocalDate publishedDate = parsePublishedDate(result);
+            if (publishedDate == null || publishedDate.isBefore(since)) {
+                continue;
+            }
+            totalCount++;
+            if ("BLOG".equals(result.channel())) {
+                blogCount++;
+            } else if ("NEWS".equals(result.channel())) {
+                newsCount++;
+            }
+        }
+
+        String signal;
+        String action;
+        if (days == 7) {
+            signal = totalCount >= 12 ? "활발" : totalCount >= 5 ? "관찰" : "부족";
+            action = totalCount >= 12
+                    ? "최근 콘텐츠 반응이 빠르게 쌓이고 있습니다. 광고와 콘텐츠를 동시에 집행하기 좋은 구간입니다."
+                    : totalCount >= 5
+                    ? "최근 언급이 생기고 있습니다. 이번 주 안에 블로그와 뉴스 보강을 검토하세요."
+                    : "최근 노출이 약합니다. 신규 포스팅 또는 보도자료를 먼저 준비하세요.";
+        } else if (days == 30) {
+            signal = totalCount >= 30 ? "경쟁 강함" : totalCount >= 12 ? "진입 가능" : "공백";
+            action = totalCount >= 30
+                    ? "월간 콘텐츠 경쟁이 강합니다. 차별 키워드와 상세페이지 보강이 필요합니다."
+                    : totalCount >= 12
+                    ? "월간 검색 노출을 만들 수 있는 구간입니다. 체험단과 비교 콘텐츠를 배치하세요."
+                    : "월간 콘텐츠 공백이 큽니다. 기본 리뷰형 콘텐츠를 쌓는 것이 좋습니다.";
+        } else {
+            signal = totalCount >= 60 ? "성숙" : totalCount >= 20 ? "성장" : "초기";
+            action = totalCount >= 60
+                    ? "3개월 누적 콘텐츠가 많습니다. 광고 효율보다 메시지 차별화가 중요합니다."
+                    : totalCount >= 20
+                    ? "시장 반응을 쌓는 중입니다. 주간 단위 콘텐츠 캘린더를 운영하세요."
+                    : "3개월 누적 노출이 낮습니다. 콘텐츠 예산과 제작 계획을 먼저 축적하세요.";
+        }
+
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("label", label);
+        row.put("days", days);
+        row.put("totalCount", totalCount);
+        row.put("blogCount", blogCount);
+        row.put("newsCount", newsCount);
+        row.put("signal", signal);
+        row.put("action", action);
+        row.put("basis", "네이버 최신순 블로그/뉴스 검색 결과 최대 100건씩 기준");
+        return row;
+    }
+
+    private LocalDate parsePublishedDate(BrandMonitoringResultDto result) {
+        String value = result.publishedAt();
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            if ("BLOG".equals(result.channel())) {
+                return LocalDate.parse(value, DateTimeFormatter.BASIC_ISO_DATE);
+            }
+            if ("NEWS".equals(result.channel())) {
+                return ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toLocalDate();
+            }
+        } catch (Exception ignored) {
+            return null;
+        }
+        return null;
+    }
+
+    private LocalDate parseDate(String value, String fieldName) {
+        try {
+            return LocalDate.parse(value);
+        } catch (Exception e) {
+            throw new CustomException(400, fieldName + " 날짜 형식을 확인해주세요.");
+        }
+    }
+
+    private void validateRange(LocalDate from, LocalDate to) {
+        if (from == null || to == null || from.isAfter(to)) {
+            throw new CustomException(400, "조회 기간을 확인해주세요.");
+        }
+        if (from.plusDays(31).isBefore(to)) {
+            throw new CustomException(400, "광고 성과 조회 기간은 최대 32일까지만 지원합니다.");
+        }
+    }
+
+    private long metaActionValue(JsonNode actions, List<String> actionTypes) {
+        if (!actions.isArray()) {
+            return 0L;
+        }
+        long total = 0L;
+        for (JsonNode action : actions) {
+            if (actionTypes.contains(action.path("action_type").asText(""))) {
+                total += decimal(action.path("value").asText("0")).longValue();
+            }
+        }
+        return total;
+    }
+
+    private String normalizeMetaAccountId(String accountId) {
+        String value = accountId == null ? "" : accountId.trim();
+        if (value.isBlank()) {
+            return value;
+        }
+        return value.startsWith("act_") ? value : "act_" + value;
+    }
+
+    private String normalizeMetaLevel(String level) {
+        String value = level == null ? "campaign" : level.trim().toLowerCase();
+        if (List.of("campaign", "adset", "ad").contains(value)) {
+            return value;
+        }
+        return "campaign";
+    }
+
+    private String normalizeNaverAdType(String adType) {
+        String value = adType == null ? "ALL" : adType.trim().toUpperCase();
+        if (value.isBlank() || "ALL".equals(value)) {
+            return "ALL";
+        }
+        if ("SHOPPING".equals(value) || "SHOPPING_SEARCH".equals(value) || "SHOPPING_SEARCH_AD".equals(value)) {
+            return "SHOPPING_SEARCH";
+        }
+        if ("POWERLINK".equals(value) || "POWER_LINK".equals(value) || "WEB_SITE".equals(value)) {
+            return "POWERLINK";
+        }
+        return "OTHER";
+    }
+
+    private String cleanHtml(String value) {
+        return HtmlUtils.htmlUnescape(value == null ? "" : value.replaceAll("<[^>]*>", "")).trim();
+    }
+
+    private String firstText(JsonNode node, String... keys) {
+        for (String key : keys) {
+            String value = node.path(key).asText("");
+            if (!value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
     }
 
     private BigDecimal average(List<Map<String, Object>> rows, String key) {
@@ -768,25 +875,11 @@ public class MarketingService {
                 .divide(BigDecimal.valueOf(impressions), 2, RoundingMode.HALF_UP);
     }
 
-    private int countByChannel(List<BrandMonitoringResultDto> results, String channel) {
-        return (int) results.stream().filter(result -> channel.equals(result.channel())).count();
-    }
-
-    private void validateRange(LocalDate from, LocalDate to) {
-        if (from == null || to == null || from.isAfter(to)) {
-            throw new CustomException(400, "조회 기간을 확인해주세요.");
+    private int safeTotalCount(long value) {
+        if (value > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
         }
-        if (from.plusDays(31).isBefore(to)) {
-            throw new CustomException(400, "네이버 CPC 조회 기간은 최대 32일까지만 지원합니다.");
-        }
-    }
-
-    private <T> List<List<T>> chunks(List<T> source, int size) {
-        List<List<T>> chunks = new ArrayList<>();
-        for (int start = 0; start < source.size(); start += size) {
-            chunks.add(source.subList(start, Math.min(source.size(), start + size)));
-        }
-        return chunks;
+        return Math.max(0, (int) value);
     }
 
     private boolean isBlank(String value) {
@@ -800,11 +893,11 @@ public class MarketingService {
         if (value instanceof Number number) {
             return number.longValue();
         }
-        return Long.parseLong(value.toString());
-    }
-
-    private int intValue(Object value) {
-        return (int) longValue(value);
+        try {
+            return new BigDecimal(value.toString()).longValue();
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
     }
 
     private BigDecimal decimal(Object value) {
@@ -817,15 +910,13 @@ public class MarketingService {
         if (value instanceof Number number) {
             return BigDecimal.valueOf(number.doubleValue());
         }
-        return new BigDecimal(value.toString());
+        try {
+            return new BigDecimal(value.toString());
+        } catch (NumberFormatException e) {
+            return BigDecimal.ZERO;
+        }
     }
 
-    private record NaverCampaign(String id, String name) {
-    }
-
-    private record NaverAdGroup(String id, String campaignId, String name) {
-    }
-
-    private record NaverKeyword(String id, String adGroupId, String text) {
+    private record SearchChannelResult(List<BrandMonitoringResultDto> results, long totalCount) {
     }
 }

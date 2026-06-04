@@ -35,28 +35,37 @@ function CashProjectionChart({ rows }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex h-72 items-end gap-2">
-        {rows.map((row) => {
-          const balance = Number(row.projected_balance || 0)
-          const height = Math.max(8, ((balance - min) / range) * 100)
-          const isRisk = balance < 30_000_000
-          const isNegative = balance < 0
+      <div className="flex items-center justify-between text-xs font-black uppercase tracking-[0.18em] text-slate-400">
+        <span>30일 예상 잔액</span>
+        <span>{rows.length ? `기간 ${rows.length}일` : '데이터 없음'}</span>
+      </div>
+      <div className="relative overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/80 p-3">
+        <div className="pointer-events-none absolute inset-x-0 top-1/4 h-px bg-slate-800" />
+        <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-slate-800" />
+        <div className="pointer-events-none absolute inset-x-0 top-3/4 h-px bg-slate-800" />
+        <div className="flex h-72 items-end gap-2">
+          {rows.map((row) => {
+            const balance = Number(row.projected_balance || 0)
+            const height = Math.max(10, ((balance - min) / range) * 100)
+            const isRisk = balance < 30_000_000
+            const isNegative = balance < 0
 
-          return (
-            <div key={row.target_date} className="flex min-w-0 flex-1 flex-col items-center gap-2">
-              <div className="flex h-56 w-full items-end rounded-lg bg-slate-950/60 px-1">
-                <div
-                  className={`w-full rounded-md ${isNegative ? 'bg-rose-500' : isRisk ? 'bg-amber-400' : 'bg-sky-400'}`}
-                  style={{ height: `${height}%` }}
-                  title={`${row.target_date}: ${won(balance)}`}
-                />
+            return (
+              <div key={row.target_date} className="flex min-w-0 flex-1 flex-col items-center gap-2">
+                <div className="flex h-56 w-full items-end rounded-xl bg-slate-950/60 px-1">
+                  <div
+                    className={`w-full rounded-t-md ${isNegative ? 'bg-rose-500' : isRisk ? 'bg-amber-400' : 'bg-sky-400'}`}
+                    style={{ height: `${height}%` }}
+                    title={`${row.target_date}: ${won(balance)}`}
+                  />
+                </div>
+                <span className="w-full truncate text-center text-[10px] font-bold text-slate-500">
+                  {formatDate(row.target_date)}
+                </span>
               </div>
-              <span className="w-full truncate text-center text-[10px] font-bold text-slate-500">
-                {formatDate(row.target_date)}
-              </span>
-            </div>
-          )
-        })}
+            )
+          })}
+        </div>
       </div>
       <div className="flex flex-wrap gap-3 text-xs font-bold text-slate-400">
         <span className="inline-flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-sky-400" />정상</span>

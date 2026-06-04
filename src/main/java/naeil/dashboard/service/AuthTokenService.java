@@ -50,7 +50,7 @@ public class AuthTokenService {
                 return Optional.empty();
             }
 
-            String[] payloadParts = payload.split(":");
+            String[] payloadParts = payload.split(":", 2);
             if (payloadParts.length != 2) {
                 return Optional.empty();
             }

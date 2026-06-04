@@ -415,6 +415,7 @@ public class PlayAutoSyncService {
         BigDecimal discountAmt = resolveDiscountAmount(node);
         BigDecimal shippingFee = parseBigDecimal(node.path("ship_cost"));
         BigDecimal grossAmt = calculateGrossAmount(payAmt, discountAmt, shippingFee);
+        Integer orderQuantity = resolveOrderQuantity(node, productSnapshot);
         String skuCd = resolvedSkuCd;
         Long prodNo = parseLong(firstNonBlank(
                 textOrNull(productSnapshot != null ? productSnapshot.path("prod_no") : null),
@@ -453,6 +454,7 @@ public class PlayAutoSyncService {
                 .discountAmt(discountAmt)
                 .shippingFee(shippingFee)
                 .payAmt(payAmt)
+                .orderQuantity(orderQuantity)
                 .ordStatus(node.path("ord_status").asText())
                 .ordTime(ordTime)
                 .wdate(wdate)
@@ -482,6 +484,7 @@ public class PlayAutoSyncService {
         BigDecimal discountAmt = resolveDiscountAmount(node);
         BigDecimal shippingFee = parseBigDecimal(node.path("ship_cost"));
         BigDecimal grossAmt = calculateGrossAmount(payAmt, discountAmt, shippingFee);
+        Integer orderQuantity = resolveOrderQuantity(node, productSnapshot);
         Long prodNo = parseLong(firstNonBlank(
                 textOrNull(productSnapshot != null ? productSnapshot.path("prod_no") : null),
                 textOrNull(node.path("prod_no"))
@@ -508,6 +511,7 @@ public class PlayAutoSyncService {
                 discountAmt,
                 shippingFee,
                 payAmt,
+                orderQuantity,
                 ordTime,
                 payTime,
                 wdate,
@@ -960,10 +964,42 @@ public class PlayAutoSyncService {
             return null;
         }
         try {
-            return Long.parseLong(value);
+            return Long.parseLong(value.replace(",", "").trim());
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    private Integer parseInteger(String value) {
+        Long parsed = parseLong(value);
+        if (parsed == null || parsed <= 0) {
+            return null;
+        }
+        return parsed > Integer.MAX_VALUE ? Integer.MAX_VALUE : parsed.intValue();
+    }
+
+    private Integer resolveOrderQuantity(JsonNode node, JsonNode productSnapshot) {
+        Integer quantity = parseInteger(firstNonBlank(
+                textOrNull(node.path("order_quantity")),
+                textOrNull(node.path("order_qty")),
+                textOrNull(node.path("ord_qty")),
+                textOrNull(node.path("prod_qty")),
+                textOrNull(node.path("prod_cnt")),
+                textOrNull(node.path("goods_cnt")),
+                textOrNull(node.path("item_qty")),
+                textOrNull(node.path("qty")),
+                textOrNull(node.path("cnt")),
+                textOrNull(productSnapshot != null ? productSnapshot.path("order_quantity") : null),
+                textOrNull(productSnapshot != null ? productSnapshot.path("order_qty") : null),
+                textOrNull(productSnapshot != null ? productSnapshot.path("ord_qty") : null),
+                textOrNull(productSnapshot != null ? productSnapshot.path("prod_qty") : null),
+                textOrNull(productSnapshot != null ? productSnapshot.path("prod_cnt") : null),
+                textOrNull(productSnapshot != null ? productSnapshot.path("goods_cnt") : null),
+                textOrNull(productSnapshot != null ? productSnapshot.path("item_qty") : null),
+                textOrNull(productSnapshot != null ? productSnapshot.path("qty") : null),
+                textOrNull(productSnapshot != null ? productSnapshot.path("cnt") : null)
+        ));
+        return quantity != null ? quantity : 1;
     }
 
     private boolean isBlank(String value) {
@@ -996,16 +1032,18 @@ public class PlayAutoSyncService {
         if (order == null) {
             return BigDecimal.ZERO;
         }
-        BigDecimal safePayAmt = order.getPayAmt() != null ? order.getPayAmt() : BigDecimal.ZERO;
-        BigDecimal safeDiscountAmt = order.getDiscountAmt() != null ? order.getDiscountAmt() : BigDecimal.ZERO;
-        return safePayAmt.subtract(safeDiscountAmt);
+        // pay_amt는 PlayAuto의 실결제금액(쿠폰·포인트·할인 이미 반영)이므로 그대로 사용.
+        // discount_amt를 한 번 더 빼면 이중 차감이 되어 매출이 실제보다 낮아짐.
+        return order.getPayAmt() != null ? order.getPayAmt() : BigDecimal.ZERO;
     }
 
     private BigDecimal calculateGrossAmount(BigDecimal payAmt, BigDecimal discountAmt, BigDecimal shippingFee) {
         BigDecimal safePayAmt = payAmt != null ? payAmt : BigDecimal.ZERO;
         BigDecimal safeDiscountAmt = discountAmt != null ? discountAmt : BigDecimal.ZERO;
         BigDecimal safeShippingFee = shippingFee != null ? shippingFee : BigDecimal.ZERO;
-        return safePayAmt.subtract(safeDiscountAmt).add(safeShippingFee);
+        // grossAmt = 할인 전 원가 복원(pay_amt + discount_amt) + 배송비
+        // pay_amt는 이미 할인 반영된 실결제금액이므로 discount_amt를 더해야 원가 복원됨
+        return safePayAmt.add(safeDiscountAmt).add(safeShippingFee);
     }
 
     private BigDecimal normalizeMoney(BigDecimal value) {

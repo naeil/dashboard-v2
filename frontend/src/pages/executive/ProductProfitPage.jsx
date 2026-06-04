@@ -351,14 +351,40 @@ export default function ProductProfitPage() {
           title={`${selectedCategory} 손익 기준표`}
           right={<span className="text-xs font-black text-slate-400">{selectedType} / {filteredRows.length}개 제품</span>}
         >
-          <DataTable rows={filteredRows} rowKey={(row) => row.id} columns={profitColumns} />
+          <DataTable
+            rows={filteredRows}
+            rowKey={(row) => row.id}
+            columns={profitColumns}
+            defaultSort="netProfitDesc"
+            sortOptions={[
+              { id: 'netProfitDesc', label: '순익 높은 순', key: 'expected_net_profit' },
+              { id: 'netProfitAsc', label: '순익 낮은 순', key: 'expected_net_profit', direction: 'asc' },
+              { id: 'marginDesc', label: '영업이익률 높은 순', key: 'margin_rate' },
+              { id: 'marginAsc', label: '영업이익률 낮은 순', key: 'margin_rate', direction: 'asc' },
+              { id: 'salesDesc', label: '매출 높은 순', key: 'gross_sales' },
+              { id: 'costDesc', label: '원가 높은 순', value: (row) => costBasis(row) },
+              { id: 'stockDesc', label: '재고 많은 순', key: 'stock_quantity' },
+            ]}
+          />
         </Panel>
 
         <Panel
           title="상세 원가 및 수출 기준"
           right={<span className="text-xs font-black text-slate-400">원가 수정 시 손익 자동 재계산</span>}
         >
-          <DataTable rows={filteredRows} rowKey={(row) => `detail-${row.id}`} columns={detailColumns} />
+          <DataTable
+            rows={filteredRows}
+            rowKey={(row) => `detail-${row.id}`}
+            columns={detailColumns}
+            defaultSort="stockDesc"
+            sortOptions={[
+              { id: 'stockDesc', label: '재고 많은 순', key: 'stock_quantity' },
+              { id: 'stockAsc', label: '재고 적은 순', key: 'stock_quantity', direction: 'asc' },
+              { id: 'priceDesc', label: '판매가 높은 순', value: (row) => row.final_discount_price || row.selling_price || row.consumer_price },
+              { id: 'costDesc', label: '원가 높은 순', key: 'production_cost' },
+              { id: 'expiryAsc', label: '유통기한 임박 순', key: 'expiry_date', type: 'date', direction: 'asc' },
+            ]}
+          />
         </Panel>
       </div>
     </>

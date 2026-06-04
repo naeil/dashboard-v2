@@ -1,0 +1,2 @@
+ALTER TABLE dashboard_user
+    ADD COLUMN IF NOT EXISTS email VARCHAR(200);

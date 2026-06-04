@@ -65,6 +65,10 @@ public class Orders {
     @Builder.Default
     private BigDecimal payAmt = BigDecimal.ZERO;
 
+    @Column(name = "order_quantity")
+    @Builder.Default
+    private Integer orderQuantity = 1;
+
     @Column(name = "cancel_amt", precision = 18, scale = 2)
     @Builder.Default
     private BigDecimal cancelAmt = BigDecimal.ZERO;
@@ -102,6 +106,7 @@ public class Orders {
             BigDecimal discountAmt,
             BigDecimal shippingFee,
             BigDecimal payAmt,
+            Integer orderQuantity,
             LocalDateTime ordTime,
             LocalDateTime payTime,
             LocalDateTime wdate,
@@ -115,6 +120,7 @@ public class Orders {
         this.discountAmt = discountAmt != null ? discountAmt : BigDecimal.ZERO;
         this.shippingFee = shippingFee != null ? shippingFee : BigDecimal.ZERO;
         this.payAmt = payAmt != null ? payAmt : BigDecimal.ZERO;
+        this.orderQuantity = orderQuantity != null && orderQuantity > 0 ? orderQuantity : 1;
         this.ordTime = ordTime;
         this.payTime = payTime;
         this.wdate = wdate;

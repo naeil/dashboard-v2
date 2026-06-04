@@ -158,49 +158,76 @@ public class PlayAutoApiClient {
     }
 
     public JsonNode getOrderList(String token, String apiKey, String sDate, String eDate) {
+        // PlayAuto 대시보드와 동일하게 주문일(ord_date) 기준으로 조회
+        // 페이지네이션으로 1000건 초과 주문도 누락 없이 수집
+        final int PAGE_SIZE = 500;
+        String url = "https://openapi.playauto.io/api/orders";
         HttpHeaders headers = createHeaders(token, apiKey);
 
-        Map<String, Object> body = new HashMap<>();
-        body.put("start", 0);
-        body.put("length", 1000);
-        body.put("orderby", "mdate asc");
-        body.put("date_type", "mdate");
-        body.put("sdate", sDate);
-        body.put("edate", eDate);
-        body.put("delay_status", false);
-        body.put("multi_type", "shop_sale_no");
+        com.fasterxml.jackson.databind.node.ArrayNode allResults = objectMapper.createArrayNode();
+        int start = 0;
+        int totalRecords = Integer.MAX_VALUE;
 
-        String url = "https://openapi.playauto.io/api/orders";
+        while (start < totalRecords) {
+            Map<String, Object> body = new HashMap<>();
+            body.put("start", start);
+            body.put("length", PAGE_SIZE);
+            body.put("orderby", "wdate");
+            body.put("date_type", "ord_date");
+            body.put("sdate", sDate);
+            body.put("edate", eDate);
+            body.put("delay_status", false);
+            body.put("multi_type", "shop_sale_no");
 
-        for (int attempt = 1; attempt <= ORDER_LIST_MAX_RETRIES; attempt++) {
-            try {
-                HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
-                ResponseEntity<JsonNode> response = restTemplate.postForEntity(url, request, JsonNode.class);
-                JsonNode rootNode = response.getBody();
-                if (rootNode == null) {
-                    throw new CustomException(502, "Invalid orders response");
-                }
-
+            JsonNode rootNode = null;
+            for (int attempt = 1; attempt <= ORDER_LIST_MAX_RETRIES; attempt++) {
                 try {
-                    handleError(rootNode);
-                } catch (CustomException e) {
-                    if (shouldRetryWithoutMultiType(e, body)) {
-                        log.warn("Retrying PlayAuto order list without multi_type. sdate={}, edate={}", sDate, eDate);
-                        body.remove("multi_type");
+                    HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+                    ResponseEntity<JsonNode> response = restTemplate.postForEntity(url, request, JsonNode.class);
+                    rootNode = response.getBody();
+                    if (rootNode == null) {
+                        throw new CustomException(502, "Invalid orders response");
+                    }
+                    try {
+                        handleError(rootNode);
+                    } catch (CustomException e) {
+                        if (shouldRetryWithoutMultiType(e, body)) {
+                            log.warn("Retrying PlayAuto order list without multi_type. sdate={}, edate={}", sDate, eDate);
+                            body.remove("multi_type");
+                            continue;
+                        }
+                        throw e;
+                    }
+                    break;
+                } catch (RestClientException e) {
+                    if (isTooManyRequests(e) && attempt < ORDER_LIST_MAX_RETRIES) {
+                        sleepForRateLimit(attempt);
                         continue;
                     }
-                    throw e;
+                    handleException("getOrderList", e);
+                    return null;
                 }
-                return rootNode;
-            } catch (RestClientException e) {
-                if (isTooManyRequests(e) && attempt < ORDER_LIST_MAX_RETRIES) {
-                    sleepForRateLimit(attempt);
-                    continue;
-                }
-                handleException("getOrderList", e);
             }
+
+            if (rootNode == null) break;
+
+            JsonNode results = rootNode.path("results");
+            if (!results.isArray() || results.isEmpty()) break;
+
+            totalRecords = rootNode.path("recordsTotal").asInt(results.size());
+            results.forEach(allResults::add);
+            start += results.size();
+
+            log.info("PlayAuto order page fetched: start={}, page={}, total={}", start - results.size(), results.size(), totalRecords);
+
+            if (results.size() < PAGE_SIZE) break; // 마지막 페이지
         }
-        return null;
+
+        // 기존 코드와 호환되는 형태로 반환 (results 필드 포함한 노드)
+        com.fasterxml.jackson.databind.node.ObjectNode merged = objectMapper.createObjectNode();
+        merged.put("recordsTotal", allResults.size());
+        merged.set("results", allResults);
+        return merged;
     }
 
     private HttpHeaders createHeaders(String token, String apiKey) {

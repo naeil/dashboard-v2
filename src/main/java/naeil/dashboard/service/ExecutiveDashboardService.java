@@ -10,6 +10,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import naeil.dashboard.common.config.EncryptionUtil;
+import naeil.dashboard.common.exception.CustomException;
+import naeil.dashboard.dto.AuthUser;
+import naeil.dashboard.dto.UserRole;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -63,7 +67,20 @@ public class ExecutiveDashboardService {
                     "unit_production_cost", "platform_fee_rate", "ad_cost_rate", "operating_admin_rate",
                     "logistics_cost_per_unit", "expected_sales", "expected_gross_profit",
                     "expected_gross_margin_rate", "expected_operating_profit",
-                    "expected_operating_margin_rate", "memo"
+                    "expected_operating_margin_rate", "launch_checklist", "memo"
+            ))),
+            Map.entry("work-tasks", new ResourceDefinition("executive_work_task", Set.of(
+                    "company_id", "project_name", "task_name", "assignee_name", "department",
+                    "work_category", "linked_product_name", "priority", "status", "progress_rate",
+                    "start_date", "due_date", "completed_date", "approval_required", "today_work",
+                    "blocker_text", "next_action", "request_text", "review_comment", "source_type",
+                    "source_key"
+            ))),
+            Map.entry("payment-requests", new ResourceDefinition("executive_payment_request", Set.of(
+                    "company_id", "request_type", "flow_type", "project_name", "linked_product_name",
+                    "counterparty", "requester_name", "department", "amount", "request_date",
+                    "scheduled_date", "account_name", "purpose", "detail_reason", "evidence_url",
+                    "expense_category", "urgent", "status", "review_comment", "cash_flow_id"
             ))),
             Map.entry("channel-sales", new ResourceDefinition("executive_channel_performance", Set.of(
                     "company_id", "channel_name", "sales_amount", "ad_cost", "roas", "margin_rate", "order_count",
@@ -77,7 +94,8 @@ public class ExecutiveDashboardService {
             ))),
             Map.entry("receivables", new ResourceDefinition("executive_receivable", Set.of(
                     "company_id", "partner_name", "manager_name", "contact", "invoice_amount", "paid_amount",
-                    "due_date", "status", "risk_level", "memo"
+                    "due_date", "status", "risk_level", "memo", "partner_type", "business_scope", "owner_name",
+                    "tax_email", "bank_account", "settlement_terms", "country", "contract_status", "last_contact_date"
             ))),
             Map.entry("operating-expenses", new ResourceDefinition("executive_operating_expense", Set.of(
                     "company_id", "expense_month", "category", "expense_type", "amount", "payment_date", "vendor", "memo"
@@ -100,11 +118,20 @@ public class ExecutiveDashboardService {
                     "upfront_cost", "pipeline_stage", "memo"
             ))),
             Map.entry("ad-performance", new ResourceDefinition("executive_ad_performance", Set.of(
-                    "company_id", "ad_channel", "ad_cost", "click_count", "cpa", "roas", "conversion_rate",
+                    "company_id", "product_name", "ad_channel", "ad_cost", "click_count", "cpa", "roas", "conversion_rate",
                     "sales_amount", "net_profit", "report_month"
+            ))),
+            Map.entry("ad-roas-goals", new ResourceDefinition("executive_ad_roas_goal", Set.of(
+                    "company_id", "period_type", "product_name", "ad_type", "target_roas", "start_date",
+                    "end_date", "owner_name", "memo", "status"
             ))),
             Map.entry("issues", new ResourceDefinition("executive_issue_log", Set.of(
                     "company_id", "issue_date", "severity", "category", "title", "description", "status"
+            ))),
+            Map.entry("customer-inquiries", new ResourceDefinition("executive_customer_inquiry", Set.of(
+                    "company_id", "channel", "external_id", "customer_name", "inquiry_type", "message",
+                    "status", "assigned_to", "received_at", "answered_at", "urgent", "ai_category",
+                    "ai_summary", "source_url", "raw_payload"
             )))
     );
 
@@ -119,12 +146,16 @@ public class ExecutiveDashboardService {
             "due_date",
             "start_date",
             "end_date",
+            "completed_date",
+            "request_date",
+            "scheduled_date",
             "expense_month",
             "payment_date",
             "next_payment_date",
             "maturity_date",
             "expected_payment_date",
-            "issue_date"
+            "issue_date",
+            "last_contact_date"
     );
 
     private static final Set<String> DECIMAL_COLUMNS = Set.of(
@@ -211,7 +242,8 @@ public class ExecutiveDashboardService {
             "daily_production_moq",
             "pallet_quantity",
             "forecast_months",
-            "expected_monthly_units"
+            "expected_monthly_units",
+            "progress_rate"
     );
 
     public Map<String, Object> getSummary(Long companyId) {
@@ -280,7 +312,7 @@ public class ExecutiveDashboardService {
                     FROM executive_operating_expense
                     WHERE company_id = ?
                       AND expense_month = date_trunc('month', CURRENT_DATE)::date
-                      AND category ILIKE '%광고%'
+                      AND category ILIKE '%??⑹탪??'
                 )
                 SELECT
                     ad_performance.amount + ad_expense.amount AS entered_month_ad_cost
@@ -396,6 +428,8 @@ public class ExecutiveDashboardService {
         result.put("cashRiskStatus", getCashRiskStatus(companyId));
         result.put("expectedCashShortageDate", getExpectedCashShortageDate(companyId));
         result.put("urgentIssueCount", countUrgentIssues(companyId));
+        result.put("customerInquiryCount", countOpenCustomerInquiries(companyId));
+        result.put("unansweredCustomerInquiryCount", countUnansweredCustomerInquiries(companyId));
         return result;
     }
 
@@ -527,7 +561,7 @@ public class ExecutiveDashboardService {
                 JOIN shop s ON s.id = o.shop_id
                 WHERE o.company_id = ?
                   AND COALESCE(o.pay_time, o.ord_time, o.wdate)::date BETWEEN ? AND ?
-                  AND s.platform <> 'OTHER'
+                  AND s.shop_code <> 'A000'
                 GROUP BY o.company_id, settlement_date, s.shop_name, s.platform
                 HAVING COALESCE(SUM(COALESCE(o.pay_amt, 0) - COALESCE(o.cancel_amt, 0)), 0) > 0
                 ORDER BY settlement_date, s.shop_name
@@ -548,7 +582,7 @@ public class ExecutiveDashboardService {
                         company_id, flow_date, flow_type, category, counterparty, amount,
                         status, confidence_level, recurring_rule, source_type, source_key, memo
                     )
-                    VALUES (?, ?, 'INFLOW', '온라인 채널 정산', ?, ?, 'EXPECTED', 'EXPECTED', 'NONE',
+                    VALUES (?, ?, 'INFLOW', '?⑤씪??梨꾨꼸 ?뺤궛', ?, ?, 'EXPECTED', 'EXPECTED', 'NONE',
                             'ONLINE_SETTLEMENT', ?, ?)
                     ON CONFLICT (source_key) DO NOTHING
                     """,
@@ -557,7 +591,7 @@ public class ExecutiveDashboardService {
                     row.get("shop_name"),
                     row.get("settlement_amount"),
                     sourceKey,
-                    "온라인 주문 " + row.get("order_count") + "건 기준 자동 생성"
+                    "?⑤씪??二쇰Ц " + row.get("order_count") + "嫄?湲곗? ?먮룞 ?앹꽦"
             );
 
             if (updated > 0) {
@@ -634,6 +668,111 @@ public class ExecutiveDashboardService {
                 """, companyId);
     }
 
+    public Map<String, Object> getProductMovements(Long companyId) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                WITH latest_outbound AS (
+                    SELECT DISTINCT ON (product_id)
+                        product_id,
+                        outbound_accum_snapshot,
+                        collected_at
+                    FROM product_outbound
+                    WHERE company_id = ?
+                    ORDER BY product_id, outbound_date DESC, collected_at DESC
+                ),
+                today_outbound AS (
+                    SELECT product_id, COALESCE(SUM(outbound_count), 0) AS outbound_count
+                    FROM product_outbound
+                    WHERE company_id = ? AND outbound_date = CURRENT_DATE
+                    GROUP BY product_id
+                ),
+                recent_outbound AS (
+                    SELECT product_id, COALESCE(SUM(outbound_count), 0) AS outbound_count
+                    FROM product_outbound
+                    WHERE company_id = ? AND outbound_date >= CURRENT_DATE - INTERVAL '6 day'
+                    GROUP BY product_id
+                )
+                SELECT
+                    p.id,
+                    p.product_name,
+                    p.sku_cd,
+                    p.prod_no,
+                    p.real_stock,
+                    p.safe_stock,
+                    b.brand_name,
+                    COALESCE(t.outbound_count, 0)::int AS today_outbound_count,
+                    COALESCE(r.outbound_count, 0)::int AS last_7_days_outbound_count,
+                    COALESCE(l.outbound_accum_snapshot, 0)::int AS outbound_accum_snapshot,
+                    l.collected_at,
+                    CASE
+                        WHEN p.real_stock <= 0 THEN 'OUT_OF_STOCK'
+                        WHEN p.real_stock <= GREATEST(COALESCE(NULLIF(p.safe_stock, 0), 1), 1) THEN 'LOW_STOCK'
+                        WHEN COALESCE(r.outbound_count, 0) = 0 THEN 'NO_RECENT_OUTBOUND'
+                        ELSE 'NORMAL'
+                    END AS stock_status
+                FROM product p
+                LEFT JOIN brand b ON b.id = p.brand_id
+                LEFT JOIN latest_outbound l ON l.product_id = p.id
+                LEFT JOIN today_outbound t ON t.product_id = p.id
+                LEFT JOIN recent_outbound r ON r.product_id = p.id
+                WHERE p.company_id = ?
+                ORDER BY
+                    CASE
+                        WHEN p.real_stock <= 0 THEN 1
+                        WHEN p.real_stock <= GREATEST(COALESCE(NULLIF(p.safe_stock, 0), 1), 1) THEN 2
+                        WHEN COALESCE(r.outbound_count, 0) = 0 THEN 3
+                        ELSE 4
+                    END,
+                    COALESCE(r.outbound_count, 0) DESC,
+                    p.product_name
+                """, companyId, companyId, companyId, companyId);
+
+        Map<String, Object> summary = jdbcTemplate.queryForMap("""
+                WITH inventory AS (
+                    SELECT
+                        COUNT(*) AS product_count,
+                        COALESCE(SUM(real_stock), 0) AS total_stock,
+                        COUNT(*) FILTER (WHERE real_stock <= 0) AS out_of_stock_count,
+                        COUNT(*) FILTER (
+                            WHERE real_stock > 0
+                              AND real_stock <= GREATEST(COALESCE(NULLIF(safe_stock, 0), 1), 1)
+                        ) AS low_stock_count
+                    FROM product
+                    WHERE company_id = ?
+                ),
+                outbound AS (
+                    SELECT
+                        COALESCE(SUM(outbound_count) FILTER (WHERE outbound_date = CURRENT_DATE), 0) AS today_outbound_count,
+                        COALESCE(SUM(outbound_count) FILTER (WHERE outbound_date >= CURRENT_DATE - INTERVAL '6 day'), 0) AS last_7_days_outbound_count,
+                        MAX(collected_at) AS last_outbound_collected_at
+                    FROM product_outbound
+                    WHERE company_id = ?
+                ),
+                setting AS (
+                    SELECT last_inventory_collected_at
+                    FROM integration_settings
+                    WHERE company_id = ?
+                      AND integration_type = 'PLAYAUTO'
+                    ORDER BY id DESC
+                    LIMIT 1
+                )
+                SELECT
+                    inventory.product_count,
+                    inventory.total_stock,
+                    inventory.out_of_stock_count,
+                    inventory.low_stock_count,
+                    outbound.today_outbound_count,
+                    outbound.last_7_days_outbound_count,
+                    COALESCE(setting.last_inventory_collected_at, outbound.last_outbound_collected_at) AS last_synced_at
+                FROM inventory, outbound
+                LEFT JOIN setting ON true
+                """, companyId, companyId, companyId);
+
+        return Map.of(
+                "summary", summary,
+                "rows", rows
+        );
+    }
+
     public List<Map<String, Object>> getProductForecasts(Long companyId) {
         ResourceDefinition definition = RESOURCE_DEFINITIONS.get("product-forecasts");
         return jdbcTemplate.queryForList("""
@@ -649,6 +788,298 @@ public class ExecutiveDashboardService {
                     return forecast;
                 })
                 .toList();
+    }
+
+    public List<Map<String, Object>> getWorkTasks(Long companyId) {
+        return jdbcTemplate.queryForList("""
+                SELECT *
+                FROM executive_work_task
+                WHERE company_id = ?
+                ORDER BY
+                    CASE status
+                        WHEN 'DELAYED' THEN 1
+                        WHEN 'BLOCKED' THEN 2
+                        WHEN 'REVIEW' THEN 3
+                        WHEN 'IN_PROGRESS' THEN 4
+                        WHEN 'WAITING' THEN 5
+                        WHEN 'DONE' THEN 6
+                        ELSE 7
+                    END,
+                    due_date NULLS LAST,
+                    CASE priority
+                        WHEN 'URGENT' THEN 1
+                        WHEN 'HIGH' THEN 2
+                        WHEN 'MEDIUM' THEN 3
+                        ELSE 4
+                    END,
+                    id DESC
+                """, companyId);
+    }
+
+    public List<Map<String, Object>> getWorkTasks(Long companyId, AuthUser user) {
+        if (UserRole.from(user.role()) != UserRole.EMPLOYEE) {
+            return getWorkTasks(companyId);
+        }
+        return jdbcTemplate.queryForList("""
+                SELECT *
+                FROM executive_work_task
+                WHERE company_id = ? AND LOWER(assignee_name) = LOWER(?)
+                ORDER BY
+                    CASE status
+                        WHEN 'DELAYED' THEN 1
+                        WHEN 'BLOCKED' THEN 2
+                        WHEN 'REVIEW' THEN 3
+                        WHEN 'IN_PROGRESS' THEN 4
+                        WHEN 'WAITING' THEN 5
+                        WHEN 'DONE' THEN 6
+                        ELSE 7
+                    END,
+                    due_date NULLS LAST,
+                    id DESC
+                """, companyId, user.username());
+    }
+
+    public List<Map<String, Object>> getChannelCredentials(Long companyId, AuthUser user) {
+        boolean canViewPassword = UserRole.from(user.role()) != UserRole.EMPLOYEE;
+        return jdbcTemplate.queryForList("""
+                SELECT id, company_id, channel_id, channel_name, category_name, account_type, login_url, username,
+                       password_cipher, password_change_note, review_username, review_password_cipher,
+                       memo, status, updated_by, updated_at
+                FROM executive_channel_credential
+                WHERE company_id = ?
+                ORDER BY
+                    CASE channel_id
+                        WHEN 'smartstore' THEN 1
+                        WHEN 'imweb' THEN 2
+                        WHEN 'coupang' THEN 3
+                        WHEN 'auction' THEN 4
+                        WHEN 'elevenst' THEN 5
+                        ELSE 9
+                    END,
+                    channel_name
+                """, companyId).stream().map(row -> {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("id", row.get("id"));
+            result.put("company_id", row.get("company_id"));
+            result.put("channel_id", row.get("channel_id"));
+            result.put("channel_name", row.get("channel_name"));
+            result.put("category_name", row.get("category_name"));
+            result.put("account_type", row.get("account_type"));
+            result.put("login_url", row.get("login_url"));
+            result.put("username", row.get("username"));
+            result.put("has_password", row.get("password_cipher") != null);
+            result.put("password", canViewPassword && row.get("password_cipher") != null
+                    ? EncryptionUtil.decrypt(String.valueOf(row.get("password_cipher")))
+                    : null);
+            result.put("password_change_note", row.get("password_change_note"));
+            result.put("review_username", row.get("review_username"));
+            result.put("has_review_password", row.get("review_password_cipher") != null);
+            result.put("review_password", canViewPassword && row.get("review_password_cipher") != null
+                    ? EncryptionUtil.decrypt(String.valueOf(row.get("review_password_cipher")))
+                    : null);
+            result.put("memo", row.get("memo"));
+            result.put("status", row.get("status"));
+            result.put("updated_by", row.get("updated_by"));
+            result.put("updated_at", row.get("updated_at"));
+            result.put("password_visible", canViewPassword);
+            return result;
+        }).toList();
+    }
+
+    public Map<String, Object> saveChannelCredential(Long companyId, Map<String, Object> payload, AuthUser user) {
+        requireManager(user);
+        String channelId = requiredText(payload.get("channel_id"), "channel_id");
+        String channelName = requiredText(payload.get("channel_name"), "channel_name");
+        String loginUrl = requiredText(payload.get("login_url"), "login_url");
+        String categoryName = optionalText(payload.get("category_name"));
+        String accountType = optionalText(payload.get("account_type"));
+        String username = optionalText(payload.get("username"));
+        String passwordChangeNote = optionalText(payload.get("password_change_note"));
+        String reviewUsername = optionalText(payload.get("review_username"));
+        String memo = optionalText(payload.get("memo"));
+        String status = optionalText(payload.get("status"));
+        if (status == null) {
+            status = "ACTIVE";
+        }
+
+        String password = optionalText(payload.get("password"));
+        String reviewPassword = optionalText(payload.get("review_password"));
+        if (password != null || reviewPassword != null) {
+            jdbcTemplate.update("""
+                    INSERT INTO executive_channel_credential (
+                        company_id, channel_id, channel_name, category_name, account_type, login_url, username,
+                        password_cipher, password_change_note, review_username, review_password_cipher,
+                        memo, status, created_by, updated_by
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (company_id, channel_id)
+                    DO UPDATE SET
+                        channel_name = EXCLUDED.channel_name,
+                        category_name = EXCLUDED.category_name,
+                        account_type = EXCLUDED.account_type,
+                        login_url = EXCLUDED.login_url,
+                        username = EXCLUDED.username,
+                        password_cipher = COALESCE(EXCLUDED.password_cipher, executive_channel_credential.password_cipher),
+                        password_change_note = EXCLUDED.password_change_note,
+                        review_username = EXCLUDED.review_username,
+                        review_password_cipher = COALESCE(EXCLUDED.review_password_cipher, executive_channel_credential.review_password_cipher),
+                        memo = EXCLUDED.memo,
+                        status = EXCLUDED.status,
+                        updated_by = EXCLUDED.updated_by,
+                        updated_at = NOW()
+                    """, companyId, channelId, channelName, categoryName, accountType, loginUrl, username,
+                    password != null ? EncryptionUtil.encrypt(password) : null,
+                    passwordChangeNote, reviewUsername,
+                    reviewPassword != null ? EncryptionUtil.encrypt(reviewPassword) : null,
+                    memo, status, user.username(), user.username());
+        } else {
+            jdbcTemplate.update("""
+                    INSERT INTO executive_channel_credential (
+                        company_id, channel_id, channel_name, category_name, account_type, login_url, username,
+                        password_change_note, review_username, memo, status, created_by, updated_by
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (company_id, channel_id)
+                    DO UPDATE SET
+                        channel_name = EXCLUDED.channel_name,
+                        category_name = EXCLUDED.category_name,
+                        account_type = EXCLUDED.account_type,
+                        login_url = EXCLUDED.login_url,
+                        username = EXCLUDED.username,
+                        password_change_note = EXCLUDED.password_change_note,
+                        review_username = EXCLUDED.review_username,
+                        memo = EXCLUDED.memo,
+                        status = EXCLUDED.status,
+                        updated_by = EXCLUDED.updated_by,
+                        updated_at = NOW()
+                    """, companyId, channelId, channelName, categoryName, accountType, loginUrl, username,
+                    passwordChangeNote, reviewUsername, memo, status, user.username(), user.username());
+        }
+
+        return getChannelCredentials(companyId, user).stream()
+                .filter(row -> channelId.equals(row.get("channel_id")))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private void requireManager(AuthUser user) {
+        UserRole role = UserRole.from(user.role());
+        if (role != UserRole.MANAGER && role != UserRole.EXECUTIVE) {
+            throw new CustomException(403, "?온?귐딆쁽筌?筌?쑬瑗??④쑴???類ｋ궖????륁젟??????됰뮸??덈뼄.");
+        }
+    }
+
+    private String requiredText(Object value, String fieldName) {
+        String text = optionalText(value);
+        if (text == null) {
+            throw new CustomException(400, fieldName + " is required.");
+        }
+        return text;
+    }
+
+    private String optionalText(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value).trim();
+        return text.isEmpty() ? null : text;
+    }
+
+    public List<Map<String, Object>> getPaymentRequests(Long companyId) {
+        return jdbcTemplate.queryForList("""
+                SELECT *
+                FROM executive_payment_request
+                WHERE company_id = ?
+                ORDER BY
+                    CASE status
+                        WHEN 'SUBMITTED' THEN 1
+                        WHEN 'REVIEWING' THEN 2
+                        WHEN 'APPROVED' THEN 3
+                        WHEN 'CASH_APPLIED' THEN 4
+                        WHEN 'PAID' THEN 5
+                        WHEN 'RECEIVED' THEN 6
+                        WHEN 'REJECTED' THEN 7
+                        ELSE 8
+                    END,
+                    urgent DESC,
+                    scheduled_date NULLS LAST,
+                    id DESC
+                """, companyId);
+    }
+
+    public List<Map<String, Object>> getPaymentRequests(Long companyId, AuthUser user) {
+        if (UserRole.from(user.role()) != UserRole.EMPLOYEE) {
+            return getPaymentRequests(companyId);
+        }
+        return jdbcTemplate.queryForList("""
+                SELECT *
+                FROM executive_payment_request
+                WHERE company_id = ? AND LOWER(requester_name) = LOWER(?)
+                ORDER BY
+                    CASE status
+                        WHEN 'SUBMITTED' THEN 1
+                        WHEN 'REVIEWING' THEN 2
+                        WHEN 'APPROVED' THEN 3
+                        WHEN 'CASH_APPLIED' THEN 4
+                        WHEN 'PAID' THEN 5
+                        WHEN 'RECEIVED' THEN 6
+                        WHEN 'REJECTED' THEN 7
+                        ELSE 8
+                    END,
+                    urgent DESC,
+                    scheduled_date NULLS LAST,
+                    id DESC
+                """, companyId, user.username());
+    }
+
+    public Map<String, Object> approvePaymentRequest(Long id) {
+        Map<String, Object> request = jdbcTemplate.queryForMap("""
+                SELECT *
+                FROM executive_payment_request
+                WHERE id = ?
+                """, id);
+        Object existingCashFlowId = request.get("cash_flow_id");
+        if (existingCashFlowId != null) {
+            jdbcTemplate.update("""
+                    UPDATE executive_payment_request
+                    SET status = 'CASH_APPLIED', review_comment = COALESCE(review_comment, '?꾧툑?먮쫫 諛섏쁺 ?꾨즺')
+                    WHERE id = ?
+                    """, id);
+            return jdbcTemplate.queryForMap("SELECT * FROM executive_payment_request WHERE id = ?", id);
+        }
+
+        jdbcTemplate.update("""
+                INSERT INTO executive_cash_flow (
+                    company_id, flow_date, flow_type, category, counterparty, amount,
+                    status, confidence_level, recurring_rule, source_type, source_key, memo
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 'SCHEDULED', 'CONFIRMED', 'NONE', 'PAYMENT_REQUEST', ?, ?)
+                """,
+                request.get("company_id"),
+                request.get("scheduled_date"),
+                request.get("flow_type"),
+                request.get("expense_category"),
+                request.get("counterparty"),
+                request.get("amount"),
+                String.valueOf(id),
+                "[?낆텧湲??붿껌 ?뱀씤] " + request.get("purpose")
+        );
+
+        Long cashFlowId = jdbcTemplate.queryForObject("""
+                SELECT id
+                FROM executive_cash_flow
+                WHERE source_type = 'PAYMENT_REQUEST' AND source_key = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """, Long.class, String.valueOf(id));
+
+        jdbcTemplate.update("""
+                UPDATE executive_payment_request
+                SET status = 'CASH_APPLIED', cash_flow_id = ?, review_comment = '?뱀씤?섏뼱 ?꾧툑?먮쫫??諛섏쁺?섏뿀?듬땲??'
+                WHERE id = ?
+                """, cashFlowId, id);
+
+        return jdbcTemplate.queryForMap("SELECT * FROM executive_payment_request WHERE id = ?", id);
     }
 
     public List<Map<String, Object>> getChannelSales(Long companyId) {
@@ -677,27 +1108,53 @@ public class ExecutiveDashboardService {
     }
 
     public Map<String, Object> getChannelSalesAnalytics(Long companyId, LocalDate startDate, LocalDate endDate) {
+        return getChannelSalesAnalytics(companyId, startDate, endDate, null);
+    }
+
+    public Map<String, Object> getChannelSalesAnalytics(Long companyId, LocalDate startDate, LocalDate endDate, Long brandId) {
+        return getChannelSalesAnalytics(companyId, startDate, endDate, brandId, null);
+    }
+
+    public Map<String, Object> getChannelSalesAnalytics(Long companyId, LocalDate startDate, LocalDate endDate, Long brandId, String search) {
+        return getChannelSalesAnalytics(companyId, startDate, endDate, brandId, search, null);
+    }
+
+    public Map<String, Object> getChannelSalesAnalytics(Long companyId, LocalDate startDate, LocalDate endDate, Long brandId, String search, String productGroup) {
+        return getChannelSalesAnalytics(companyId, startDate, endDate, brandId, search, productGroup, null);
+    }
+
+    public Map<String, Object> getChannelSalesAnalytics(Long companyId, LocalDate startDate, LocalDate endDate, Long brandId, String search, String productGroup, String channel) {
         LocalDate resolvedEndDate = endDate != null ? endDate : LocalDate.now();
         LocalDate resolvedStartDate = startDate != null ? startDate : resolvedEndDate.withDayOfMonth(1);
+        String searchKeyword = search == null || search.trim().isEmpty() ? null : search.trim();
+        String productGroupKeyword = productGroup == null || productGroup.trim().isEmpty() ? null : productGroup.trim();
+        String channelKeyword = channel == null || channel.trim().isEmpty() ? null : channel.trim();
+        String brandKeyword = brandId == null ? null : jdbcTemplate.queryForObject(
+                "SELECT brand_name FROM brand WHERE id = ? AND company_id = ?",
+                String.class,
+                brandId,
+                companyId
+        );
+        String cpcKeyword = firstNonBlankValue(searchKeyword, productGroupKeyword, brandKeyword);
 
         List<Map<String, Object>> channels = jdbcTemplate.queryForList("""
                 WITH playauto AS (
                     SELECT
                         s.shop_name AS channel_name,
                         'PLAYAUTO' AS source_type,
-                        ROUND(COALESCE(SUM(d.net_revenue), 0), 0) AS sales_amount,
-                        COALESCE(SUM(d.orderer_count), 0)::int AS order_count,
-                        ROUND(COALESCE(SUM(d.net_revenue), 0) * 0.10, 0) AS ad_cost,
-                        ROUND(COALESCE(SUM(d.net_revenue), 0)
-                            - COALESCE(SUM(COALESCE(NULLIF(p.product_price, 0), matched_profit.selling_price, 0) * 0.40 * d.orderer_count), 0)
-                            - (COALESCE(SUM(d.net_revenue), 0) * 0.10), 0) AS estimated_operating_profit
-                    FROM daily_sales_stats d
-                    JOIN shop s ON s.id = d.shop_id
-                    LEFT JOIN product p ON p.id = d.product_id
+                        ROUND(COALESCE(SUM(o.pay_amt), 0), 0) AS sales_amount,
+                        COUNT(*)::int AS order_count,
+                        0::numeric AS ad_cost,
+                        ROUND(COALESCE(SUM(o.pay_amt), 0)
+                            - COALESCE(SUM(COALESCE(NULLIF(p.product_price, 0), matched_profit.selling_price, 0) * 0.40 * COALESCE(o.order_quantity, 1)), 0), 0) AS estimated_operating_profit
+                    FROM orders o
+                    JOIN shop s ON s.id = o.shop_id
+                    LEFT JOIN product p ON p.id = o.product_id
+                    LEFT JOIN brand b ON b.id = o.brand_id
                     LEFT JOIN LATERAL (
                         SELECT e.selling_price
                         FROM executive_product_profit e
-                        WHERE e.company_id = d.company_id
+                        WHERE e.company_id = o.company_id
                           AND (
                               e.sku = p.sku_cd
                               OR p.product_name ILIKE CONCAT('%', e.product_name, '%')
@@ -706,9 +1163,17 @@ public class ExecutiveDashboardService {
                         ORDER BY LENGTH(e.product_name) DESC
                         LIMIT 1
                     ) matched_profit ON true
-                    WHERE d.company_id = ?
-                      AND d.date BETWEEN ? AND ?
-                      AND s.platform <> 'OTHER'
+                    WHERE o.company_id = ?
+                      AND o.ord_time::date BETWEEN ? AND ?
+                      AND s.shop_code <> 'A000'
+                      AND o.ord_status NOT IN ('취소완료', '반품완료', '교환완료', '맞교환완료', '주문취소')
+                      AND (?::text IS NULL OR s.shop_name ILIKE CONCAT('%', ?::text, '%'))
+                      AND (?::bigint IS NULL OR o.brand_id = ?::bigint)
+                      AND (?::text IS NULL
+                           OR p.product_name ILIKE CONCAT('%', ?::text, '%')
+                           OR p.sku_cd ILIKE CONCAT('%', ?::text, '%')
+                           OR b.brand_name ILIKE CONCAT('%', ?::text, '%'))
+                      AND (?::text IS NULL OR p.product_name ILIKE CONCAT('%', ?::text, '%'))
                     GROUP BY s.shop_name
                 ),
                 manual AS (
@@ -722,7 +1187,9 @@ public class ExecutiveDashboardService {
                     FROM executive_channel_performance
                     WHERE company_id = ?
                       AND COALESCE(source_type, 'MANUAL') <> 'PLAYAUTO'
-                      AND report_month BETWEEN date_trunc('month', CAST(? AS date))::date AND date_trunc('month', CAST(? AS date))::date
+                      AND report_month BETWEEN ? AND ?
+                      AND (?::text IS NULL)
+                      AND (?::text IS NULL)
                     GROUP BY channel_name, COALESCE(source_type, 'MANUAL')
                 ),
                 combined AS (
@@ -742,7 +1209,10 @@ public class ExecutiveDashboardService {
                 FROM combined
                 WHERE sales_amount <> 0 OR order_count <> 0
                 ORDER BY sales_amount DESC
-                """, companyId, resolvedStartDate, resolvedEndDate, companyId, resolvedStartDate, resolvedEndDate);
+                """, companyId, resolvedStartDate, resolvedEndDate, channelKeyword, channelKeyword, brandId, brandId,
+                searchKeyword, searchKeyword, searchKeyword, searchKeyword,
+                productGroupKeyword, productGroupKeyword,
+                companyId, resolvedStartDate, resolvedEndDate, channelKeyword, searchKeyword);
 
         List<Map<String, Object>> products = jdbcTemplate.queryForList("""
                 SELECT
@@ -750,29 +1220,56 @@ public class ExecutiveDashboardService {
                     p.product_name,
                     p.sku_cd AS sku,
                     b.brand_name,
-                    ROUND(COALESCE(SUM(d.net_revenue), 0), 0) AS sales_amount,
-                    COALESCE(SUM(d.orderer_count), 0)::int AS order_count,
+                    ROUND(COALESCE(SUM(o.pay_amt), 0), 0) AS sales_amount,
+                    COUNT(*)::int AS order_count,
+                    -- 기존 추정치 (원가 DB 없을 때 fallback)
                     ROUND(COALESCE(AVG(COALESCE(NULLIF(p.product_price, 0), matched_profit.selling_price, 0) * 0.40), 0), 0) AS unit_cost,
-                    ROUND(COALESCE(SUM(COALESCE(NULLIF(p.product_price, 0), matched_profit.selling_price, 0) * 0.40 * d.orderer_count), 0), 0) AS estimated_cost,
-                    ROUND(COALESCE(SUM(d.net_revenue), 0) * 0.10, 0) AS ad_cost,
-                    ROUND(COALESCE(SUM(d.net_revenue), 0)
-                        - COALESCE(SUM(COALESCE(NULLIF(p.product_price, 0), matched_profit.selling_price, 0) * 0.40 * d.orderer_count), 0)
-                        - (COALESCE(SUM(d.net_revenue), 0) * 0.10), 0) AS estimated_operating_profit,
+                    ROUND(COALESCE(SUM(COALESCE(NULLIF(p.product_price, 0), matched_profit.selling_price, 0) * 0.40 * COALESCE(o.order_quantity, 1)), 0), 0) AS estimated_cost,
+                    0::numeric AS ad_cost,
+                    ROUND(COALESCE(SUM(o.pay_amt), 0)
+                        - COALESCE(SUM(COALESCE(NULLIF(p.product_price, 0), matched_profit.selling_price, 0) * 0.40 * COALESCE(o.order_quantity, 1)), 0), 0) AS estimated_operating_profit,
                     CASE
-                        WHEN COALESCE(SUM(d.net_revenue), 0) = 0 THEN 0
-                        ELSE ROUND((COALESCE(SUM(d.net_revenue), 0)
-                            - COALESCE(SUM(COALESCE(NULLIF(p.product_price, 0), matched_profit.selling_price, 0) * 0.40 * d.orderer_count), 0)
-                            - (COALESCE(SUM(d.net_revenue), 0) * 0.10))
-                            / COALESCE(SUM(d.net_revenue), 0) * 100, 1)
-                    END AS estimated_operating_margin
-                FROM daily_sales_stats d
-                JOIN shop s ON s.id = d.shop_id
-                JOIN product p ON p.id = d.product_id
-                JOIN brand b ON b.id = d.brand_id
+                        WHEN COALESCE(SUM(o.pay_amt), 0) = 0 THEN 0
+                        ELSE ROUND((COALESCE(SUM(o.pay_amt), 0)
+                            - COALESCE(SUM(COALESCE(NULLIF(p.product_price, 0), matched_profit.selling_price, 0) * 0.40 * COALESCE(o.order_quantity, 1)), 0))
+                            / COALESCE(SUM(o.pay_amt), 0) * 100, 1)
+                    END AS estimated_operating_margin,
+                    -- 실제 원가 기반 (product_cost_channel 데이터 존재 시)
+                    CASE WHEN MAX(pcc.id) IS NOT NULL THEN true ELSE false END AS has_actual_cost,
+                    ROUND(COALESCE(MAX(pcc.production_cost), 0) * COALESCE(SUM(o.order_quantity), 0), 0) AS actual_production_cost,
+                    ROUND(COALESCE(MAX(logistics.fee), 0)     * COALESCE(SUM(o.order_quantity), 0), 0) AS actual_logistics_cost,
+                    ROUND(COALESCE(MAX(pcc.channel_fee_rate), 0) * COALESCE(SUM(o.pay_amt), 0), 0) AS actual_channel_fee,
+                    ROUND(COALESCE(MAX(pcc.marketing_rate),  0) * COALESCE(SUM(o.pay_amt), 0), 0) AS actual_marketing_cost,
+                    ROUND(COALESCE(MAX(pcc.ad_rate),         0) * COALESCE(SUM(o.pay_amt), 0), 0) AS actual_ad_cost,
+                    ROUND(COALESCE(MAX(pcc.opex_rate),       0) * COALESCE(SUM(o.pay_amt), 0), 0) AS actual_opex_cost,
+                    ROUND(
+                        COALESCE(SUM(o.pay_amt), 0)
+                        - COALESCE(MAX(pcc.production_cost),   0) * COALESCE(SUM(o.order_quantity), 0)
+                        - COALESCE(MAX(logistics.fee),         0) * COALESCE(SUM(o.order_quantity), 0)
+                        - COALESCE(MAX(pcc.channel_fee_rate),  0) * COALESCE(SUM(o.pay_amt), 0)
+                        - COALESCE(MAX(pcc.marketing_rate),    0) * COALESCE(SUM(o.pay_amt), 0)
+                        - COALESCE(MAX(pcc.ad_rate),           0) * COALESCE(SUM(o.pay_amt), 0)
+                        - COALESCE(MAX(pcc.opex_rate),         0) * COALESCE(SUM(o.pay_amt), 0)
+                    , 0) AS actual_operating_profit,
+                    CASE WHEN COALESCE(SUM(o.pay_amt), 0) = 0 THEN 0 ELSE
+                        ROUND(100.0 * (
+                            COALESCE(SUM(o.pay_amt), 0)
+                            - COALESCE(MAX(pcc.production_cost),   0) * COALESCE(SUM(o.order_quantity), 0)
+                            - COALESCE(MAX(logistics.fee),         0) * COALESCE(SUM(o.order_quantity), 0)
+                            - COALESCE(MAX(pcc.channel_fee_rate),  0) * COALESCE(SUM(o.pay_amt), 0)
+                            - COALESCE(MAX(pcc.marketing_rate),    0) * COALESCE(SUM(o.pay_amt), 0)
+                            - COALESCE(MAX(pcc.ad_rate),           0) * COALESCE(SUM(o.pay_amt), 0)
+                            - COALESCE(MAX(pcc.opex_rate),         0) * COALESCE(SUM(o.pay_amt), 0)
+                        ) / COALESCE(SUM(o.pay_amt), 0), 1)
+                    END AS actual_margin
+                FROM orders o
+                JOIN shop s ON s.id = o.shop_id
+                JOIN product p ON p.id = o.product_id
+                JOIN brand b ON b.id = o.brand_id
                 LEFT JOIN LATERAL (
                     SELECT e.selling_price
                     FROM executive_product_profit e
-                    WHERE e.company_id = d.company_id
+                    WHERE e.company_id = o.company_id
                       AND (
                           e.sku = p.sku_cd
                           OR p.product_name ILIKE CONCAT('%', e.product_name, '%')
@@ -781,13 +1278,156 @@ public class ExecutiveDashboardService {
                     ORDER BY LENGTH(e.product_name) DESC
                     LIMIT 1
                 ) matched_profit ON true
-                WHERE d.company_id = ?
-                  AND d.date BETWEEN ? AND ?
-                  AND s.platform <> 'OTHER'
+                LEFT JOIN LATERAL (
+                    SELECT cost.*
+                    FROM product_cost_channel cost
+                    WHERE cost.company_id = o.company_id
+                      AND cost.is_active = TRUE
+                      AND (
+                          CASE REPLACE(s.shop_name, ' ', '')
+                              WHEN '스마트스토어' THEN '스마트스토어팜'
+                              WHEN '아임웹' THEN '자사몰'
+                              ELSE REPLACE(s.shop_name, ' ', '')
+                          END
+                      ) = REPLACE(cost.channel_name, ' ', '')
+                      AND (
+                          NULLIF(cost.sku_code, '') = p.sku_cd
+                          OR cost.product_code = p.prod_no::text
+                          OR regexp_replace(lower(COALESCE(p.product_name, '')), '[^0-9a-z가-힣]+', '', 'g')
+                             LIKE CONCAT('%', regexp_replace(lower(COALESCE(cost.product_name, '')), '[^0-9a-z가-힣]+', '', 'g'), '%')
+                          OR regexp_replace(lower(COALESCE(cost.product_name, '')), '[^0-9a-z가-힣]+', '', 'g')
+                             LIKE CONCAT('%', regexp_replace(lower(COALESCE(p.product_name, '')), '[^0-9a-z가-힣]+', '', 'g'), '%')
+                          OR regexp_replace(lower(regexp_replace(COALESCE(p.product_name, ''), '\\([^)]*\\)|[0-9]+장x[0-9]+팩|[0-9]+팩', '', 'g')), '[^0-9a-z가-힣]+', '', 'g')
+                             LIKE CONCAT('%', regexp_replace(lower(regexp_replace(COALESCE(cost.product_name, ''), '^(하이프리|국민한상)\\s*', '', 'g')), '[^0-9a-z가-힣]+', '', 'g'), '%')
+                          OR (
+                              LENGTH(regexp_replace(lower(regexp_replace(COALESCE(cost.product_name, ''), '\\s*[0-9]+박스.*$', '')), '[^0-9a-z가-힣]+', '', 'g')) >= 3
+                              AND regexp_replace(lower(replace(COALESCE(p.product_name, ''), 'box', '박스')), '[^0-9a-z가-힣]+', '', 'g')
+                                  LIKE CONCAT('%', regexp_replace(lower(regexp_replace(COALESCE(cost.product_name, ''), '\\s*[0-9]+박스.*$', '')), '[^0-9a-z가-힣]+', '', 'g'), '%')
+                              AND (
+                                  substring(COALESCE(cost.product_name, '') from '([0-9]+)박스') IS NULL
+                                  OR regexp_replace(lower(replace(COALESCE(p.product_name, ''), 'box', '박스')), '[^0-9a-z가-힣]+', '', 'g')
+                                     LIKE CONCAT('%', substring(COALESCE(cost.product_name, '') from '([0-9]+)박스'), '박스%')
+                              )
+                          )
+                      )
+                    ORDER BY
+                        CASE
+                            WHEN NULLIF(cost.sku_code, '') = p.sku_cd THEN 0
+                            WHEN cost.product_code = p.prod_no::text THEN 1
+                            ELSE 2
+                        END,
+                        LENGTH(cost.product_name) DESC
+                    LIMIT 1
+                ) pcc ON TRUE
+                LEFT JOIN product_sku_master psm
+                    ON psm.company_id = o.company_id
+                    AND psm.sku_code = p.sku_cd
+                LEFT JOIN LATERAL (
+                    SELECT lfc.fee
+                    FROM logistics_fee_config lfc
+                    WHERE lfc.company_id = o.company_id
+                      AND lfc.temp_type = COALESCE(psm.temp_type, '상온')
+                      AND lfc.weight_limit_g >= COALESCE(psm.weight_g, 0)
+                    ORDER BY lfc.weight_limit_g ASC
+                    LIMIT 1
+                ) logistics ON true
+                WHERE o.company_id = ?
+                  AND o.ord_time::date BETWEEN ? AND ?
+                  AND s.shop_code <> 'A000'
+                  AND o.ord_status NOT IN ('취소완료', '반품완료', '교환완료', '맞교환완료', '주문취소')
+                  AND (?::text IS NULL OR s.shop_name ILIKE CONCAT('%', ?::text, '%'))
+                  AND (?::bigint IS NULL OR o.brand_id = ?::bigint)
+                  AND (?::text IS NULL
+                       OR p.product_name ILIKE CONCAT('%', ?::text, '%')
+                       OR p.sku_cd ILIKE CONCAT('%', ?::text, '%')
+                       OR b.brand_name ILIKE CONCAT('%', ?::text, '%'))
+                  AND (?::text IS NULL OR p.product_name ILIKE CONCAT('%', ?::text, '%'))
                 GROUP BY s.shop_name, p.product_name, p.sku_cd, b.brand_name
-                HAVING COALESCE(SUM(d.net_revenue), 0) <> 0 OR COALESCE(SUM(d.orderer_count), 0) <> 0
+                HAVING COALESCE(SUM(o.pay_amt), 0) <> 0 OR COUNT(*) <> 0
                 ORDER BY sales_amount DESC, order_count DESC
-                """, companyId, resolvedStartDate, resolvedEndDate);
+                """, companyId, resolvedStartDate, resolvedEndDate, channelKeyword, channelKeyword, brandId, brandId,
+                searchKeyword, searchKeyword, searchKeyword, searchKeyword,
+                productGroupKeyword, productGroupKeyword);
+
+        BigDecimal filteredNaverCpcCost = loadFilteredNaverCpcCost(resolvedStartDate, resolvedEndDate, cpcKeyword);
+        BigDecimal cpcSalesBase = products.stream()
+                .filter(r -> Boolean.TRUE.equals(r.get("has_actual_cost")))
+                .map(r -> decimalValue(r.get("sales_amount")))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        for (Map<String, Object> product : products) {
+            if (!Boolean.TRUE.equals(product.get("has_actual_cost"))) {
+                product.put("actual_ad_cost", BigDecimal.ZERO);
+                product.put("actual_operating_profit", BigDecimal.ZERO);
+                product.put("actual_margin", BigDecimal.ZERO);
+                continue;
+            }
+
+            BigDecimal salesAmount = decimalValue(product.get("sales_amount"));
+            BigDecimal allocatedCpc = BigDecimal.ZERO;
+            if (cpcSalesBase.compareTo(BigDecimal.ZERO) > 0 && filteredNaverCpcCost.compareTo(BigDecimal.ZERO) > 0) {
+                allocatedCpc = filteredNaverCpcCost
+                        .multiply(salesAmount)
+                        .divide(cpcSalesBase, 0, RoundingMode.HALF_UP);
+            }
+
+            BigDecimal actualOperatingProfit = salesAmount
+                    .subtract(decimalValue(product.get("actual_production_cost")))
+                    .subtract(decimalValue(product.get("actual_logistics_cost")))
+                    .subtract(decimalValue(product.get("actual_channel_fee")))
+                    .subtract(decimalValue(product.get("actual_marketing_cost")))
+                    .subtract(allocatedCpc)
+                    .subtract(decimalValue(product.get("actual_opex_cost")));
+
+            product.put("actual_ad_cost", allocatedCpc);
+            product.put("actual_operating_profit", actualOperatingProfit);
+            product.put("actual_margin", percentValue(actualOperatingProfit, salesAmount));
+        }
+
+        Map<String, BigDecimal> mixedProfitByChannel = new HashMap<>();
+        Map<String, BigDecimal> actualProfitByChannel = new HashMap<>();
+        Map<String, BigDecimal> actualSalesByChannel = new HashMap<>();
+        Map<String, Integer> actualProductCountByChannel = new HashMap<>();
+
+        for (Map<String, Object> product : products) {
+            String channelName = String.valueOf(product.getOrDefault("channel_name", ""));
+            boolean hasActualCost = Boolean.TRUE.equals(product.get("has_actual_cost"));
+            BigDecimal productProfit = hasActualCost
+                    ? decimalValue(product.get("actual_operating_profit"))
+                    : decimalValue(product.get("estimated_operating_profit"));
+
+            mixedProfitByChannel.merge(channelName, productProfit, BigDecimal::add);
+
+            if (hasActualCost) {
+                actualProfitByChannel.merge(channelName, decimalValue(product.get("actual_operating_profit")), BigDecimal::add);
+                actualSalesByChannel.merge(channelName, decimalValue(product.get("sales_amount")), BigDecimal::add);
+                actualProductCountByChannel.merge(channelName, 1, Integer::sum);
+            }
+        }
+
+        for (Map<String, Object> channelRow : channels) {
+            if (!"PLAYAUTO".equalsIgnoreCase(String.valueOf(channelRow.getOrDefault("source_type", "")))) {
+                continue;
+            }
+            String channelName = String.valueOf(channelRow.getOrDefault("channel_name", ""));
+            BigDecimal mixedProfit = mixedProfitByChannel.get(channelName);
+            if (mixedProfit == null) {
+                continue;
+            }
+
+            BigDecimal salesAmount = decimalValue(channelRow.get("sales_amount"));
+            BigDecimal actualProfit = actualProfitByChannel.getOrDefault(channelName, BigDecimal.ZERO);
+            BigDecimal actualSales = actualSalesByChannel.getOrDefault(channelName, BigDecimal.ZERO);
+            int actualProductCount = actualProductCountByChannel.getOrDefault(channelName, 0);
+
+            channelRow.put("has_actual_cost", actualProductCount > 0);
+            channelRow.put("actual_cost_product_count", actualProductCount);
+            channelRow.put("actual_cost_sales_base", actualSales);
+            channelRow.put("actual_operating_profit", actualProfit);
+            channelRow.put("actual_operating_margin", percentValue(actualProfit, actualSales));
+            channelRow.put("estimated_operating_profit", mixedProfit);
+            channelRow.put("estimated_operating_margin", percentValue(mixedProfit, salesAmount));
+        }
 
         BigDecimal totalSales = channels.stream()
                 .map(row -> decimalValue(row.get("sales_amount")))
@@ -798,8 +1438,19 @@ public class ExecutiveDashboardService {
         int totalOrders = channels.stream()
                 .mapToInt(row -> ((Number) row.getOrDefault("order_count", 0)).intValue())
                 .sum();
-        BigDecimal totalAdCost = channels.stream()
-                .map(row -> decimalValue(row.get("ad_cost")))
+        BigDecimal totalAdCost = filteredNaverCpcCost;
+
+        // 실제 원가 기반 합계 (product_cost_channel 데이터 있는 제품만)
+        long actualCostProductCount = products.stream()
+                .filter(r -> Boolean.TRUE.equals(r.get("has_actual_cost")))
+                .count();
+        BigDecimal actualSalesBase = products.stream()
+                .filter(r -> Boolean.TRUE.equals(r.get("has_actual_cost")))
+                .map(r -> decimalValue(r.get("sales_amount")))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal actualOperatingProfit = products.stream()
+                .filter(r -> Boolean.TRUE.equals(r.get("has_actual_cost")))
+                .map(r -> decimalValue(r.get("actual_operating_profit")))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         Map<String, Object> summary = new LinkedHashMap<>();
@@ -811,11 +1462,69 @@ public class ExecutiveDashboardService {
         summary.put("adCost", totalAdCost);
         summary.put("estimatedOperatingProfit", totalProfit);
         summary.put("estimatedOperatingMargin", percentValue(totalProfit, totalSales));
+        summary.put("actualCostProductCount", actualCostProductCount);
+        summary.put("actualCostSalesBase", actualSalesBase);
+        summary.put("actualOperatingProfit", actualOperatingProfit);
+        summary.put("actualOperatingMargin", percentValue(actualOperatingProfit, actualSalesBase));
+
+        List<Map<String, Object>> trend = jdbcTemplate.queryForList("""
+                WITH playauto AS (
+                    SELECT
+                        o.ord_time::date AS sales_date,
+                        ROUND(COALESCE(SUM(o.pay_amt), 0), 0) AS sales_amount,
+                        COUNT(*)::int AS order_count
+                    FROM orders o
+                    LEFT JOIN product p ON p.id = o.product_id
+                    LEFT JOIN brand b ON b.id = o.brand_id
+                    JOIN shop s ON s.id = o.shop_id
+                    WHERE o.company_id = ?
+                      AND o.ord_time::date BETWEEN ? AND ?
+                      AND s.shop_code <> 'A000'
+                      AND o.ord_status NOT IN ('취소완료', '반품완료', '교환완료', '맞교환완료', '주문취소')
+                      AND (?::text IS NULL OR s.shop_name ILIKE CONCAT('%', ?::text, '%'))
+                      AND (?::bigint IS NULL OR o.brand_id = ?::bigint)
+                      AND (?::text IS NULL
+                           OR p.product_name ILIKE CONCAT('%', ?::text, '%')
+                           OR p.sku_cd ILIKE CONCAT('%', ?::text, '%')
+                           OR b.brand_name ILIKE CONCAT('%', ?::text, '%'))
+                      AND (?::text IS NULL OR p.product_name ILIKE CONCAT('%', ?::text, '%'))
+                    GROUP BY o.ord_time::date
+                ),
+                manual AS (
+                    SELECT
+                        report_month::date AS sales_date,
+                        ROUND(COALESCE(SUM(sales_amount), 0), 0) AS sales_amount,
+                        COALESCE(SUM(order_count), 0)::int AS order_count
+                    FROM executive_channel_performance
+                    WHERE company_id = ?
+                      AND COALESCE(source_type, 'MANUAL') <> 'PLAYAUTO'
+                      AND report_month BETWEEN ? AND ?
+                      AND (?::text IS NULL)
+                      AND (?::text IS NULL)
+                    GROUP BY report_month::date
+                ),
+                combined AS (
+                    SELECT * FROM playauto
+                    UNION ALL
+                    SELECT * FROM manual
+                )
+                SELECT
+                    sales_date,
+                    ROUND(COALESCE(SUM(sales_amount), 0), 0) AS sales_amount,
+                    COALESCE(SUM(order_count), 0)::int AS order_count
+                FROM combined
+                GROUP BY sales_date
+                ORDER BY sales_date
+                """, companyId, resolvedStartDate, resolvedEndDate, channelKeyword, channelKeyword, brandId, brandId,
+                searchKeyword, searchKeyword, searchKeyword, searchKeyword,
+                productGroupKeyword, productGroupKeyword,
+                companyId, resolvedStartDate, resolvedEndDate, channelKeyword, searchKeyword);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("startDate", resolvedStartDate);
         result.put("endDate", resolvedEndDate);
         result.put("summary", summary);
+        result.put("trend", trend);
         result.put("channels", channels);
         result.put("products", products);
         return result;
@@ -852,7 +1561,7 @@ public class ExecutiveDashboardService {
                     FROM daily_sales_stats d
                     JOIN shop s ON s.id = d.shop_id
                     WHERE d.company_id = ?
-                      AND s.platform <> 'OTHER'
+                      AND s.shop_code <> 'A000'
                     GROUP BY date_trunc('month', d.date)::date, d.shop_id
                     HAVING COALESCE(SUM(d.net_revenue), 0) <> 0
                 ) candidate
@@ -883,7 +1592,7 @@ public class ExecutiveDashboardService {
                 FROM daily_sales_stats d
                 JOIN shop s ON s.id = d.shop_id
                 WHERE d.company_id = ?
-                  AND s.platform <> 'OTHER'
+                  AND s.shop_code <> 'A000'
                 GROUP BY d.company_id, date_trunc('month', d.date)::date, d.shop_id, s.shop_name
                 HAVING COALESCE(SUM(d.net_revenue), 0) <> 0
                 ON CONFLICT (source_key) WHERE source_key IS NOT NULL
@@ -965,10 +1674,10 @@ public class ExecutiveDashboardService {
                 WHERE company_id = ?
                 ORDER BY
                     CASE country
-                        WHEN '몽골' THEN 1
-                        WHEN '대만' THEN 2
-                        WHEN '홍콩' THEN 3
-                        WHEN '베트남' THEN 4
+                        WHEN '紐쎄낏' THEN 1
+                        WHEN '?留? THEN 2
+                        WHEN '?띿쉘' THEN 3
+                        WHEN '踰좏듃?? THEN 4
                         ELSE 5
                     END,
                     moq,
@@ -978,10 +1687,88 @@ public class ExecutiveDashboardService {
 
     public List<Map<String, Object>> getAdPerformance(Long companyId) {
         return jdbcTemplate.queryForList("""
+                WITH manual_ad AS (
+                    SELECT id,
+                           company_id,
+                           'MANUAL' AS source,
+                           NULL::varchar AS ad_type,
+                           '吏곸젒 ?낅젰' AS ad_type_label,
+                           product_name,
+                           ad_channel,
+                           ad_cost,
+                           click_count,
+                           cpa,
+                           roas,
+                           conversion_rate,
+                           sales_amount,
+                           net_profit,
+                           report_month,
+                           created_at
+                      FROM executive_ad_performance
+                     WHERE company_id = ?
+                ),
+                naver_ad AS (
+                    SELECT NULL::bigint AS id,
+                           ?::bigint AS company_id,
+                           'NAVER_SEARCH_AD' AS source,
+                           ad_type,
+                           CASE ad_type
+                               WHEN 'POWERLINK' THEN '?뚯썙留곹겕'
+                               WHEN 'SHOPPING_SEARCH' THEN '?쇳븨寃??
+                               ELSE '湲고?'
+                           END AS ad_type_label,
+                           NULL::varchar AS product_name,
+                           '?ㅼ씠踰?愿묎퀬 - ' ||
+                               CASE ad_type
+                                   WHEN 'POWERLINK' THEN '?뚯썙留곹겕'
+                                   WHEN 'SHOPPING_SEARCH' THEN '?쇳븨寃??
+                                   ELSE '湲고?'
+                               END AS ad_channel,
+                           COALESCE(SUM(cost), 0) AS ad_cost,
+                           COALESCE(SUM(clicks), 0)::integer AS click_count,
+                           CASE
+                               WHEN COALESCE(SUM(conversions), 0) > 0
+                               THEN ROUND(COALESCE(SUM(cost), 0) / NULLIF(SUM(conversions), 0), 2)
+                               ELSE 0
+                           END AS cpa,
+                           CASE
+                               WHEN COALESCE(SUM(cost), 0) > 0
+                               THEN ROUND(COALESCE(SUM(conversion_value), 0) / NULLIF(SUM(cost), 0) * 100, 2)
+                               ELSE 0
+                           END AS roas,
+                           CASE
+                               WHEN COALESCE(SUM(clicks), 0) > 0
+                               THEN ROUND(COALESCE(SUM(conversions), 0)::numeric / NULLIF(SUM(clicks), 0) * 100, 2)
+                               ELSE 0
+                           END AS conversion_rate,
+                           COALESCE(SUM(conversion_value), 0) AS sales_amount,
+                           0::numeric AS net_profit,
+                           date_trunc('month', date)::date AS report_month,
+                           MAX(created_at) AS created_at
+                      FROM naver_cpc_daily_stats
+                     GROUP BY ad_type, date_trunc('month', date)::date
+                )
                 SELECT *
-                FROM executive_ad_performance
+                  FROM (
+                        SELECT * FROM manual_ad
+                        UNION ALL
+                        SELECT * FROM naver_ad
+                       ) ad_rows
+                 ORDER BY report_month DESC, roas DESC, ad_cost DESC
+                """, companyId, companyId);
+    }
+
+    public List<Map<String, Object>> getAdRoasGoals(Long companyId) {
+        return jdbcTemplate.queryForList("""
+                SELECT *
+                FROM executive_ad_roas_goal
                 WHERE company_id = ?
-                ORDER BY roas DESC
+                ORDER BY
+                    CASE status WHEN 'ACTIVE' THEN 1 ELSE 2 END,
+                    end_date DESC,
+                    period_type,
+                    product_name NULLS LAST,
+                    target_roas DESC
                 """, companyId);
     }
 
@@ -1001,6 +1788,203 @@ public class ExecutiveDashboardService {
                 """, companyId);
     }
 
+    public Map<String, Object> getCustomerDatabase(Long companyId) {
+        Map<String, Object> summary = jdbcTemplate.queryForMap("""
+                WITH valid_orders AS (
+                    SELECT
+                        o.customer_id,
+                        o.uniq,
+                        COALESCE(o.pay_amt, 0) - COALESCE(o.cancel_amt, 0) AS net_amount,
+                        COALESCE(o.ord_time, o.pay_time, o.wdate, o.created_at) AS order_at
+                    FROM orders o
+                    WHERE o.company_id = ?
+                      AND o.customer_id IS NOT NULL
+                ),
+                customer_orders AS (
+                    SELECT
+                        c.id,
+                        COUNT(DISTINCT vo.uniq) AS order_count,
+                        COALESCE(SUM(vo.net_amount), 0) AS total_purchase_amount,
+                        MIN(vo.order_at) AS first_order_at,
+                        MAX(vo.order_at) AS last_order_at
+                    FROM customer c
+                    LEFT JOIN valid_orders vo ON vo.customer_id = c.id
+                    WHERE c.company_id = ?
+                    GROUP BY c.id
+                ),
+                scored AS (
+                    SELECT
+                        *,
+                        CASE
+                            WHEN order_count > 1 THEN
+                                last_order_at + (
+                                    GREATEST(
+                                        ROUND((EXTRACT(EPOCH FROM (last_order_at - first_order_at)) / 86400 / GREATEST(order_count - 1, 1))::numeric, 1),
+                                        7
+                                    ) || ' days'
+                                )::interval
+                            WHEN last_order_at IS NOT NULL THEN last_order_at + INTERVAL '30 days'
+                            ELSE NULL
+                        END AS estimated_reorder_at
+                    FROM customer_orders
+                )
+                SELECT
+                    COUNT(*) FILTER (WHERE order_count > 0) AS total_customers,
+                    COUNT(*) FILTER (WHERE order_count > 1) AS repeat_customers,
+                    COUNT(*) FILTER (
+                        WHERE estimated_reorder_at IS NOT NULL
+                          AND estimated_reorder_at <= CURRENT_TIMESTAMP + INTERVAL '7 days'
+                    ) AS reorder_attention_count,
+                    COALESCE(SUM(order_count), 0) AS total_orders,
+                    COALESCE(SUM(total_purchase_amount), 0) AS total_purchase_amount
+                FROM scored
+                """, companyId, companyId);
+
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                WITH valid_orders AS (
+                    SELECT
+                        o.*,
+                        COALESCE(o.ord_time, o.pay_time, o.wdate, o.created_at) AS order_at,
+                        COALESCE(o.pay_amt, 0) - COALESCE(o.cancel_amt, 0) AS net_amount,
+                        GREATEST(COALESCE(o.order_quantity, 1), 1) AS resolved_quantity
+                    FROM orders o
+                    WHERE o.company_id = ?
+                      AND o.customer_id IS NOT NULL
+                ),
+                customer_base AS (
+                    SELECT
+                        c.id AS customer_id,
+                        c.customer_name,
+                        c.customer_htel,
+                        c.customer_email,
+                        COUNT(DISTINCT vo.uniq) AS order_count,
+                        COALESCE(SUM(vo.resolved_quantity), 0) AS total_quantity,
+                        COALESCE(SUM(vo.net_amount), 0) AS total_purchase_amount,
+                        MIN(vo.order_at) AS first_order_at,
+                        MAX(vo.order_at) AS last_order_at,
+                        CASE
+                            WHEN COUNT(DISTINCT vo.uniq) > 1 THEN
+                                ROUND(
+                                    (EXTRACT(EPOCH FROM (MAX(vo.order_at) - MIN(vo.order_at))) / 86400
+                                     / GREATEST(COUNT(DISTINCT vo.uniq) - 1, 1))::numeric,
+                                    1
+                                )
+                            ELSE NULL
+                        END AS avg_reorder_days
+                    FROM customer c
+                    LEFT JOIN valid_orders vo ON vo.customer_id = c.id
+                    WHERE c.company_id = ?
+                    GROUP BY c.id, c.customer_name, c.customer_htel, c.customer_email
+                ),
+                product_counts AS (
+                    SELECT
+                        vo.customer_id,
+                        COALESCE(NULLIF(p.product_name, ''), NULLIF(vo.sku_cd, ''), '상품명 없음') AS product_name,
+                        COALESCE(SUM(vo.resolved_quantity), 0) AS order_quantity
+                    FROM valid_orders vo
+                    LEFT JOIN product p ON p.id = vo.product_id
+                    GROUP BY vo.customer_id, COALESCE(NULLIF(p.product_name, ''), NULLIF(vo.sku_cd, ''), '상품명 없음')
+                ),
+                product_summary AS (
+                    SELECT
+                        customer_id,
+                        STRING_AGG(product_name || ' ' || order_quantity || '건', ', ' ORDER BY order_quantity DESC, product_name) AS ordered_products
+                    FROM product_counts
+                    GROUP BY customer_id
+                ),
+                scored AS (
+                    SELECT
+                        cb.*,
+                        COALESCE(ps.ordered_products, '-') AS ordered_products,
+                        CASE
+                            WHEN cb.order_count > 1 THEN
+                                cb.last_order_at + (GREATEST(COALESCE(cb.avg_reorder_days, 30), 7) || ' days')::interval
+                            WHEN cb.last_order_at IS NOT NULL THEN cb.last_order_at + INTERVAL '30 days'
+                            ELSE NULL
+                        END AS estimated_reorder_at
+                    FROM customer_base cb
+                    LEFT JOIN product_summary ps ON ps.customer_id = cb.customer_id
+                )
+                SELECT
+                    customer_id,
+                    COALESCE(NULLIF(customer_name, ''), '이름 없음') AS customer_name,
+                    customer_htel,
+                    customer_email,
+                    order_count,
+                    total_quantity,
+                    total_purchase_amount,
+                    first_order_at,
+                    last_order_at,
+                    CASE
+                        WHEN last_order_at IS NULL THEN NULL
+                        ELSE FLOOR(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - last_order_at)) / 86400)
+                    END AS days_since_last_order,
+                    avg_reorder_days,
+                    estimated_reorder_at,
+                    ordered_products,
+                    CASE
+                        WHEN order_count <= 1 THEN '신규'
+                        WHEN estimated_reorder_at < CURRENT_TIMESTAMP THEN '재주문 지연'
+                        WHEN estimated_reorder_at <= CURRENT_TIMESTAMP + INTERVAL '7 days' THEN '재주문 임박'
+                        ELSE '관찰'
+                    END AS reorder_status
+                FROM scored
+                WHERE order_count > 0
+                ORDER BY
+                    CASE
+                        WHEN estimated_reorder_at < CURRENT_TIMESTAMP THEN 0
+                        WHEN estimated_reorder_at <= CURRENT_TIMESTAMP + INTERVAL '7 days' THEN 1
+                        ELSE 2
+                    END,
+                    total_purchase_amount DESC,
+                    last_order_at DESC
+                LIMIT 300
+                """, companyId, companyId);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("summary", summary);
+        result.put("rows", rows);
+        return result;
+    }
+
+    public Map<String, Object> getCustomerInquiries(Long companyId) {
+        Map<String, Object> summary = jdbcTemplate.queryForMap("""
+                SELECT
+                    COUNT(*) AS total_count,
+                    COUNT(*) FILTER (WHERE status <> 'DONE') AS open_count,
+                    COUNT(*) FILTER (WHERE status = 'UNANSWERED') AS unanswered_count,
+                    COUNT(*) FILTER (WHERE urgent = TRUE AND status <> 'DONE') AS urgent_count,
+                    COUNT(*) FILTER (WHERE channel = 'KAKAO' AND status <> 'DONE') AS kakao_open_count,
+                    COUNT(*) FILTER (WHERE channel = 'SMARTSTORE' AND status <> 'DONE') AS smartstore_open_count,
+                    COUNT(*) FILTER (WHERE channel = 'IMWEB' AND status <> 'DONE') AS imweb_open_count
+                FROM executive_customer_inquiry
+                WHERE company_id = ?
+                """, companyId);
+
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT *
+                FROM executive_customer_inquiry
+                WHERE company_id = ?
+                ORDER BY
+                    CASE WHEN urgent THEN 0 ELSE 1 END,
+                    CASE status
+                        WHEN 'UNANSWERED' THEN 1
+                        WHEN 'ASSIGNED' THEN 2
+                        WHEN 'IN_PROGRESS' THEN 3
+                        WHEN 'WAITING_CUSTOMER' THEN 4
+                        WHEN 'DONE' THEN 5
+                        ELSE 6
+                    END,
+                    received_at DESC
+                LIMIT 80
+                """, companyId);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("summary", summary);
+        result.put("rows", rows);
+        return result;
+    }
+
     public Map<String, Object> createRecord(String resource, Map<String, Object> payload) {
         ResourceDefinition definition = getResourceDefinition(resource);
         Map<String, Object> values = sanitizePayload(definition, payload);
@@ -1010,7 +1994,7 @@ public class ExecutiveDashboardService {
         applyConsultingRevenueCalculations(definition, values, values);
 
         if (values.isEmpty()) {
-            throw new IllegalArgumentException("저장할 데이터가 없습니다.");
+            throw new IllegalArgumentException("???繞③뇡???⑥щ턄??? ??怨룸????덈펲.");
         }
 
         List<String> columns = new ArrayList<>(values.keySet());
@@ -1032,6 +2016,18 @@ public class ExecutiveDashboardService {
         return getRecord(definition, id);
     }
 
+    public Map<String, Object> createRecord(String resource, Map<String, Object> payload, AuthUser user) {
+        Map<String, Object> scopedPayload = new HashMap<>(payload);
+        if (UserRole.from(user.role()) == UserRole.EMPLOYEE) {
+            if ("work-tasks".equals(resource)) {
+                scopedPayload.put("assignee_name", user.username());
+            } else if ("payment-requests".equals(resource)) {
+                scopedPayload.put("requester_name", user.username());
+            }
+        }
+        return createRecord(resource, scopedPayload);
+    }
+
     public Map<String, Object> updateRecord(String resource, Long id, Map<String, Object> payload) {
         ResourceDefinition definition = getResourceDefinition(resource);
         Map<String, Object> values = sanitizePayload(definition, payload);
@@ -1047,7 +2043,7 @@ public class ExecutiveDashboardService {
         }
 
         if (values.isEmpty()) {
-            throw new IllegalArgumentException("수정할 데이터가 없습니다.");
+            throw new IllegalArgumentException("?섏젙???곗씠?곌? ?놁뒿?덈떎.");
         }
 
         List<String> columns = new ArrayList<>(values.keySet());
@@ -1061,15 +2057,61 @@ public class ExecutiveDashboardService {
         );
 
         if (updated == 0) {
-            throw new IllegalArgumentException("수정할 데이터를 찾을 수 없습니다.");
+            throw new IllegalArgumentException("?섏젙???곗씠?곕? 李얠쓣 ???놁뒿?덈떎.");
         }
 
         return getRecord(definition, id);
     }
 
+    public Map<String, Object> updateRecord(String resource, Long id, Map<String, Object> payload, AuthUser user) {
+        ensureRecordAccess(resource, id, user);
+        Map<String, Object> scopedPayload = new HashMap<>(payload);
+        if (UserRole.from(user.role()) == UserRole.EMPLOYEE) {
+            scopedPayload.remove("assignee_name");
+            scopedPayload.remove("requester_name");
+            scopedPayload.remove("review_comment");
+            scopedPayload.remove("cash_flow_id");
+        }
+        return updateRecord(resource, id, scopedPayload);
+    }
+
     public void deleteRecord(String resource, Long id) {
         ResourceDefinition definition = getResourceDefinition(resource);
         jdbcTemplate.update("DELETE FROM " + definition.tableName() + " WHERE id = ?", id);
+    }
+
+    public void deleteRecord(String resource, Long id, AuthUser user) {
+        ensureRecordAccess(resource, id, user);
+        if (UserRole.from(user.role()) == UserRole.EMPLOYEE && !"work-tasks".equals(resource)) {
+            throw new CustomException(403, "직원은 업무 외 데이터를 삭제할 수 없습니다. 관리자에게 요청하세요.");
+        }
+        deleteRecord(resource, id);
+    }
+
+    private void ensureRecordAccess(String resource, Long id, AuthUser user) {
+        if (UserRole.from(user.role()) != UserRole.EMPLOYEE) {
+            return;
+        }
+        ResourceDefinition definition = getResourceDefinition(resource);
+        if ("work-tasks".equals(resource)) {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + definition.tableName() + " WHERE id = ? AND LOWER(assignee_name) = LOWER(?)",
+                    Integer.class,
+                    id,
+                    user.username()
+            );
+            if (count != null && count > 0) return;
+        }
+        if ("payment-requests".equals(resource)) {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + definition.tableName() + " WHERE id = ? AND LOWER(requester_name) = LOWER(?)",
+                    Integer.class,
+                    id,
+                    user.username()
+            );
+            if (count != null && count > 0) return;
+        }
+        throw new CustomException(403, "해당 데이터에 접근 권한이 없습니다.");
     }
 
     public List<Map<String, Object>> queryAccounts(Long companyId) {
@@ -1196,6 +2238,36 @@ public class ExecutiveDashboardService {
         targetValues.put("operating_margin_rate", percentValue(grossProfit, contractAmount));
     }
 
+    private String firstNonBlankValue(String... values) {
+        for (String value : values) {
+            if (value != null && !value.trim().isEmpty()) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
+    private BigDecimal loadFilteredNaverCpcCost(LocalDate startDate, LocalDate endDate, String keyword) {
+        if (keyword == null || keyword.trim().isEmpty()) {
+            return jdbcTemplate.queryForObject("""
+                    SELECT COALESCE(SUM(cost), 0)
+                      FROM naver_cpc_daily_stats
+                     WHERE date BETWEEN ? AND ?
+                    """, BigDecimal.class, startDate, endDate);
+        }
+        String normalizedKeyword = keyword.trim();
+        return jdbcTemplate.queryForObject("""
+                SELECT COALESCE(SUM(cost), 0)
+                  FROM naver_cpc_daily_stats
+                 WHERE date BETWEEN ? AND ?
+                   AND (
+                       campaign_name ILIKE CONCAT('%', ?::text, '%')
+                       OR ad_group_name ILIKE CONCAT('%', ?::text, '%')
+                       OR keyword ILIKE CONCAT('%', ?::text, '%')
+                   )
+                """, BigDecimal.class, startDate, endDate, normalizedKeyword, normalizedKeyword, normalizedKeyword);
+    }
+
     private BigDecimal decimalValue(Object value) {
         if (value == null || "".equals(value)) {
             return BigDecimal.ZERO;
@@ -1225,7 +2297,7 @@ public class ExecutiveDashboardService {
     private ResourceDefinition getResourceDefinition(String resource) {
         ResourceDefinition definition = RESOURCE_DEFINITIONS.get(resource);
         if (definition == null) {
-            throw new IllegalArgumentException("지원하지 않는 데이터 영역입니다: " + resource);
+            throw new IllegalArgumentException("吏?먰븯吏 ?딅뒗 ?곗씠???곸뿭?낅땲?? " + resource);
         }
         return definition;
     }
@@ -1299,12 +2371,12 @@ public class ExecutiveDashboardService {
 
         double projectedCash = Number.class.cast(cash.get("projected_cash")).doubleValue();
         if (projectedCash < 0) {
-            return "위험";
+            return "?꾪뿕";
         }
         if (projectedCash < 30_000_000) {
-            return "주의";
+            return "二쇱쓽";
         }
-        return "정상";
+        return "?뺤긽";
     }
 
     private Object getExpectedCashShortageDate(Long companyId) {
@@ -1372,4 +2444,682 @@ public class ExecutiveDashboardService {
                 """, Integer.class, companyId);
         return count == null ? 0 : count;
     }
+
+    private int countOpenCustomerInquiries(Long companyId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM executive_customer_inquiry
+                WHERE company_id = ? AND status <> 'DONE'
+                """, Integer.class, companyId);
+        return count == null ? 0 : count;
+    }
+
+    private int countUnansweredCustomerInquiries(Long companyId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM executive_customer_inquiry
+                WHERE company_id = ? AND status = 'UNANSWERED'
+                """, Integer.class, companyId);
+        return count == null ? 0 : count;
+    }
+
+    // ─── CEO 전략 대시보드 ────────────────────────────────────────────────────
+
+    public Map<String, Object> getCeoFinancials(Long companyId) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT * FROM executive_ceo_financials WHERE company_id = ?", companyId);
+        if (rows.isEmpty()) {
+            return new LinkedHashMap<>();
+        }
+        return new LinkedHashMap<>(rows.get(0));
+    }
+
+    public Map<String, Object> saveCeoFinancials(Long companyId, Map<String, Object> payload) {
+        // 목표값만 저장 — 현금/부채/고정비는 각 전용 테이블에서 자동 집계
+        jdbcTemplate.update("""
+                INSERT INTO executive_ceo_financials (
+                    company_id, goal_consulting, goal_online, goal_export, updated_at
+                ) VALUES (?,?,?,?,NOW())
+                ON CONFLICT (company_id) DO UPDATE SET
+                    goal_consulting = EXCLUDED.goal_consulting,
+                    goal_online     = EXCLUDED.goal_online,
+                    goal_export     = EXCLUDED.goal_export,
+                    updated_at      = NOW()
+                """,
+                companyId,
+                toLong(payload, "goal_consulting"), toLong(payload, "goal_online"), toLong(payload, "goal_export")
+        );
+        return getCeoFinancials(companyId);
+    }
+
+    public Map<String, Object> getCeoDashboard(Long companyId) {
+        LocalDate today = LocalDate.now();
+        LocalDate monthStart = today.withDayOfMonth(1);
+        LocalDate prevMonthStart = monthStart.minusMonths(1);
+        LocalDate prevMonthEnd = monthStart.minusDays(1);
+        int daysInMonth = today.lengthOfMonth();
+        int daysPassed  = today.getDayOfMonth();
+
+        // ── 목표값 (manual) ─────────────────────────────────────────────────
+        Map<String, Object> fin = getCeoFinancials(companyId);
+        long goalConsulting = toLongMap(fin, "goal_consulting", 30_000_000L);
+        long goalOnline     = toLongMap(fin, "goal_online",     50_000_000L);
+        long goalExport     = toLongMap(fin, "goal_export",     20_000_000L);
+
+        // ── 현금 ────────────────────────────────────────────────────────────
+        Long cashVal = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(balance::BIGINT), 0) FROM executive_cash_account WHERE company_id = ?",
+                Long.class, companyId);
+        long cash = cashVal == null ? 0L : cashVal;
+
+        // ── 부채 ────────────────────────────────────────────────────────────
+        Long debtVal = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(principal_balance::BIGINT), 0) FROM executive_debt WHERE company_id = ? AND status <> 'CLOSED'",
+                Long.class, companyId);
+        long totalDebt = debtVal == null ? 0L : debtVal;
+
+        // ── 이번달 운영비용 ──────────────────────────────────────────────────
+        Long fixedVal = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(amount::BIGINT), 0) FROM executive_operating_expense WHERE company_id = ? AND expense_month = ?",
+                Long.class, companyId, monthStart);
+        long fixedTotal = fixedVal == null ? 0L : fixedVal;
+
+        List<Map<String, Object>> fixedBreakdown = jdbcTemplate.queryForList("""
+                SELECT category, COALESCE(SUM(amount::BIGINT), 0) AS amount
+                FROM executive_operating_expense
+                WHERE company_id = ? AND expense_month = ?
+                GROUP BY category ORDER BY SUM(amount) DESC
+                """, companyId, monthStart);
+
+        // ── 현금 생존일수 ────────────────────────────────────────────────────
+        double dailyBurn = fixedTotal > 0 ? (double) fixedTotal / daysInMonth : 1.0;
+        long cashDays = (long) (cash / dailyBurn);
+
+        // ── 이번달 매출 + 페이스 ─────────────────────────────────────────────
+        long onlineSales      = getMonthlyOnlineSales(companyId, monthStart, today);
+        long exportSales      = getMonthlyExportSales(companyId, monthStart, today);
+        long consultingSales  = getMonthlyConsultingSales(companyId, monthStart, today);
+        long totalMonthlySales = onlineSales + exportSales + consultingSales;
+
+        double paceRatio = (double) daysPassed / daysInMonth;
+        long onlinePace     = (long) (goalOnline     * paceRatio);
+        long exportPace     = (long) (goalExport     * paceRatio);
+        long consultingPace = (long) (goalConsulting * paceRatio);
+
+        // ── 전월 매출 ────────────────────────────────────────────────────────
+        long prevOnline     = getMonthlyOnlineSales(companyId, prevMonthStart, prevMonthEnd);
+        long prevExport     = getMonthlyExportSales(companyId, prevMonthStart, prevMonthEnd);
+        long prevConsulting = getMonthlyConsultingSales(companyId, prevMonthStart, prevMonthEnd);
+        long prevTotal      = prevOnline + prevExport + prevConsulting;
+
+        // ── 이번주(7일) 현금 이벤트 ──────────────────────────────────────────
+        LocalDate weekEnd = today.plusDays(7);
+        List<Map<String, Object>> weekInflows = jdbcTemplate.queryForList("""
+                SELECT flow_date, category, counterparty, amount::BIGINT AS amount, memo
+                FROM executive_cash_flow
+                WHERE company_id = ? AND flow_type = 'INFLOW' AND flow_date BETWEEN ? AND ?
+                ORDER BY flow_date
+                """, companyId, today, weekEnd);
+        List<Map<String, Object>> weekOutflows = jdbcTemplate.queryForList("""
+                SELECT flow_date, category, counterparty, amount::BIGINT AS amount, memo
+                FROM executive_cash_flow
+                WHERE company_id = ? AND flow_type = 'OUTFLOW' AND flow_date BETWEEN ? AND ?
+                ORDER BY flow_date
+                """, companyId, today, weekEnd);
+        long weekNetCash = weekInflows.stream().mapToLong(r -> toLong(r, "amount")).sum()
+                - weekOutflows.stream().mapToLong(r -> toLong(r, "amount")).sum();
+
+        // ── 긴급 액션 1: 연체 미수금 ─────────────────────────────────────────
+        List<Map<String, Object>> overdueReceivables = jdbcTemplate.queryForList("""
+                SELECT partner_name,
+                       (invoice_amount - paid_amount)::BIGINT AS outstanding,
+                       due_date,
+                       CURRENT_DATE - due_date AS overdue_days,
+                       risk_level
+                FROM executive_receivable
+                WHERE company_id = ?
+                  AND status IN ('OVERDUE', 'PARTIAL')
+                  AND (invoice_amount - paid_amount) > 0
+                ORDER BY CASE risk_level WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'WATCH' THEN 2 ELSE 3 END,
+                         due_date
+                """, companyId);
+
+        // ── 긴급 액션 2: 재고 위험 ──────────────────────────────────────────
+        List<Map<String, Object>> lowStockProducts = jdbcTemplate.queryForList("""
+                SELECT product_name, stock_quantity, safe_stock, status
+                FROM executive_product_profit
+                WHERE company_id = ? AND stock_quantity <= safe_stock AND status <> 'DISCONTINUED'
+                ORDER BY (stock_quantity * 1.0 / NULLIF(safe_stock, 1))
+                """, companyId);
+
+        // ── 긴급 액션 3: 5일 내 500만+ 출금 예정 ───────────────────────────
+        LocalDate urgentWindow = today.plusDays(5);
+        List<Map<String, Object>> bigPayments = jdbcTemplate.queryForList("""
+                SELECT flow_date, category, counterparty, amount::BIGINT AS amount, memo
+                FROM executive_cash_flow
+                WHERE company_id = ? AND flow_type = 'OUTFLOW'
+                  AND flow_date BETWEEN ? AND ?
+                  AND amount >= 5000000
+                ORDER BY flow_date
+                """, companyId, today, urgentWindow);
+
+        // ── 수출 파이프라인 다음 할 일 ───────────────────────────────────────
+        List<Map<String, Object>> exportActions = jdbcTemplate.queryForList("""
+                SELECT country, buyer_name, stage, next_action,
+                       expected_payment_date, expected_sales::BIGINT AS expected_sales
+                FROM executive_export_pipeline
+                WHERE company_id = ? AND stage NOT IN ('완료', 'CLOSED')
+                  AND next_action IS NOT NULL
+                ORDER BY expected_payment_date NULLS LAST
+                LIMIT 4
+                """, companyId);
+
+        // ── 결과 조립 ────────────────────────────────────────────────────────
+        Map<String, Object> result = new LinkedHashMap<>();
+        // 날짜 컨텍스트
+        result.put("today", today.toString());
+        result.put("daysPassed", daysPassed);
+        result.put("daysInMonth", daysInMonth);
+        // 생존 지표
+        result.put("cash", cash);
+        result.put("cashDays", cashDays);
+        result.put("dailyBurn", (long) dailyBurn);
+        result.put("totalDebt", totalDebt);
+        result.put("fixedTotal", fixedTotal);
+        result.put("fixedBreakdown", fixedBreakdown);
+        // 이번달 매출 + 페이스
+        result.put("onlineSales", onlineSales);
+        result.put("exportSales", exportSales);
+        result.put("consultingSales", consultingSales);
+        result.put("totalMonthlySales", totalMonthlySales);
+        result.put("goalOnline", goalOnline);
+        result.put("goalExport", goalExport);
+        result.put("goalConsulting", goalConsulting);
+        result.put("onlinePaceTarget", onlinePace);
+        result.put("exportPaceTarget", exportPace);
+        result.put("consultingPaceTarget", consultingPace);
+        result.put("paceRatio", Math.round(paceRatio * 1000.0) / 10.0); // %
+        // 전월
+        result.put("prevOnlineSales", prevOnline);
+        result.put("prevExportSales", prevExport);
+        result.put("prevConsultingSales", prevConsulting);
+        result.put("prevTotalSales", prevTotal);
+        // 이번주 현금
+        result.put("weekInflows", weekInflows);
+        result.put("weekOutflows", weekOutflows);
+        result.put("weekNetCash", weekNetCash);
+        // 긴급 액션
+        result.put("overdueReceivables", overdueReceivables);
+        result.put("lowStockProducts", lowStockProducts);
+        result.put("bigPayments", bigPayments);
+        result.put("exportActions", exportActions);
+        return result;
+    }
+
+    private long getMonthlyOnlineSales(Long companyId, LocalDate start, LocalDate end) {
+        Long val = jdbcTemplate.queryForObject("""
+                SELECT COALESCE(SUM(d.net_revenue), 0)
+                FROM daily_sales_stats d
+                JOIN shop s ON s.id = d.shop_id
+                WHERE d.company_id = ?
+                  AND d.date BETWEEN ? AND ?
+                  AND s.shop_code <> 'A000'
+                  AND NOT (s.shop_name ILIKE '%해외%' OR s.shop_name ILIKE '%수출%'
+                       OR s.shop_name ILIKE '%쇼피%' OR s.shop_name ILIKE '%아마존%')
+                """, Long.class, companyId, start, end);
+        return val == null ? 0L : val;
+    }
+
+    private long getMonthlyExportSales(Long companyId, LocalDate start, LocalDate end) {
+        // daily_sales_stats 해외 채널 + executive_channel_performance OVERSEAS
+        Long fromStats = jdbcTemplate.queryForObject("""
+                SELECT COALESCE(SUM(d.net_revenue), 0)
+                FROM daily_sales_stats d
+                JOIN shop s ON s.id = d.shop_id
+                WHERE d.company_id = ?
+                  AND d.date BETWEEN ? AND ?
+                  AND (s.shop_name ILIKE '%해외%' OR s.shop_name ILIKE '%수출%'
+                    OR s.shop_name ILIKE '%쇼피%' OR s.shop_name ILIKE '%아마존%')
+                """, Long.class, companyId, start, end);
+        Long fromManual = jdbcTemplate.queryForObject("""
+                SELECT COALESCE(SUM(sales_amount), 0)
+                FROM executive_channel_performance
+                WHERE company_id = ?
+                  AND source_type IN ('OVERSEAS')
+                  AND report_month BETWEEN ? AND ?
+                """, Long.class, companyId, start, end);
+        return (fromStats == null ? 0L : fromStats) + (fromManual == null ? 0L : fromManual);
+    }
+
+    private long getMonthlyConsultingSales(Long companyId, LocalDate start, LocalDate end) {
+        Long val = jdbcTemplate.queryForObject("""
+                SELECT COALESCE(SUM(contract_amount), 0)
+                FROM executive_consulting_revenue
+                WHERE company_id = ?
+                  AND expected_payment_date BETWEEN ? AND ?
+                """, Long.class, companyId, start, end);
+        return val == null ? 0L : val;
+    }
+
+    private int computeHealthScore(long cash, long monthlySales, long netProfit, long totalDebt, double growthRate) {
+        // 현금 (30점): 3억 이상 = 30점, 비례
+        int cashScore = (int) Math.min(30, (cash / 300_000_000.0) * 30);
+        // 매출 (30점): 월 1억 이상 = 30점
+        int salesScore = (int) Math.min(30, (monthlySales / 100_000_000.0) * 30);
+        // 순이익 (20점): 순이익 > 0 기준 비례
+        int profitScore = netProfit > 0 ? (int) Math.min(20, (netProfit / 30_000_000.0) * 20) : 0;
+        // 부채 (10점): 부채 0 = 10점, 부채 많을수록 감소
+        int debtScore = totalDebt == 0 ? 10 : (int) Math.max(0, 10 - (totalDebt / 100_000_000.0) * 10);
+        // 성장률 (10점): 10% 이상 = 10점
+        int growthScore = (int) Math.min(10, Math.max(0, growthRate));
+        return cashScore + salesScore + profitScore + debtScore + growthScore;
+    }
+
+    private String investmentGrade(int healthScore, long cash) {
+        if (cash < 30_000_000L) return "RED";
+        if (healthScore >= 80) return "BLUE";
+        if (healthScore >= 60) return "GREEN";
+        if (healthScore >= 40) return "YELLOW";
+        return "RED";
+    }
+
+    private int computeStage(long online, long export, long consulting, long cash) {
+        // 단계 조건 (월 매출 기준)
+        if (online >= 50_000_000L && export >= 20_000_000L && consulting >= 30_000_000L && cash >= 100_000_000L)
+            return 4; // HIGHFREE 플래그십 준비
+        if (export >= 10_000_000L)
+            return 3; // 수출 확대
+        if (online >= 10_000_000L)
+            return 2; // 단백깡 성장
+        return 1;     // 컨설팅 중심
+    }
+
+    private List<Map<String, String>> buildWarnings(long cash, long fixedTotal, long monthlySales) {
+        List<Map<String, String>> warnings = new ArrayList<>();
+        if (cash < 30_000_000L) {
+            warnings.add(Map.of("level", "RED", "message", "현금 3천만원 이하 — 즉각 현금 확보 필요"));
+        } else if (cash >= 200_000_000L) {
+            warnings.add(Map.of("level", "BLUE", "message", "현금 2억원 이상 — 공격적 투자 가능"));
+        } else if (cash >= 100_000_000L) {
+            warnings.add(Map.of("level", "GREEN", "message", "현금 1억원 이상 — 안정적 확장 가능"));
+        }
+        if (fixedTotal > 0 && monthlySales < fixedTotal) {
+            warnings.add(Map.of("level", "YELLOW", "message", "매출이 고정비 미달 — 손익분기점 아래"));
+        }
+        return warnings;
+    }
+
+    private long toLong(Map<String, Object> map, String key) {
+        Object v = map.get(key);
+        if (v == null) return 0L;
+        if (v instanceof Number n) return n.longValue();
+        try { return Long.parseLong(v.toString()); } catch (Exception e) { return 0L; }
+    }
+
+    private long toLongMap(Map<String, Object> map, String key) {
+        return toLong(map, key);
+    }
+
+    private long toLongMap(Map<String, Object> map, String key, long defaultVal) {
+        if (!map.containsKey(key) || map.get(key) == null) return defaultVal;
+        return toLong(map, key);
+    }
+
+    // ─── 수익 구조 분석 ───────────────────────────────────────────────────────
+
+    public Map<String, Object> getProfitManagement(Long companyId) {
+        LocalDate today = LocalDate.now();
+        LocalDate monthStart = today.withDayOfMonth(1);
+        LocalDate monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth());
+
+        // 1. 고정비 (운영 비용 - 이번 달)
+        List<Map<String, Object>> fixedCosts = jdbcTemplate.queryForList("""
+                SELECT category, expense_type, SUM(amount)::BIGINT AS total
+                FROM executive_operating_expense
+                WHERE company_id = ? AND expense_month = ?
+                GROUP BY category, expense_type
+                ORDER BY category
+                """, companyId, monthStart);
+
+        Long totalFixed = jdbcTemplate.queryForObject("""
+                SELECT COALESCE(SUM(amount), 0)::BIGINT
+                FROM executive_operating_expense
+                WHERE company_id = ? AND expense_month = ?
+                """, Long.class, companyId, monthStart);
+
+        // 2. 부채 요약
+        Map<String, Object> debtSummary = jdbcTemplate.queryForMap("""
+                SELECT
+                    COALESCE(SUM(principal_balance), 0)::BIGINT AS total_balance,
+                    CASE WHEN SUM(principal_balance) > 0
+                         THEN (SUM(principal_balance * interest_rate) / SUM(principal_balance))
+                         ELSE 0 END AS avg_interest_rate,
+                    COALESCE(SUM(monthly_payment), 0)::BIGINT AS total_monthly_payment
+                FROM executive_debt
+                WHERE company_id = ? AND status <> 'CLOSED'
+                """, companyId);
+
+        // 3. 제품 목록 (원가 자동 채우기용)
+        List<Map<String, Object>> products = jdbcTemplate.queryForList("""
+                SELECT id, product_name, sku,
+                       production_cost::BIGINT AS cogs,
+                       selling_price::BIGINT AS sale_price,
+                       platform_fee::BIGINT AS platform_fee,
+                       ad_cost::BIGINT AS ad_cost,
+                       logistics_cost::BIGINT AS logistics_cost,
+                       marketing_cost::BIGINT AS marketing_cost
+                FROM executive_product_profit
+                WHERE company_id = ? AND status = 'NORMAL'
+                ORDER BY product_name
+                """, companyId);
+
+        // 4. 저장된 계획 (이번 달)
+        List<Map<String, Object>> plan = jdbcTemplate.queryForList("""
+                SELECT id, channel, product_name,
+                       sale_price::BIGINT, cogs::BIGINT,
+                       logistics_cost::BIGINT, marketing_cost::BIGINT,
+                       other_cost::BIGINT, planned_qty
+                FROM executive_profit_plan
+                WHERE company_id = ? AND plan_month = ?
+                ORDER BY channel, id
+                """, companyId, monthStart);
+
+        // 5. 실제 매출 (채널별)
+        // 국내 온라인 (PlayAuto orders)
+        Long actualOnline = jdbcTemplate.queryForObject("""
+                SELECT COALESCE(SUM(o.gross_amt - o.discount_amt), 0)::BIGINT
+                FROM orders o
+                JOIN brand b ON o.brand_id = b.id
+                WHERE b.company_id = ?
+                  AND o.order_date >= ? AND o.order_date <= ?
+                  AND o.status NOT IN ('CANCELLED', 'CANCEL_REQUEST')
+                """, Long.class, companyId, monthStart, monthEnd);
+
+        // 컨설팅 (paid_amount 기준)
+        Long actualConsulting = jdbcTemplate.queryForObject("""
+                SELECT COALESCE(SUM(paid_amount), 0)::BIGINT
+                FROM executive_consulting_revenue
+                WHERE company_id = ?
+                  AND expected_payment_date >= ? AND expected_payment_date <= ?
+                  AND status <> 'CANCELLED'
+                """, Long.class, companyId, monthStart, monthEnd);
+
+        // 해외 수출 (expected_sales 기준, CLOSED/IN_PROGRESS)
+        Long actualExport = jdbcTemplate.queryForObject("""
+                SELECT COALESCE(SUM(expected_sales), 0)::BIGINT
+                FROM executive_export_pipeline
+                WHERE company_id = ?
+                  AND expected_payment_date >= ? AND expected_payment_date <= ?
+                  AND stage IN ('CONTRACT', 'PAYMENT', 'SHIPMENT', 'COMPLETE')
+                """, Long.class, companyId, monthStart, monthEnd);
+
+        // 채널별 수동 매출 (manual channel_sales)
+        Long actualOffline = jdbcTemplate.queryForObject("""
+                SELECT COALESCE(SUM(sales_amount), 0)::BIGINT
+                FROM executive_channel_performance
+                WHERE company_id = ?
+                  AND report_month = ?
+                  AND channel_name NOT IN ('쿠팡', '네이버', '스마트스토어', '11번가', 'G마켓', '옥션', '카카오')
+                """, Long.class, companyId, monthStart);
+
+        Map<String, Long> actualSales = new HashMap<>();
+        actualSales.put("online", actualOnline == null ? 0L : actualOnline);
+        actualSales.put("offline", actualOffline == null ? 0L : actualOffline);
+        actualSales.put("export", actualExport == null ? 0L : actualExport);
+        actualSales.put("consulting", actualConsulting == null ? 0L : actualConsulting);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("planMonth", monthStart.toString());
+        result.put("fixedCosts", fixedCosts);
+        result.put("totalFixedCost", totalFixed == null ? 0L : totalFixed);
+        result.put("debtSummary", debtSummary);
+        result.put("products", products);
+        result.put("plan", plan);
+        result.put("actualSales", actualSales);
+        return result;
+    }
+
+    public void saveProfitPlan(Long companyId, LocalDate planMonth, List<Map<String, Object>> items) {
+        // 해당 월 기존 계획 전체 삭제 후 재삽입
+        jdbcTemplate.update("""
+                DELETE FROM executive_profit_plan WHERE company_id = ? AND plan_month = ?
+                """, companyId, planMonth);
+
+        for (Map<String, Object> item : items) {
+            jdbcTemplate.update("""
+                    INSERT INTO executive_profit_plan
+                        (company_id, plan_month, channel, product_name,
+                         sale_price, cogs, logistics_cost, marketing_cost, other_cost, planned_qty)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    companyId,
+                    planMonth,
+                    item.get("channel"),
+                    item.get("product_name"),
+                    toDecimal(item.get("sale_price")),
+                    toDecimal(item.get("cogs")),
+                    toDecimal(item.get("logistics_cost")),
+                    toDecimal(item.get("marketing_cost")),
+                    toDecimal(item.get("other_cost")),
+                    toInt(item.get("planned_qty"))
+            );
+        }
+    }
+
+    private java.math.BigDecimal toDecimal(Object v) {
+        if (v == null) return java.math.BigDecimal.ZERO;
+        if (v instanceof java.math.BigDecimal bd) return bd;
+        try { return new java.math.BigDecimal(v.toString()); } catch (Exception e) { return java.math.BigDecimal.ZERO; }
+    }
+
+    private int toInt(Object v) {
+        if (v == null) return 0;
+        if (v instanceof Number n) return n.intValue();
+        try { return Integer.parseInt(v.toString()); } catch (Exception e) { return 0; }
+    }
+
+    // ── 브랜드 사업 현황 ────────────────────────────────────────────────────
+
+    public Map<String, Object> getBrandHealth(Long companyId, Long brandId, LocalDate startDate, LocalDate endDate) {
+        LocalDate resolvedEnd   = endDate   != null ? endDate   : LocalDate.now();
+        LocalDate resolvedStart = startDate != null ? startDate : resolvedEnd.withDayOfMonth(1);
+
+        // 1. 브랜드 목록
+        List<Map<String, Object>> brands = jdbcTemplate.queryForList("""
+                SELECT id, brand_name
+                FROM brand
+                WHERE company_id = ?
+                ORDER BY brand_name
+                """, companyId);
+
+        // 2. 월별 매출 트렌드 (최근 6개월)
+        LocalDate trendStart = resolvedEnd.withDayOfMonth(1).minusMonths(5);
+        List<Map<String, Object>> monthlySales = jdbcTemplate.queryForList("""
+                SELECT
+                    date_trunc('month', o.ord_time::date)::date AS month,
+                    b.brand_name,
+                    ROUND(COALESCE(SUM(o.pay_amt), 0), 0)         AS sales_amount,
+                    COUNT(*)::int                                  AS order_count,
+                    ROUND(COALESCE(SUM(o.pay_amt), 0) * 0.40, 0) AS estimated_profit
+                FROM orders o
+                JOIN brand b ON b.id = o.brand_id
+                WHERE o.company_id = ?
+                  AND o.ord_time::date >= ?
+                  AND o.ord_status NOT IN ('취소완료','반품완료','교환완료','맞교환완료','주문취소')
+                  AND (?::bigint IS NULL OR o.brand_id = ?::bigint)
+                GROUP BY date_trunc('month', o.ord_time::date)::date, b.brand_name
+                ORDER BY month, b.brand_name
+                """, companyId, trendStart, brandId, brandId);
+
+        // 3. 채널별 매출 집계 (조회 기간)
+        List<Map<String, Object>> channelBreakdown = jdbcTemplate.queryForList("""
+                SELECT
+                    s.shop_name                                     AS channel_name,
+                    ROUND(COALESCE(SUM(o.pay_amt), 0), 0)          AS sales_amount,
+                    COUNT(*)::int                                   AS order_count,
+                    ROUND(COALESCE(SUM(o.pay_amt), 0) * 0.40, 0)  AS estimated_profit
+                FROM orders o
+                JOIN shop s ON s.id = o.shop_id
+                WHERE o.company_id = ?
+                  AND o.ord_time::date BETWEEN ? AND ?
+                  AND s.shop_code <> 'A000'
+                  AND o.ord_status NOT IN ('취소완료','반품완료','교환완료','맞교환완료','주문취소')
+                  AND (?::bigint IS NULL OR o.brand_id = ?::bigint)
+                GROUP BY s.shop_name
+                HAVING COALESCE(SUM(o.pay_amt), 0) > 0
+                ORDER BY sales_amount DESC
+                """, companyId, resolvedStart, resolvedEnd, brandId, brandId);
+
+        // 4. SKU 재고 현황 (소진 예상일, 회전율 포함)
+        List<Map<String, Object>> inventory = jdbcTemplate.queryForList("""
+                WITH recent_out AS (
+                    SELECT product_id, COALESCE(SUM(outbound_count), 0) AS cnt_7d
+                    FROM product_outbound
+                    WHERE company_id = ? AND outbound_date >= CURRENT_DATE - INTERVAL '6 day'
+                    GROUP BY product_id
+                ),
+                monthly_out AS (
+                    SELECT product_id, COALESCE(SUM(outbound_count), 0) AS cnt_30d
+                    FROM product_outbound
+                    WHERE company_id = ? AND outbound_date >= CURRENT_DATE - INTERVAL '29 day'
+                    GROUP BY product_id
+                )
+                SELECT
+                    p.id,
+                    p.product_name,
+                    p.sku_cd,
+                    b.brand_name,
+                    p.real_stock,
+                    p.safe_stock,
+                    COALESCE(r.cnt_7d,  0)::int AS last_7d_outbound,
+                    COALESCE(m.cnt_30d, 0)::int AS last_30d_outbound,
+                    CASE WHEN COALESCE(r.cnt_7d, 0) = 0 THEN NULL
+                         ELSE ROUND(p.real_stock::numeric / (COALESCE(r.cnt_7d,0)::numeric / 7), 0)
+                    END AS days_to_depletion,
+                    CASE WHEN p.real_stock <= 0 THEN NULL
+                         ELSE ROUND(COALESCE(m.cnt_30d,0)::numeric / NULLIF(p.real_stock,0), 2)
+                    END AS turnover_rate,
+                    CASE
+                        WHEN p.real_stock <= 0 THEN 'OUT_OF_STOCK'
+                        WHEN p.real_stock <= GREATEST(COALESCE(NULLIF(p.safe_stock,0),1),1) THEN 'LOW_STOCK'
+                        WHEN COALESCE(r.cnt_7d,0) = 0 THEN 'NO_MOVEMENT'
+                        ELSE 'NORMAL'
+                    END AS stock_status
+                FROM product p
+                LEFT JOIN brand b ON b.id = p.brand_id
+                LEFT JOIN recent_out  r ON r.product_id = p.id
+                LEFT JOIN monthly_out m ON m.product_id = p.id
+                WHERE p.company_id = ?
+                  AND (?::bigint IS NULL OR p.brand_id = ?::bigint)
+                ORDER BY
+                    CASE WHEN p.real_stock <= 0 THEN 1
+                         WHEN p.real_stock <= GREATEST(COALESCE(NULLIF(p.safe_stock,0),1),1) THEN 2
+                         WHEN COALESCE(r.cnt_7d,0) = 0 THEN 3
+                         ELSE 4 END,
+                    COALESCE(m.cnt_30d,0) DESC, p.product_name
+                """, companyId, companyId, companyId, brandId, brandId);
+
+        // 5. 요약 KPI (조회 기간)
+        long totalSales  = channelBreakdown.stream()
+                .mapToLong(r -> ((Number) r.getOrDefault("sales_amount", 0)).longValue()).sum();
+        long totalProfit = channelBreakdown.stream()
+                .mapToLong(r -> ((Number) r.getOrDefault("estimated_profit", 0)).longValue()).sum();
+        double avgMargin = totalSales > 0 ? Math.round(totalProfit * 100.0 / totalSales * 10) / 10.0 : 0.0;
+
+        long totalStock = inventory.stream()
+                .mapToLong(r -> ((Number) r.getOrDefault("real_stock", 0)).longValue()).sum();
+        long out7d = inventory.stream()
+                .mapToLong(r -> ((Number) r.getOrDefault("last_7d_outbound", 0)).longValue()).sum();
+        double avgDaysToDepletion = out7d > 0 ? Math.round(totalStock * 7.0 / out7d * 10) / 10.0 : 0.0;
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("total_sales",           totalSales);
+        summary.put("total_profit",          totalProfit);
+        summary.put("avg_margin",            avgMargin);
+        summary.put("total_stock",           totalStock);
+        summary.put("avg_days_to_depletion", avgDaysToDepletion);
+        summary.put("period_start",          resolvedStart.toString());
+        summary.put("period_end",            resolvedEnd.toString());
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("brands",           brands);
+        result.put("monthlySales",     monthlySales);
+        result.put("channelBreakdown", channelBreakdown);
+        result.put("inventory",        inventory);
+        result.put("summary",          summary);
+        return result;
+    }
+
+    /** 임시 진단 API: 쿠팡 주문 pay_amt 실제 값 확인용 */
+    public Map<String, Object> diagnoseChannelOrders(Long companyId, LocalDate startDate, LocalDate endDate, String shopNameFilter) {
+        LocalDate s = startDate != null ? startDate : LocalDate.now().withDayOfMonth(1);
+        LocalDate e = endDate != null ? endDate : LocalDate.now();
+
+        // daily_sales_stats 기준 집계
+        List<Map<String, Object>> statsSummary = jdbcTemplate.queryForList("""
+                SELECT
+                    s.shop_name,
+                    s.shop_code,
+                    COUNT(DISTINCT d.id) AS stat_rows,
+                    SUM(d.orderer_count) AS total_orders,
+                    SUM(d.net_revenue) AS total_net_revenue,
+                    MIN(d.date) AS min_date,
+                    MAX(d.date) AS max_date
+                FROM daily_sales_stats d
+                JOIN shop s ON s.id = d.shop_id
+                WHERE d.company_id = ?
+                  AND d.date BETWEEN ? AND ?
+                  AND (? IS NULL OR s.shop_name ILIKE CONCAT('%', ?::text, '%'))
+                GROUP BY s.shop_name, s.shop_code
+                ORDER BY total_net_revenue DESC
+                """, companyId, s, e, shopNameFilter, shopNameFilter);
+
+        // orders 테이블 기준 집계 (raw 데이터)
+        List<Map<String, Object>> ordersSummary = jdbcTemplate.queryForList("""
+                SELECT
+                    s.shop_name,
+                    s.shop_code,
+                    COUNT(o.uniq) AS total_orders,
+                    SUM(o.pay_amt) AS total_pay_amt,
+                    SUM(o.discount_amt) AS total_discount_amt,
+                    SUM(o.shipping_fee) AS total_ship_cost,
+                    ROUND(AVG(o.pay_amt), 0) AS avg_pay_amt,
+                    o.ord_status,
+                    MIN(o.ord_time) AS min_ord_time,
+                    MAX(o.ord_time) AS max_ord_time
+                FROM orders o
+                JOIN shop s ON s.id = o.shop_id
+                WHERE o.company_id = ?
+                  AND COALESCE(o.ord_time, o.wdate) BETWEEN ?::timestamp AND ?::timestamp + INTERVAL '1 day'
+                  AND (? IS NULL OR s.shop_name ILIKE CONCAT('%', ?::text, '%'))
+                GROUP BY s.shop_name, s.shop_code, o.ord_status
+                ORDER BY total_pay_amt DESC NULLS LAST
+                """, companyId, s, e, shopNameFilter, shopNameFilter);
+
+        // orders 중 brand_id/product_id null로 stats에서 누락된 건수
+        List<Map<String, Object>> unmappedOrders = jdbcTemplate.queryForList("""
+                SELECT
+                    s.shop_name,
+                    COUNT(o.uniq) AS unmapped_count,
+                    SUM(o.pay_amt) AS unmapped_pay_amt,
+                    COUNT(o.uniq) FILTER (WHERE o.brand_id IS NULL) AS null_brand,
+                    COUNT(o.uniq) FILTER (WHERE o.product_id IS NULL) AS null_product
+                FROM orders o
+                JOIN shop s ON s.id = o.shop_id
+                WHERE o.company_id = ?
+                  AND COALESCE(o.ord_time, o.wdate) BETWEEN ?::timestamp AND ?::timestamp + INTERVAL '1 day'
+                  AND (o.brand_id IS NULL OR o.product_id IS NULL)
+                  AND (? IS NULL OR s.shop_name ILIKE CONCAT('%', ?::text, '%'))
+                GROUP BY s.shop_name
+                """, companyId, s, e, shopNameFilter, shopNameFilter);
+
+        return Map.of(
+                "period", Map.of("start", s, "end", e),
+                "statsSummary", statsSummary,
+                "ordersSummary", ordersSummary,
+                "unmappedOrders", unmappedOrders
+        );
+    }
 }
+
+

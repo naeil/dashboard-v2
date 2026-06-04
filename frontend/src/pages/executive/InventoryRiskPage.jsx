@@ -203,6 +203,14 @@ export default function InventoryRiskPage() {
             { key: 'issue_text', label: '이슈' },
             { key: 'status', label: '상태', render: (row) => <StatusBadge value={row.status} /> },
           ]}
+          defaultSort="stockDesc"
+          sortOptions={[
+            { id: 'stockDesc', label: '재고 많은 순', key: 'stock_quantity' },
+            { id: 'stockAsc', label: '재고 적은 순', key: 'stock_quantity', direction: 'asc' },
+            { id: 'valueDesc', label: '재고 평가금액 높은 순', value: (row) => Number(row.production_cost || 0) * Number(row.stock_quantity || 0) },
+            { id: 'safeGapAsc', label: '안전재고 부족 순', value: (row) => Number(row.stock_quantity || 0) - Number(row.safe_stock || 3000), direction: 'asc' },
+            { id: 'expiryAsc', label: '유통기한 임박 순', key: 'expiry_date', type: 'date', direction: 'asc' },
+          ]}
         />
       </Panel>
     </>

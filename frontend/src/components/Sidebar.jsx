@@ -1,31 +1,156 @@
-const menuItems = [
-  { id: 'summary', icon: 'dashboard', label: '경영 요약' },
-  { id: 'cash-flow', icon: 'account_balance_wallet', label: '현금 흐름' },
-  { id: 'product-profit', icon: 'inventory_2', label: '제품 손익' },
-  { id: 'product-forecast', icon: 'trending_up', label: '제품별 예상 리스크' },
-  { id: 'channel-sales', icon: 'leaderboard', label: '채널 매출' },
-  { id: 'consulting-revenue', icon: 'business_center', label: '컨설팅 매출' },
-  { id: 'receivables', icon: 'request_quote', label: '미수금 관리' },
-  { id: 'operating-expenses', icon: 'receipt_long', label: '운영 비용' },
-  { id: 'debts', icon: 'credit_score', label: '대출 / 부채' },
-  { id: 'inventory', icon: 'warehouse', label: '재고 관리' },
-  { id: 'export-pipeline', icon: 'public', label: '수출 파이프라인' },
-  { id: 'marketing-status', icon: 'monitoring', label: '마케팅 현황' },
-  { id: 'ad-performance', icon: 'campaign', label: '광고 성과' },
-  { id: 'partners', icon: 'groups', label: '거래처 관리' },
-  { id: 'settings', icon: 'settings', label: '설정' },
+import { useState } from 'react'
+
+const departmentAliases = {
+  salesSupport: ['영업지원', '영업 지원', '운영', '물류', '생산', 'CS'],
+  marketing: ['마케팅', '마케팅팀', '온라인MD', '온라인 MD', 'MD', '콘텐츠', '광고'],
+  accounting: ['회계', '회계팀', '재무', '재무팀', '경리', '정산'],
+  sales: ['영업', '영업팀', '해외영업', '수출', '컨설팅', 'B2B'],
+}
+
+// group: 'executive' | 'staff' | 'system'
+const menuSections = [
+  // ─── 경영진 그룹 ───────────────────────────────────────────────
+  {
+    title: '전략 · 재무',
+    group: 'executive',
+    departments: ['executive'],
+    items: [
+      { id: 'ceo-dashboard',       icon: 'monitoring',            label: 'CEO 전략 대시보드', roles: ['EXECUTIVE'] },
+      { id: 'cash-flow',           icon: 'account_balance_wallet', label: '현금 흐름',         roles: ['EXECUTIVE'] },
+      { id: 'profit-management',   icon: 'trending_up',           label: '수익 구조 분석',     roles: ['EXECUTIVE'] },
+      { id: 'debts',               icon: 'credit_score',          label: '대출 / 부채',        roles: ['EXECUTIVE'] },
+      { id: 'operating-expenses',  icon: 'receipt_long',          label: '운영 비용',          roles: ['EXECUTIVE'] },
+    ],
+  },
+  {
+    title: '운영 · 팀관리',
+    group: 'executive',
+    departments: ['manager'],
+    items: [
+      { id: 'work-management',     icon: 'assignment',  label: '업무 진행 관리',   roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'payment-approval',    icon: 'approval',    label: '입출금 결재 관리', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'employee-performance',icon: 'analytics',   label: '직원 성과 분석',   roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'channel-credentials', icon: 'encrypted',   label: '채널 계정 관리',   roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'product-cost',        icon: 'calculate',   label: '제품 원가 관리',   roles: ['EXECUTIVE', 'MANAGER'] },
+    ],
+  },
+  // ─── 실무진 그룹 ───────────────────────────────────────────────
+  {
+    title: '공통',
+    group: 'staff',
+    departments: ['all'],
+    items: [
+      { id: 'staff-dashboard', icon: 'dashboard',   label: '직원 대시보드', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'brand-health',    icon: 'storefront',  label: '브랜드 사업 현황', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'platform',        icon: 'apps',        label: '업무 홈',          roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'channel-sales',   icon: 'leaderboard', label: '실시간 매출',      roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'work-input',      icon: 'edit_note',   label: '내 업무 입력',     roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], personal: true },
+      { id: 'payment-request', icon: 'request_page',label: '지출결의 / 기안서', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+    ],
+  },
+  {
+    title: '영업 지원',
+    group: 'staff',
+    departments: ['salesSupport'],
+    items: [
+      { id: 'channel-operations', icon: 'storefront', label: '채널 운영',   roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'inventory',          icon: 'warehouse',  label: '재고 현황',   roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'product-movement',   icon: 'inventory',  label: '제품 출입고', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'partners',           icon: 'groups',     label: '거래처 관리', roles: ['EXECUTIVE', 'MANAGER'] },
+    ],
+  },
+  {
+    title: '마케팅팀',
+    group: 'staff',
+    departments: ['marketing'],
+    items: [
+      { id: 'marketing-projects', icon: 'view_kanban',  label: '마케팅 프로젝트',    roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'ad-performance',     icon: 'campaign',     label: '광고 성과',          roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'marketing-agent',    icon: 'auto_awesome', label: '마케팅 에이전트',    roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'blog-auto-publish',  icon: 'rss_feed',     label: '블로그 자동 배포 AI', roles: ['EXECUTIVE', 'MANAGER'] },
+    ],
+  },
+  {
+    title: '회계 · 영업팀',
+    group: 'staff',
+    departments: ['accounting', 'sales'],
+    items: [
+      { id: 'consulting-revenue', icon: 'business_center', label: '컨설팅 매출',     roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'export-pipeline',    icon: 'public',          label: '수출 파이프라인', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'payroll',            icon: 'payments',        label: '임금 지급 내역',  roles: ['EXECUTIVE', 'MANAGER'] },
+    ],
+  },
+  // ─── 시스템 ────────────────────────────────────────────────────
+  {
+    title: '시스템',
+    group: 'system',
+    departments: ['all'],
+    items: [
+      { id: 'account',    icon: 'account_circle',  label: '내 계정',   roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'employees',  icon: 'manage_accounts', label: '직원 관리', roles: ['EXECUTIVE'] },
+      { id: 'settings',   icon: 'settings',        label: '설정',      roles: ['EXECUTIVE'] },
+    ],
+  },
 ]
+
+const roleLabels = {
+  EXECUTIVE: '대표 / 임원',
+  MANAGER: '관리자',
+  EMPLOYEE: '직원',
+}
+
+function normalizeDepartment(value) {
+  return String(value || '').replace(/\s+/g, '').toLowerCase()
+}
+
+function matchesDepartment(sectionDepartments, department, role) {
+  if (sectionDepartments.includes('all')) return true
+  if (role === 'EXECUTIVE') return true
+  if (role === 'MANAGER') return !sectionDepartments.includes('executive')
+  if (!department) return !sectionDepartments.includes('executive') && !sectionDepartments.includes('manager')
+
+  const normalized = normalizeDepartment(department)
+  return sectionDepartments.some((key) => {
+    const aliases = departmentAliases[key] || []
+    return aliases.some((alias) => normalized.includes(normalizeDepartment(alias)))
+  })
+}
+
+// allowedMenuSections 가 항목 ID 배열일 때 해당 항목만 표시, null 이면 전체 표시
+function isItemAllowed(itemId, allowedMenuSections) {
+  if (!allowedMenuSections || allowedMenuSections.length === 0) return true
+  return allowedMenuSections.includes(itemId)
+}
 
 function MenuLabel({ isExpanded, children }) {
   return (
-    <span
-      className={`overflow-hidden whitespace-nowrap transition-all duration-300 ${
-        isExpanded ? 'w-auto opacity-100' : 'w-0 opacity-0'
-      }`}
-    >
+    <span className={`overflow-hidden whitespace-nowrap transition-all duration-300 ${isExpanded ? 'w-auto opacity-100' : 'w-0 opacity-0'}`}>
       {children}
     </span>
   )
+}
+
+// 그룹 레이블 (경영진 / 실무진 구분선)
+function GroupDivider({ label, isExpanded }) {
+  if (!isExpanded) return <div className="my-3 border-t border-slate-200" />
+  return (
+    <div className="mb-2 mt-5 flex items-center gap-2 px-2">
+      <div className="h-px flex-1 bg-slate-200" />
+      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{label}</span>
+      <div className="h-px flex-1 bg-slate-200" />
+    </div>
+  )
+}
+
+// 기본 collapsed 상태: 모두 펼침 (사용자가 직접 접을 수 있음)
+const DEFAULT_COLLAPSED = {}
+
+function getInitialCollapsed() {
+  try {
+    const saved = localStorage.getItem('sidebar_collapsed_sections')
+    if (saved) return JSON.parse(saved)
+  } catch {}
+  return DEFAULT_COLLAPSED
 }
 
 export default function Sidebar({
@@ -34,73 +159,168 @@ export default function Sidebar({
   activePage,
   onNavigate,
   username,
+  displayName,
+  department,
+  role = 'EXECUTIVE',
   onLogout,
+  allowedMenuSections = null,
 }) {
+  const [collapsed, setCollapsed] = useState(getInitialCollapsed)
+  const personalLabel = [department, displayName || username].filter(Boolean).join(' / ') || '내 업무 입력'
+
+  function toggleSection(title) {
+    setCollapsed((prev) => {
+      const next = { ...prev, [title]: !prev[title] }
+      try { localStorage.setItem('sidebar_collapsed_sections', JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
+
+  // allowedMenuSections 가 항목 ID 배열인지 (새 형식) 판별
+  const hasItemLevelPermissions = Array.isArray(allowedMenuSections)
+    && allowedMenuSections.length > 0
+    && allowedMenuSections.some((v) => v.includes('-'))
+
+  // 렌더링할 섹션 필터링
+  const visibleSections = menuSections
+    .map((section) => {
+      if (!matchesDepartment(section.departments, department, role)) return null
+      let items = section.items.filter((item) => item.roles.includes(role))
+
+      // 항목 ID 단위 권한 — 공통(all)·시스템 섹션은 항상 전체 표시
+      if (hasItemLevelPermissions && section.group === 'staff' && !section.departments.includes('all')) {
+        items = items.filter((item) => isItemAllowed(item.id, allowedMenuSections))
+      }
+
+      if (items.length === 0) return null
+      return { ...section, items }
+    })
+    .filter(Boolean)
+
+  // 그룹별로 묶기
+  const executiveSections = visibleSections.filter((s) => s.group === 'executive')
+  const staffSections = visibleSections.filter((s) => s.group === 'staff')
+  const systemSections = visibleSections.filter((s) => s.group === 'system')
+
+  // 경영진 그룹이 실제로 보이는지 (EXECUTIVE만 볼 수 있음)
+  const showExecutiveGroup = executiveSections.length > 0
+  const showStaffGroup = staffSections.length > 0
+
+  function renderSection(section) {
+    const isCollapsed = collapsed[section.title]
+    return (
+      <div key={section.title}>
+        {isExpanded ? (
+          <button
+            type="button"
+            onClick={() => toggleSection(section.title)}
+            className="mb-1 flex w-full items-center justify-between rounded px-4 py-1 transition-colors hover:bg-slate-50"
+          >
+            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">{section.title}</span>
+            <span
+              className="material-symbols-outlined text-sm text-slate-300 transition-transform duration-200"
+              style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', fontSize: '16px' }}
+            >
+              expand_more
+            </span>
+          </button>
+        ) : null}
+
+        {(!isCollapsed || !isExpanded) && (
+          <div className="space-y-1">
+            {section.items.map((item) => {
+              const isActive = activePage === item.id
+              return (
+                <a
+                  key={`${section.title}-${item.id}`}
+                  href="#"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    onNavigate(item.id)
+                  }}
+                  className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold transition-colors ${isActive ? 'bg-sky-500 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'}`}
+                >
+                  <span className="material-symbols-outlined shrink-0 text-xl">{item.icon}</span>
+                  <MenuLabel isExpanded={isExpanded}>{item.personal ? personalLabel : item.label}</MenuLabel>
+                </a>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
-    <aside
-      className={`fixed left-0 top-0 z-50 flex h-full flex-col border-r border-white/10 bg-slate-950 text-slate-300 transition-all duration-300 ${
-        isExpanded ? 'w-72' : 'w-20'
-      }`}
-    >
+    <aside className={`fixed left-0 top-0 z-50 flex h-full flex-col border-r border-slate-200 bg-white text-slate-600 shadow-sm transition-all duration-300 ${isExpanded ? 'w-72' : 'w-20'}`}>
+      {/* 헤더 */}
       <div className={`flex items-center p-5 ${isExpanded ? 'justify-between' : 'justify-center'}`}>
         <div className={`min-w-0 ${isExpanded ? 'block' : 'hidden'}`}>
-          <p className="text-xs font-black uppercase tracking-[0.22em] text-sky-300">Naeil Group</p>
-          <h1 className="mt-1 truncate text-lg font-black text-white">Executive Dashboard</h1>
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-sky-600">Naeil Group</p>
+          <h1 className="mt-1 truncate text-lg font-black text-slate-950">Business Platform</h1>
         </div>
-        <button
-          type="button"
-          onClick={onToggle}
-          className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
-          aria-label={isExpanded ? '사이드바 접기' : '사이드바 펼치기'}
-        >
+        <button type="button" onClick={onToggle} className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950" aria-label={isExpanded ? '사이드바 접기' : '사이드바 펼치기'}>
           <span className="material-symbols-outlined">{isExpanded ? 'menu_open' : 'menu'}</span>
         </button>
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-2">
-        {menuItems.map((item) => {
-          const isActive = activePage === item.id
+      {/* 네비게이션 */}
+      <nav className="flex-1 overflow-y-auto px-3 py-2">
+        {/* 경영진 그룹 */}
+        {showExecutiveGroup && (
+          <div className="space-y-3">
+            {isExpanded && (
+              <div className="flex items-center gap-2 px-2">
+                <div className="h-px flex-1 bg-slate-200" />
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-500">경영진</span>
+                <div className="h-px flex-1 bg-slate-200" />
+              </div>
+            )}
+            {executiveSections.map(renderSection)}
+          </div>
+        )}
 
-          return (
-            <a
-              key={item.id}
-              href="#"
-              onClick={(event) => {
-                event.preventDefault()
-                onNavigate(item.id)
-              }}
-              className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold transition-colors ${
-                isActive
-                  ? 'bg-sky-400 text-slate-950 shadow-lg shadow-sky-950/30'
-                  : 'text-slate-400 hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              <span className="material-symbols-outlined shrink-0 text-xl">{item.icon}</span>
-              <MenuLabel isExpanded={isExpanded}>{item.label}</MenuLabel>
-            </a>
-          )
-        })}
+        {/* 실무진 그룹 */}
+        {showStaffGroup && (
+          <div className="mt-4 space-y-3">
+            {isExpanded && showExecutiveGroup && (
+              <div className="flex items-center gap-2 px-2">
+                <div className="h-px flex-1 bg-slate-200" />
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500">실무진</span>
+                <div className="h-px flex-1 bg-slate-200" />
+              </div>
+            )}
+            {!isExpanded && showExecutiveGroup && <div className="my-2 border-t border-slate-200" />}
+            {staffSections.map(renderSection)}
+          </div>
+        )}
+
+        {/* 시스템 */}
+        {systemSections.length > 0 && (
+          <div className="mt-4 space-y-3">
+            {isExpanded && <div className="my-2 border-t border-slate-200" />}
+            {!isExpanded && <div className="my-2 border-t border-slate-200" />}
+            {systemSections.map(renderSection)}
+          </div>
+        )}
       </nav>
 
-      <div className="border-t border-white/10 p-4">
-        <div className={`flex rounded-lg bg-white/[0.04] p-3 ${isExpanded ? 'items-center justify-between gap-3' : 'justify-center'}`}>
+      {/* 유저 정보 */}
+      <div className="border-t border-slate-200 p-4">
+        <div className={`flex rounded-lg bg-slate-50 p-3 ${isExpanded ? 'items-center justify-between gap-3' : 'justify-center'}`}>
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-400 text-sm font-black text-slate-950">
-              {(username || 'A').slice(0, 1).toUpperCase()}
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500 text-sm font-black text-white">
+              {(displayName || username || 'A').slice(0, 1).toUpperCase()}
             </div>
             {isExpanded && (
               <div className="min-w-0">
-                <p className="truncate text-xs font-black text-white">{username || '관리자'}</p>
-                <p className="text-[11px] font-bold text-slate-500">관리자 계정</p>
+                <p className="truncate text-xs font-black text-slate-950">{displayName || username || 'admin'}</p>
+                <p className="text-[11px] font-bold text-slate-500">{department ? `${department} · ${roleLabels[role] || role}` : roleLabels[role] || role}</p>
               </div>
             )}
           </div>
           {isExpanded && (
-            <button
-              type="button"
-              onClick={onLogout}
-              className="rounded-lg px-3 py-2 text-xs font-black text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
-            >
+            <button type="button" onClick={onLogout} className="rounded-lg px-3 py-2 text-xs font-black text-slate-500 transition-colors hover:bg-white hover:text-slate-950">
               로그아웃
             </button>
           )}
