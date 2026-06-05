@@ -43,6 +43,10 @@ public class IntegrationSetting {
     @Column(name = "api_password", columnDefinition = "TEXT")
     private String apiPassword;
 
+    @Convert(converter = EncryptConverter.class)
+    @Column(name = "api_extra", columnDefinition = "TEXT")
+    private String apiExtra;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "collection_unit", length = 20)
     private CollectionUnit collectionUnit;
@@ -112,6 +116,8 @@ public class IntegrationSetting {
     public void setApiEmail(String apiEmail) { this.apiEmail = apiEmail; }
     public String getApiPassword() { return apiPassword; }
     public void setApiPassword(String apiPassword) { this.apiPassword = apiPassword; }
+    public String getApiExtra() { return apiExtra; }
+    public void setApiExtra(String apiExtra) { this.apiExtra = apiExtra; }
     public CollectionUnit getCollectionUnit() { return collectionUnit; }
     public void setCollectionUnit(CollectionUnit collectionUnit) { this.collectionUnit = collectionUnit; }
     public Integer getCollectionValue() { return collectionValue; }

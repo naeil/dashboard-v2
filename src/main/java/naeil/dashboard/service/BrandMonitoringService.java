@@ -11,7 +11,6 @@ import naeil.dashboard.dto.BrandMonitoringSearchResponse;
 import naeil.dashboard.dto.BrandMonitoringSummaryDto;
 import naeil.dashboard.entity.BrandKeywordSearchLog;
 import naeil.dashboard.repository.BrandKeywordSearchLogRepository;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,25 +24,23 @@ public class BrandMonitoringService {
 
     private static final String NAVER_SEARCH_BASE_URL = "https://openapi.naver.com/v1/search";
     private static final int DISPLAY_COUNT = 10;
+    private static final Long DEFAULT_COMPANY_ID = 1L;
 
     private final BrandKeywordSearchLogRepository searchLogRepository;
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
-    private final String naverClientId;
-    private final String naverClientSecret;
+    private final IntegrationCredentialService credentialService;
 
     public BrandMonitoringService(
             BrandKeywordSearchLogRepository searchLogRepository,
             ObjectMapper objectMapper,
             RestClient.Builder restClientBuilder,
-            @Value("${naver.client-id:}") String naverClientId,
-            @Value("${naver.client-secret:}") String naverClientSecret
+            IntegrationCredentialService credentialService
     ) {
         this.searchLogRepository = searchLogRepository;
         this.objectMapper = objectMapper;
         this.restClient = restClientBuilder.build();
-        this.naverClientId = naverClientId;
-        this.naverClientSecret = naverClientSecret;
+        this.credentialService = credentialService;
     }
 
     @Transactional
@@ -52,16 +49,17 @@ public class BrandMonitoringService {
         if (normalizedKeyword.isBlank()) {
             throw new CustomException(400, "검색 키워드를 입력해주세요.");
         }
-        if (naverClientId == null || naverClientId.isBlank()
-                || naverClientSecret == null || naverClientSecret.isBlank()) {
+        IntegrationCredentialService.NaverSearchCredentials credentials =
+                credentialService.getNaverSearchCredentials(DEFAULT_COMPANY_ID);
+        if (credentials.clientId().isBlank() || credentials.clientSecret().isBlank()) {
             throw new CustomException(400, "NAVER API 키가 설정되지 않았습니다");
         }
 
         LocalDateTime searchedAt = LocalDateTime.now();
         List<BrandMonitoringResultDto> results = new ArrayList<>();
-        results.addAll(searchChannel("BLOG", "blog", normalizedKeyword));
-        results.addAll(searchChannel("NEWS", "news", normalizedKeyword));
-        results.addAll(searchChannel("WEB", "webkr", normalizedKeyword));
+        results.addAll(searchChannel("BLOG", "blog", normalizedKeyword, credentials));
+        results.addAll(searchChannel("NEWS", "news", normalizedKeyword, credentials));
+        results.addAll(searchChannel("WEB", "webkr", normalizedKeyword, credentials));
 
         searchLogRepository.saveAll(results.stream()
                 .map(result -> new BrandKeywordSearchLog(
@@ -95,7 +93,12 @@ public class BrandMonitoringService {
         );
     }
 
-    private List<BrandMonitoringResultDto> searchChannel(String channel, String naverPath, String keyword) {
+    private List<BrandMonitoringResultDto> searchChannel(
+            String channel,
+            String naverPath,
+            String keyword,
+            IntegrationCredentialService.NaverSearchCredentials credentials
+    ) {
         String url = UriComponentsBuilder.fromHttpUrl(NAVER_SEARCH_BASE_URL + "/" + naverPath + ".json")
                 .queryParam("query", keyword)
                 .queryParam("display", DISPLAY_COUNT)
@@ -108,8 +111,8 @@ public class BrandMonitoringService {
         try {
             String body = restClient.get()
                     .uri(url)
-                    .header("X-Naver-Client-Id", naverClientId)
-                    .header("X-Naver-Client-Secret", naverClientSecret)
+                    .header("X-Naver-Client-Id", credentials.clientId())
+                    .header("X-Naver-Client-Secret", credentials.clientSecret())
                     .header(HttpHeaders.ACCEPT, "application/json")
                     .retrieve()
                     .body(String.class);

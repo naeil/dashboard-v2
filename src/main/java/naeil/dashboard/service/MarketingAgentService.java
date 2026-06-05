@@ -11,7 +11,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import naeil.dashboard.common.exception.CustomException;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -26,28 +25,20 @@ import org.springframework.web.util.UriComponentsBuilder;
 public class MarketingAgentService {
 
     private static final String NAVER_BLOG_WRITE_URL = "https://openapi.naver.com/blog/writePost.json";
+    private static final Long DEFAULT_COMPANY_ID = 1L;
 
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
-    private final String naverBlogClientId;
-    private final String naverBlogClientSecret;
-    private final String naverBlogAccessToken;
-    private final String naverBlogId;
+    private final IntegrationCredentialService credentialService;
 
     public MarketingAgentService(
             ObjectMapper objectMapper,
             RestClient.Builder restClientBuilder,
-            @Value("${naver-blog.client-id:}") String naverBlogClientId,
-            @Value("${naver-blog.client-secret:}") String naverBlogClientSecret,
-            @Value("${naver-blog.access-token:}") String naverBlogAccessToken,
-            @Value("${naver-blog.default-blog-id:}") String naverBlogId
+            IntegrationCredentialService credentialService
     ) {
         this.objectMapper = objectMapper;
         this.restClient = restClientBuilder.build();
-        this.naverBlogClientId = naverBlogClientId;
-        this.naverBlogClientSecret = naverBlogClientSecret;
-        this.naverBlogAccessToken = naverBlogAccessToken;
-        this.naverBlogId = naverBlogId;
+        this.credentialService = credentialService;
     }
 
     public Map<String, Object> createScenario(Map<String, Object> payload) {
@@ -100,13 +91,15 @@ public class MarketingAgentService {
         String title = text(payload.get("title"), "");
         String contents = text(payload.get("contents"), "");
         String categoryNo = text(payload.get("categoryNo"), "");
-        String blogId = text(payload.get("blogId"), naverBlogId);
+        IntegrationCredentialService.NaverBlogCredentials credentials =
+                credentialService.getNaverBlogCredentials(DEFAULT_COMPANY_ID);
+        String blogId = text(payload.get("blogId"), credentials.blogId());
 
         if (title.isBlank() || contents.isBlank()) {
             throw new CustomException(400, "블로그 제목과 본문을 입력해주세요.");
         }
 
-        if (isBlank(naverBlogAccessToken) || isBlank(naverBlogClientId) || isBlank(naverBlogClientSecret)) {
+        if (isBlank(credentials.accessToken()) || isBlank(credentials.clientId()) || isBlank(credentials.clientSecret())) {
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("configured", false);
             response.put("status", "CONFIG_REQUIRED");
@@ -132,9 +125,9 @@ public class MarketingAgentService {
         try {
             String body = restClient.post()
                     .uri(uri)
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + naverBlogAccessToken)
-                    .header("X-Naver-Client-Id", naverBlogClientId)
-                    .header("X-Naver-Client-Secret", naverBlogClientSecret)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + credentials.accessToken())
+                    .header("X-Naver-Client-Id", credentials.clientId())
+                    .header("X-Naver-Client-Secret", credentials.clientSecret())
                     .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                     .body(form)
                     .retrieve()

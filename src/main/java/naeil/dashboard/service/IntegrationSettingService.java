@@ -45,23 +45,7 @@ public class IntegrationSettingService {
 
     public List<IntegrationSettingDto.Response> getSettingsByCompanyId(Long companyId) {
         return settingRepository.findByCompanyId(companyId).stream()
-                .map(s -> new IntegrationSettingDto.Response(
-                        s.getIntegrationType(),
-                        s.getApiKey(),
-                        s.getApiEmail(),
-                        s.getApiPassword(),
-                        s.getIsActive(),
-                        s.getCollectionUnit(),
-                        s.getCollectionValue(),
-                        s.getScheduleUnit(),
-                        s.getScheduleValue(),
-                        s.getAutoCollectEnabled(),
-                        s.getLastCollectedAt(),
-                        s.getLastOrderCollectedAt(),
-                        s.getLastInventoryCollectedAt(),
-                        s.getAuthUpdatedAt(),
-                        s.getCollectionUpdatedAt()
-                ))
+                .map(this::toResponse)
                 .collect(Collectors.toList());
     }
 
@@ -132,6 +116,7 @@ public class IntegrationSettingService {
         setting.setApiKey(request.getApiKey());
         setting.setApiEmail(request.getEmail());
         setting.setApiPassword(request.getPassword());
+        setting.setApiExtra(request.getExtraValue());
         setting.setAuthUpdatedAt(LocalDateTime.now());
         validateCollectionSettings(
                 request.getCollectionUnit(),
@@ -152,23 +137,7 @@ public class IntegrationSettingService {
         }
 
         IntegrationSetting saved = settingRepository.save(setting);
-        return new IntegrationSettingDto.Response(
-                saved.getIntegrationType(),
-                saved.getApiKey(),
-                saved.getApiEmail(),
-                saved.getApiPassword(),
-                saved.getIsActive(),
-                saved.getCollectionUnit(),
-                saved.getCollectionValue(),
-                saved.getScheduleUnit(),
-                saved.getScheduleValue(),
-                saved.getAutoCollectEnabled(),
-                saved.getLastCollectedAt(),
-                saved.getLastOrderCollectedAt(),
-                saved.getLastInventoryCollectedAt(),
-                saved.getAuthUpdatedAt(),
-                saved.getCollectionUpdatedAt()
-        );
+        return toResponse(saved);
     }
 
     @Transactional
@@ -179,6 +148,7 @@ public class IntegrationSettingService {
         setting.setApiKey(request.getApiKey());
         setting.setApiEmail(request.getEmail());
         setting.setApiPassword(request.getPassword());
+        setting.setApiExtra(request.getExtraValue());
         setting.setAuthUpdatedAt(LocalDateTime.now());
 
         if (request.getIntegrationType() == IntegrationType.PLAYAUTO) {
@@ -377,6 +347,7 @@ public class IntegrationSettingService {
                 setting.getApiKey(),
                 setting.getApiEmail(),
                 setting.getApiPassword(),
+                setting.getApiExtra(),
                 setting.getIsActive(),
                 setting.getCollectionUnit(),
                 setting.getCollectionValue(),

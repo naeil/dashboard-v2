@@ -27,6 +27,7 @@ public class IntegrationSettingDto {
         private String apiKey;
         private String email;
         private String password;
+        private String extraValue;
         private CollectionUnit collectionUnit;
         private Integer collectionValue;
         private CollectionUnit scheduleUnit;
@@ -41,6 +42,8 @@ public class IntegrationSettingDto {
         public void setEmail(String email) { this.email = email; }
         public String getPassword() { return password; }
         public void setPassword(String password) { this.password = password; }
+        public String getExtraValue() { return extraValue; }
+        public void setExtraValue(String extraValue) { this.extraValue = extraValue; }
         public CollectionUnit getCollectionUnit() { return collectionUnit; }
         public void setCollectionUnit(CollectionUnit collectionUnit) { this.collectionUnit = collectionUnit; }
         public Integer getCollectionValue() { return collectionValue; }
@@ -58,6 +61,7 @@ public class IntegrationSettingDto {
         private String apiKey;
         private String email;
         private String password;
+        private String extraValue;
 
         public IntegrationType getIntegrationType() { return integrationType; }
         public void setIntegrationType(IntegrationType integrationType) { this.integrationType = integrationType; }
@@ -67,6 +71,8 @@ public class IntegrationSettingDto {
         public void setEmail(String email) { this.email = email; }
         public String getPassword() { return password; }
         public void setPassword(String password) { this.password = password; }
+        public String getExtraValue() { return extraValue; }
+        public void setExtraValue(String extraValue) { this.extraValue = extraValue; }
     }
 
     public static class SaveCollectionRequest {
@@ -93,6 +99,7 @@ public class IntegrationSettingDto {
         private String apiKey;
         private String email;
         private String password;
+        private String extraValue;
         private Boolean isActive;
         private CollectionUnit collectionUnit;
         private Integer collectionValue;
@@ -110,6 +117,7 @@ public class IntegrationSettingDto {
                 String apiKey,
                 String email,
                 String password,
+                String extraValue,
                 Boolean isActive,
                 CollectionUnit collectionUnit,
                 Integer collectionValue,
@@ -126,6 +134,7 @@ public class IntegrationSettingDto {
             this.apiKey = apiKey == null ? "" : apiKey;
             this.email = email == null ? "" : email;
             this.password = password == null ? "" : password;
+            this.extraValue = extraValue == null ? "" : extraValue;
             this.isActive = isActive;
             this.collectionUnit = collectionUnit;
             this.collectionValue = collectionValue;
@@ -147,6 +156,8 @@ public class IntegrationSettingDto {
         public void setEmail(String email) { this.email = email; }
         public String getPassword() { return password; }
         public void setPassword(String password) { this.password = password; }
+        public String getExtraValue() { return extraValue; }
+        public void setExtraValue(String extraValue) { this.extraValue = extraValue; }
         public Boolean getIsActive() { return isActive; }
         public void setIsActive(Boolean isActive) { this.isActive = isActive; }
         public CollectionUnit getCollectionUnit() { return collectionUnit; }

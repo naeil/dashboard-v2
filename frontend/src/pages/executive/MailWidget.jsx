@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { connectDaouMail, getMailFolder } from '../../api/mailApi'
 
 const PAGE_SIZE = 10
@@ -28,6 +28,7 @@ export default function MailWidget() {
   const [showConnect, setShowConnect] = useState(false)
   const [error, setError] = useState('')
   const [hasMore, setHasMore] = useState(true)
+  const [hasLoaded, setHasLoaded] = useState(false)
   const [credentials, setCredentials] = useState({ loginId: '', password: '', host: 'imap.daouoffice.com' })
 
   const loadMails = async (nextPage = 0, nextFolder = folder) => {
@@ -40,7 +41,9 @@ export default function MailWidget() {
       setPage(nextPage)
       setHasMore(rows.length === PAGE_SIZE)
       setShowConnect(false)
+      setHasLoaded(true)
     } catch (err) {
+      setHasLoaded(true)
       if (err.response?.status === 401) {
         setError('메일 계정 연결 필요')
         setShowConnect(true)
@@ -75,10 +78,6 @@ export default function MailWidget() {
     setFolder(nextFolder)
     loadMails(0, nextFolder)
   }
-
-  useEffect(() => {
-    loadMails(0, folder)
-  }, [])
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
@@ -175,7 +174,7 @@ export default function MailWidget() {
         </div>
       )}
 
-      {!error && mails.length === 0 && !loading && (
+      {!error && hasLoaded && mails.length === 0 && !loading && (
         <div className="mt-5 rounded border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm font-bold text-slate-500">
           표시할 이메일이 없습니다.
         </div>

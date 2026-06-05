@@ -21,7 +21,6 @@ import naeil.dashboard.dto.BrandMonitoringSearchResponse;
 import naeil.dashboard.dto.BrandMonitoringSummaryDto;
 import naeil.dashboard.entity.KeywordTrendLog;
 import naeil.dashboard.repository.KeywordTrendLogRepository;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -40,34 +39,26 @@ public class MarketingService {
     private static final String META_GRAPH_BASE_URL = "https://graph.facebook.com/v19.0";
     private static final int DISPLAY_COUNT = 10;
     private static final int RECENT_POSTING_DISPLAY_COUNT = 100;
+    private static final Long DEFAULT_COMPANY_ID = 1L;
 
     private final KeywordTrendLogRepository keywordTrendLogRepository;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final RestClient restClient;
-    private final String naverClientId;
-    private final String naverClientSecret;
-    private final String metaAccessToken;
-    private final String metaAdAccountId;
+    private final IntegrationCredentialService credentialService;
 
     public MarketingService(
             KeywordTrendLogRepository keywordTrendLogRepository,
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
             RestClient.Builder restClientBuilder,
-            @Value("${naver.client-id:}") String naverClientId,
-            @Value("${naver.client-secret:}") String naverClientSecret,
-            @Value("${meta.access-token:}") String metaAccessToken,
-            @Value("${meta.ad-account-id:}") String metaAdAccountId
+            IntegrationCredentialService credentialService
     ) {
         this.keywordTrendLogRepository = keywordTrendLogRepository;
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.restClient = restClientBuilder.build();
-        this.naverClientId = naverClientId;
-        this.naverClientSecret = naverClientSecret;
-        this.metaAccessToken = metaAccessToken;
-        this.metaAdAccountId = metaAdAccountId;
+        this.credentialService = credentialService;
     }
 
     @Transactional
@@ -76,16 +67,18 @@ public class MarketingService {
         if (normalizedKeyword.isBlank()) {
             throw new CustomException(400, "검색 키워드를 입력해주세요.");
         }
-        if (isBlank(naverClientId) || isBlank(naverClientSecret)) {
+        IntegrationCredentialService.NaverSearchCredentials naverCredentials =
+                credentialService.getNaverSearchCredentials(DEFAULT_COMPANY_ID);
+        if (isBlank(naverCredentials.clientId()) || isBlank(naverCredentials.clientSecret())) {
             throw new CustomException(400, "NAVER API 키가 설정되지 않았습니다.");
         }
 
         LocalDateTime searchedAt = LocalDateTime.now();
-        SearchChannelResult blogResult = searchChannel("BLOG", "blog", normalizedKeyword, null, DISPLAY_COUNT);
-        SearchChannelResult newsResult = searchChannel("NEWS", "news", normalizedKeyword, null, DISPLAY_COUNT);
-        SearchChannelResult webResult = searchChannel("WEB", "webkr", normalizedKeyword, null, DISPLAY_COUNT);
-        SearchChannelResult recentBlogResult = searchChannel("BLOG", "blog", normalizedKeyword, "date", RECENT_POSTING_DISPLAY_COUNT);
-        SearchChannelResult recentNewsResult = searchChannel("NEWS", "news", normalizedKeyword, "date", RECENT_POSTING_DISPLAY_COUNT);
+        SearchChannelResult blogResult = searchChannel("BLOG", "blog", normalizedKeyword, null, DISPLAY_COUNT, naverCredentials);
+        SearchChannelResult newsResult = searchChannel("NEWS", "news", normalizedKeyword, null, DISPLAY_COUNT, naverCredentials);
+        SearchChannelResult webResult = searchChannel("WEB", "webkr", normalizedKeyword, null, DISPLAY_COUNT, naverCredentials);
+        SearchChannelResult recentBlogResult = searchChannel("BLOG", "blog", normalizedKeyword, "date", RECENT_POSTING_DISPLAY_COUNT, naverCredentials);
+        SearchChannelResult recentNewsResult = searchChannel("NEWS", "news", normalizedKeyword, "date", RECENT_POSTING_DISPLAY_COUNT, naverCredentials);
 
         List<BrandMonitoringResultDto> results = new ArrayList<>();
         results.addAll(blogResult.results());
@@ -159,15 +152,16 @@ public class MarketingService {
         LocalDate fromDate = parseDate(from, "from");
         LocalDate toDate = parseDate(to, "to");
         validateRange(fromDate, toDate);
-        if (isBlank(metaAccessToken)) {
+        IntegrationCredentialService.MetaAdsCredentials metaCredentials = configuredMetaAdsCredentials();
+        if (isBlank(metaCredentials.accessToken())) {
             throw new CustomException(400, "Meta 액세스 토큰이 설정되지 않았습니다.");
         }
-        if (isBlank(metaAdAccountId)) {
+        if (isBlank(metaCredentials.adAccountId())) {
             throw new CustomException(400, "Meta 광고 계정 ID가 설정되지 않았습니다.");
         }
 
         String normalizedLevel = normalizeMetaLevel(level);
-        List<Map<String, Object>> rows = fetchMetaAdsRows(fromDate, toDate, normalizedLevel);
+        List<Map<String, Object>> rows = fetchMetaAdsRows(fromDate, toDate, normalizedLevel, metaCredentials);
         Map<String, Object> response = performanceResponse("META_ADS", fromDate, toDate, rows, summarizeMetaRows(rows));
         response.put("level", normalizedLevel);
         return response;
@@ -178,14 +172,15 @@ public class MarketingService {
         LocalDate fromDate = parseDate(from, "from");
         LocalDate toDate = parseDate(to, "to");
         validateRange(fromDate, toDate);
-        if (isBlank(metaAccessToken)) {
+        IntegrationCredentialService.MetaAdsCredentials metaCredentials = configuredMetaAdsCredentials();
+        if (isBlank(metaCredentials.accessToken())) {
             throw new CustomException(400, "Meta 액세스 토큰이 설정되지 않았습니다.");
         }
-        if (isBlank(metaAdAccountId)) {
+        if (isBlank(metaCredentials.adAccountId())) {
             throw new CustomException(400, "Meta 광고 계정 ID가 설정되지 않았습니다.");
         }
 
-        List<Map<String, Object>> rows = fetchMetaAdCreativeRows(fromDate, toDate);
+        List<Map<String, Object>> rows = fetchMetaAdCreativeRows(fromDate, toDate, metaCredentials);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("source", "META_AD_CREATIVES");
         response.put("from", fromDate);
@@ -228,7 +223,7 @@ public class MarketingService {
         Map<String, Object> naverSummary = summarizeNaverRows(loadNaverCpcRows(from, to, "ALL"));
         Map<String, Object> metaSummary;
         try {
-            metaSummary = summarizeMetaRows(fetchMetaAdsRows(from, to, "campaign"));
+            metaSummary = summarizeMetaRows(fetchMetaAdsRows(from, to, "campaign", configuredMetaAdsCredentials()));
         } catch (CustomException e) {
             metaSummary = summarizeMetaRows(List.of());
         }
@@ -290,7 +285,14 @@ public class MarketingService {
         );
     }
 
-    private SearchChannelResult searchChannel(String channel, String endpoint, String keyword, String sort, int displayCount) {
+    private SearchChannelResult searchChannel(
+            String channel,
+            String endpoint,
+            String keyword,
+            String sort,
+            int displayCount,
+            IntegrationCredentialService.NaverSearchCredentials credentials
+    ) {
         URI uri = UriComponentsBuilder.fromHttpUrl(NAVER_SEARCH_BASE_URL + "/" + endpoint + ".json")
                 .queryParam("query", keyword)
                 .queryParam("display", displayCount)
@@ -302,8 +304,8 @@ public class MarketingService {
         try {
             String body = restClient.get()
                     .uri(uri)
-                    .header("X-Naver-Client-Id", naverClientId)
-                    .header("X-Naver-Client-Secret", naverClientSecret)
+                    .header("X-Naver-Client-Id", credentials.clientId())
+                    .header("X-Naver-Client-Secret", credentials.clientSecret())
                     .header(HttpHeaders.CONTENT_TYPE, "application/json; charset=UTF-8")
                     .retrieve()
                     .body(String.class);
@@ -326,8 +328,13 @@ public class MarketingService {
         }
     }
 
-    private List<Map<String, Object>> fetchMetaAdsRows(LocalDate from, LocalDate to, String level) {
-        URI uri = buildMetaAdsInsightsUri(from, to, level);
+    private List<Map<String, Object>> fetchMetaAdsRows(
+            LocalDate from,
+            LocalDate to,
+            String level,
+            IntegrationCredentialService.MetaAdsCredentials credentials
+    ) {
+        URI uri = buildMetaAdsInsightsUri(from, to, level, credentials);
         try {
             String body = restClient.get()
                     .uri(uri)
@@ -353,10 +360,15 @@ public class MarketingService {
         }
     }
 
-    private URI buildMetaAdsInsightsUri(LocalDate from, LocalDate to, String level) {
+    private URI buildMetaAdsInsightsUri(
+            LocalDate from,
+            LocalDate to,
+            String level,
+            IntegrationCredentialService.MetaAdsCredentials credentials
+    ) {
         String timeRange = "{\"since\":\"" + from + "\",\"until\":\"" + to + "\"}";
-        return UriComponentsBuilder.fromHttpUrl(META_GRAPH_BASE_URL + "/" + normalizeMetaAccountId(metaAdAccountId) + "/insights")
-                .queryParam("access_token", metaAccessToken)
+        return UriComponentsBuilder.fromHttpUrl(META_GRAPH_BASE_URL + "/" + normalizeMetaAccountId(credentials.adAccountId()) + "/insights")
+                .queryParam("access_token", credentials.accessToken())
                 .queryParam("fields", "campaign_name,spend,impressions,clicks,ctr,cpc,reach,actions")
                 .queryParam("time_range", timeRange)
                 .queryParam("level", level)
@@ -412,8 +424,12 @@ public class MarketingService {
         return new CustomException(502, "Meta 광고 API 오류: " + message);
     }
 
-    private List<Map<String, Object>> fetchMetaAdCreativeRows(LocalDate from, LocalDate to) {
-        URI uri = buildMetaAdCreativesUri(from, to);
+    private List<Map<String, Object>> fetchMetaAdCreativeRows(
+            LocalDate from,
+            LocalDate to,
+            IntegrationCredentialService.MetaAdsCredentials credentials
+    ) {
+        URI uri = buildMetaAdCreativesUri(from, to, credentials);
         try {
             String body = restClient.get()
                     .uri(uri)
@@ -439,14 +455,18 @@ public class MarketingService {
         }
     }
 
-    private URI buildMetaAdCreativesUri(LocalDate from, LocalDate to) {
+    private URI buildMetaAdCreativesUri(
+            LocalDate from,
+            LocalDate to,
+            IntegrationCredentialService.MetaAdsCredentials credentials
+    ) {
         String timeRange = "{\"since\":\"" + from + "\",\"until\":\"" + to + "\"}";
         String fields = "name,effective_status,"
                 + "campaign{name},"
                 + "creative{thumbnail_url,image_url,title,body,object_story_spec},"
                 + "insights.time_range(" + timeRange + "){spend,impressions,clicks,ctr,cpc,reach}";
-        return UriComponentsBuilder.fromHttpUrl(META_GRAPH_BASE_URL + "/" + normalizeMetaAccountId(metaAdAccountId) + "/ads")
-                .queryParam("access_token", metaAccessToken)
+        return UriComponentsBuilder.fromHttpUrl(META_GRAPH_BASE_URL + "/" + normalizeMetaAccountId(credentials.adAccountId()) + "/ads")
+                .queryParam("access_token", credentials.accessToken())
                 .queryParam("fields", fields)
                 .queryParam("limit", 50)
                 .queryParam("thumbnail_width", 800)
@@ -807,6 +827,10 @@ public class MarketingService {
             return value;
         }
         return value.startsWith("act_") ? value : "act_" + value;
+    }
+
+    private IntegrationCredentialService.MetaAdsCredentials configuredMetaAdsCredentials() {
+        return credentialService.getMetaAdsCredentials(DEFAULT_COMPANY_ID);
     }
 
     private String normalizeMetaLevel(String level) {

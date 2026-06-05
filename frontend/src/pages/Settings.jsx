@@ -21,6 +21,8 @@ const MARKET_OPTIONS = [
   { value: 'GMARKET', label: '지마켓' },
 ]
 
+const MARKET_TYPE_VALUES = new Set(MARKET_OPTIONS.map((option) => option.value))
+
 const HISTORY_STATUS_LABELS = {
   RUNNING: '실행 중',
   SUCCESS: '성공',
@@ -146,6 +148,21 @@ export default function Settings({ isExpanded }) {
   const [openMarketKey, setOpenMarketKey] = useState('')
   const [selectedMarket, setSelectedMarket] = useState('')
 
+  const [naverSearchClientId, setNaverSearchClientId] = useState('')
+  const [naverSearchClientSecret, setNaverSearchClientSecret] = useState('')
+  const [naverBlogClientId, setNaverBlogClientId] = useState('')
+  const [naverBlogClientSecret, setNaverBlogClientSecret] = useState('')
+  const [naverBlogAccessToken, setNaverBlogAccessToken] = useState('')
+  const [naverBlogId, setNaverBlogId] = useState('')
+  const [naverAdCustomerId, setNaverAdCustomerId] = useState('')
+  const [naverAdAccessLicense, setNaverAdAccessLicense] = useState('')
+  const [naverAdSecretKey, setNaverAdSecretKey] = useState('')
+  const [metaAccessToken, setMetaAccessToken] = useState('')
+  const [metaAdAccountId, setMetaAdAccountId] = useState('')
+  const [daouMailHost, setDaouMailHost] = useState('imap.daouoffice.com')
+  const [daouMailUsername, setDaouMailUsername] = useState('')
+  const [daouMailPassword, setDaouMailPassword] = useState('')
+
   const [isValidPlayauto, setIsValidPlayauto] = useState(false)
   const [isValidOpenMarket, setIsValidOpenMarket] = useState(false)
   const [isSavingAuth, setIsSavingAuth] = useState(false)
@@ -173,7 +190,12 @@ export default function Settings({ isExpanded }) {
 
       const settings = await response.json()
       const playauto = settings.find((item) => item.integrationType === 'PLAYAUTO')
-      const market = settings.find((item) => item.integrationType !== 'PLAYAUTO')
+      const market = settings.find((item) => MARKET_TYPE_VALUES.has(item.integrationType))
+      const naverSearch = settings.find((item) => item.integrationType === 'NAVER_SEARCH')
+      const naverBlog = settings.find((item) => item.integrationType === 'NAVER_BLOG')
+      const naverAd = settings.find((item) => item.integrationType === 'NAVER_AD')
+      const metaAds = settings.find((item) => item.integrationType === 'META_ADS')
+      const daouMail = settings.find((item) => item.integrationType === 'DAOU_MAIL')
 
       if (playauto) {
         isHydratingPlayautoRef.current = true
@@ -199,6 +221,35 @@ export default function Settings({ isExpanded }) {
         if (market.authUpdatedAt && !playauto?.authUpdatedAt) {
           setAuthSavedAt(toKstDate(market.authUpdatedAt))
         }
+      }
+
+      if (naverSearch) {
+        setNaverSearchClientId(naverSearch.apiKey || '')
+        setNaverSearchClientSecret(naverSearch.password || '')
+      }
+
+      if (naverBlog) {
+        setNaverBlogClientId(naverBlog.apiKey || '')
+        setNaverBlogClientSecret(naverBlog.password || '')
+        setNaverBlogAccessToken(naverBlog.email || '')
+        setNaverBlogId(naverBlog.extraValue || '')
+      }
+
+      if (naverAd) {
+        setNaverAdCustomerId(naverAd.apiKey || '')
+        setNaverAdAccessLicense(naverAd.email || '')
+        setNaverAdSecretKey(naverAd.password || '')
+      }
+
+      if (metaAds) {
+        setMetaAccessToken(metaAds.apiKey || '')
+        setMetaAdAccountId(metaAds.email || '')
+      }
+
+      if (daouMail) {
+        setDaouMailHost(daouMail.apiKey || 'imap.daouoffice.com')
+        setDaouMailUsername(daouMail.email || '')
+        setDaouMailPassword(daouMail.password || '')
       }
 
       if (historyResponse.ok) {
@@ -242,6 +293,25 @@ export default function Settings({ isExpanded }) {
       setPlayautoKey(responseBody.apiKey || '')
       setPlayautoEmail(responseBody.email || '')
       setPlayautoPassword(responseBody.password || '')
+    } else if (responseBody.integrationType === 'NAVER_SEARCH') {
+      setNaverSearchClientId(responseBody.apiKey || '')
+      setNaverSearchClientSecret(responseBody.password || '')
+    } else if (responseBody.integrationType === 'NAVER_BLOG') {
+      setNaverBlogClientId(responseBody.apiKey || '')
+      setNaverBlogClientSecret(responseBody.password || '')
+      setNaverBlogAccessToken(responseBody.email || '')
+      setNaverBlogId(responseBody.extraValue || '')
+    } else if (responseBody.integrationType === 'NAVER_AD') {
+      setNaverAdCustomerId(responseBody.apiKey || '')
+      setNaverAdAccessLicense(responseBody.email || '')
+      setNaverAdSecretKey(responseBody.password || '')
+    } else if (responseBody.integrationType === 'META_ADS') {
+      setMetaAccessToken(responseBody.apiKey || '')
+      setMetaAdAccountId(responseBody.email || '')
+    } else if (responseBody.integrationType === 'DAOU_MAIL') {
+      setDaouMailHost(responseBody.apiKey || 'imap.daouoffice.com')
+      setDaouMailUsername(responseBody.email || '')
+      setDaouMailPassword(responseBody.password || '')
     } else {
       isHydratingOpenMarketRef.current = true
       setSelectedMarket(responseBody.integrationType || '')
@@ -249,6 +319,21 @@ export default function Settings({ isExpanded }) {
     }
 
     setAuthSavedAt(toKstDate(responseBody.authUpdatedAt) || new Date())
+  }
+
+  const saveAuthPayload = async (payload, fallbackMessage) => {
+    const response = await authorizedFetch(`${SETTINGS_API_BASE}/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}))
+      throw new Error(errorBody.message || fallbackMessage)
+    }
+
+    applyAuthResponse(await response.json())
   }
 
   const applyCollectionResponse = (responseBody) => {
@@ -340,6 +425,49 @@ export default function Settings({ isExpanded }) {
         applyAuthResponse(await response.json())
       }
 
+      if (naverSearchClientId || naverSearchClientSecret) {
+        await saveAuthPayload({
+          integrationType: 'NAVER_SEARCH',
+          apiKey: naverSearchClientId,
+          password: naverSearchClientSecret,
+        }, 'NAVER 검색 API 인증 정보 저장에 실패했습니다.')
+      }
+
+      if (naverBlogClientId || naverBlogClientSecret || naverBlogAccessToken || naverBlogId) {
+        await saveAuthPayload({
+          integrationType: 'NAVER_BLOG',
+          apiKey: naverBlogClientId,
+          email: naverBlogAccessToken,
+          password: naverBlogClientSecret,
+          extraValue: naverBlogId,
+        }, 'NAVER 블로그 인증 정보 저장에 실패했습니다.')
+      }
+
+      if (naverAdCustomerId || naverAdAccessLicense || naverAdSecretKey) {
+        await saveAuthPayload({
+          integrationType: 'NAVER_AD',
+          apiKey: naverAdCustomerId,
+          email: naverAdAccessLicense,
+          password: naverAdSecretKey,
+        }, 'NAVER 광고 인증 정보 저장에 실패했습니다.')
+      }
+
+      if (metaAccessToken || metaAdAccountId) {
+        await saveAuthPayload({
+          integrationType: 'META_ADS',
+          apiKey: metaAccessToken,
+          email: metaAdAccountId,
+        }, 'Meta 광고 인증 정보 저장에 실패했습니다.')
+      }
+
+      if (daouMailHost || daouMailUsername || daouMailPassword) {
+        await saveAuthPayload({
+          integrationType: 'DAOU_MAIL',
+          apiKey: daouMailHost,
+          email: daouMailUsername,
+          password: daouMailPassword,
+        }, '메일 인증 정보 저장에 실패했습니다.')
+      }
       showToast('인증 정보가 저장되었습니다.')
     } catch (error) {
       showToast(error.message || '인증 정보 저장에 실패했습니다.', 'error')
@@ -431,6 +559,38 @@ export default function Settings({ isExpanded }) {
   const authReady = useMemo(
     () => Boolean(playautoKey && playautoEmail && playautoPassword),
     [playautoKey, playautoEmail, playautoPassword],
+  )
+  const externalAuthReady = useMemo(
+    () => Boolean(
+      naverSearchClientId ||
+      naverSearchClientSecret ||
+      naverBlogClientId ||
+      naverBlogClientSecret ||
+      naverBlogAccessToken ||
+      naverBlogId ||
+      naverAdCustomerId ||
+      naverAdAccessLicense ||
+      naverAdSecretKey ||
+      metaAccessToken ||
+      metaAdAccountId ||
+      daouMailUsername ||
+      daouMailPassword
+    ),
+    [
+      naverSearchClientId,
+      naverSearchClientSecret,
+      naverBlogClientId,
+      naverBlogClientSecret,
+      naverBlogAccessToken,
+      naverBlogId,
+      naverAdCustomerId,
+      naverAdAccessLicense,
+      naverAdSecretKey,
+      metaAccessToken,
+      metaAdAccountId,
+      daouMailUsername,
+      daouMailPassword,
+    ],
   )
   const collectionPeriodReady = useMemo(() => Number(collectionValue) > 0, [collectionValue])
   const scheduleReady = useMemo(() => Number(scheduleValue) > 0, [scheduleValue])
@@ -643,13 +803,68 @@ export default function Settings({ isExpanded }) {
                 </div>
               </div>
 
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+                <div className="mb-5">
+                  <h3 className="text-xl font-bold text-slate-900">외부 API 인증 정보</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Docker 환경변수 없이도 네이버, Meta, 메일 연동 정보를 저장해서 사용할 수 있습니다.
+                  </p>
+                </div>
+
+                <div className="grid gap-5">
+                  <div className="rounded-2xl bg-white p-5">
+                    <h4 className="mb-4 text-sm font-black text-slate-800">NAVER 검색 API</h4>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <input type="text" value={naverSearchClientId} onChange={(event) => setNaverSearchClientId(event.target.value)} placeholder="Client ID" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                      <input type="password" value={naverSearchClientSecret} onChange={(event) => setNaverSearchClientSecret(event.target.value)} placeholder="Client Secret" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl bg-white p-5">
+                    <h4 className="mb-4 text-sm font-black text-slate-800">NAVER 블로그 API</h4>
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      <input type="text" value={naverBlogClientId} onChange={(event) => setNaverBlogClientId(event.target.value)} placeholder="Client ID" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                      <input type="password" value={naverBlogClientSecret} onChange={(event) => setNaverBlogClientSecret(event.target.value)} placeholder="Client Secret" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                      <input type="password" value={naverBlogAccessToken} onChange={(event) => setNaverBlogAccessToken(event.target.value)} placeholder="Access Token" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                      <input type="text" value={naverBlogId} onChange={(event) => setNaverBlogId(event.target.value)} placeholder="Blog ID" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl bg-white p-5">
+                    <h4 className="mb-4 text-sm font-black text-slate-800">NAVER 광고 API</h4>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <input type="text" value={naverAdCustomerId} onChange={(event) => setNaverAdCustomerId(event.target.value)} placeholder="Customer ID" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                      <input type="password" value={naverAdAccessLicense} onChange={(event) => setNaverAdAccessLicense(event.target.value)} placeholder="Access License" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                      <input type="password" value={naverAdSecretKey} onChange={(event) => setNaverAdSecretKey(event.target.value)} placeholder="Secret Key" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl bg-white p-5">
+                    <h4 className="mb-4 text-sm font-black text-slate-800">Meta 광고 API</h4>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <input type="password" value={metaAccessToken} onChange={(event) => setMetaAccessToken(event.target.value)} placeholder="Access Token" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                      <input type="text" value={metaAdAccountId} onChange={(event) => setMetaAdAccountId(event.target.value)} placeholder="Ad Account ID" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl bg-white p-5">
+                    <h4 className="mb-4 text-sm font-black text-slate-800">다우오피스 메일</h4>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <input type="text" value={daouMailHost} onChange={(event) => setDaouMailHost(event.target.value)} placeholder="imap.daouoffice.com" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                      <input type="text" value={daouMailUsername} onChange={(event) => setDaouMailUsername(event.target.value)} placeholder="Mail ID" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                      <input type="password" value={daouMailPassword} onChange={(event) => setDaouMailPassword(event.target.value)} placeholder="Mail Password" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex justify-end border-t border-slate-100 pt-6">
                 <button
                   type="button"
                   onClick={handleSaveAuth}
-                  disabled={isSavingAuth || (!authReady && !(selectedMarket && openMarketKey))}
+                  disabled={isSavingAuth || (!authReady && !(selectedMarket && openMarketKey) && !externalAuthReady)}
                   className={`rounded-xl px-6 py-3 text-sm font-bold transition-all ${
-                    isSavingAuth || (!authReady && !(selectedMarket && openMarketKey))
+                    isSavingAuth || (!authReady && !(selectedMarket && openMarketKey) && !externalAuthReady)
                       ? 'cursor-not-allowed bg-slate-200 text-slate-400'
                       : 'bg-slate-950 text-white hover:bg-slate-800'
                   }`}

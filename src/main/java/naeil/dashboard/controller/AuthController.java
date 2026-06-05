@@ -34,10 +34,8 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/login")
-    public ResponseEntity<AuthSessionResponse> login(@RequestBody LoginRequest request, HttpSession session) {
+    public ResponseEntity<AuthSessionResponse> login(@RequestBody LoginRequest request) {
         AuthUser user = authService.login(request.resolvedLoginId(), request.password());
-        session.setAttribute("daouLoginId", request.resolvedLoginId());
-        session.setAttribute("daouPassword", request.password());
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(
                         user.username(),

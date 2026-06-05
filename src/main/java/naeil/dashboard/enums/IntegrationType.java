@@ -3,6 +3,11 @@ package naeil.dashboard.enums;
 import java.util.Locale;
 
 public enum IntegrationType {
+    NAVER_SEARCH("Naver Search API"),
+    NAVER_BLOG("Naver Blog API"),
+    NAVER_AD("Naver Search Ad"),
+    META_ADS("Meta Ads"),
+    DAOU_MAIL("Daou Mail"),
     PLAYAUTO("플레이오토"),
     NAVER_SMARTSTORE("스마트스토어"),
     COUPANG("쿠팡"),
