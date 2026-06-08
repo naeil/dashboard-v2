@@ -434,4 +434,56 @@
     .product-cost-page td.calculated-profit.is-negative {
         color: #dc2626 !important;
     }
+
+    @media (max-width: 767px) {
+        html,
+        body,
+        #root {
+            min-width: 0;
+            overflow-x: hidden;
+        }
+
+        .mobile-page-scope > main {
+            min-height: auto !important;
+            padding: 0 !important;
+            margin-left: 0 !important;
+            background: transparent !important;
+        }
+
+        .mobile-page-scope section,
+        .mobile-page-scope article,
+        .mobile-page-scope form,
+        .mobile-page-scope .rounded-lg {
+            max-width: 100%;
+        }
+
+        .mobile-page-scope h1 {
+            font-size: 1.35rem !important;
+            line-height: 1.2 !important;
+        }
+
+        .mobile-page-scope h2 {
+            font-size: 1.05rem !important;
+            line-height: 1.3 !important;
+        }
+
+        .mobile-page-scope .grid {
+            min-width: 0;
+        }
+
+        .mobile-page-scope table {
+            min-width: 640px;
+        }
+
+        .mobile-page-scope input,
+        .mobile-page-scope select,
+        .mobile-page-scope textarea {
+            font-size: 16px !important;
+        }
+
+        .mobile-page-scope button,
+        .mobile-page-scope a {
+            min-height: 40px;
+        }
+    }
 }

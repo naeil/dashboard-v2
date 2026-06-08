@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.*;
 import java.util.LinkedHashMap;
 
@@ -234,6 +235,162 @@ public class PayrollService {
         return payrollRecordRepository.findDistinctMonthsByCompanyId(DEFAULT_COMPANY_ID);
     }
 
+    @Transactional
+    public PayrollDto.RecordResponse calculateAndSave(Map<String, Object> payload) {
+        String payYearMonth = text(payload.get("payYearMonth"), java.time.YearMonth.now().toString());
+        String employeeName = text(payload.get("employeeName"), "").trim();
+        if (employeeName.isBlank()) {
+            throw new IllegalArgumentException("직원명을 입력하세요.");
+        }
+
+        String salaryType = text(payload.get("salaryType"), "ANNUAL").toUpperCase(Locale.ROOT);
+        BigDecimal annualSalary = money(payload.get("annualSalary"));
+        BigDecimal hourlyWage = money(payload.get("hourlyWage"));
+        BigDecimal workDays = decimal(payload.get("workDays"));
+        BigDecimal workHours = decimal(payload.get("workHours"));
+        BigDecimal mealAllowance = money(payload.get("mealAllowance"));
+        BigDecimal transportAllowance = money(payload.get("transportAllowance"));
+        BigDecimal otherAllowance = money(payload.get("otherAllowance"));
+
+        BigDecimal baseSalary = "HOURLY".equals(salaryType)
+                ? hourlyWage.multiply(workHours)
+                : annualSalary.divide(BigDecimal.valueOf(12), 0, RoundingMode.HALF_UP);
+
+        BigDecimal totalPayment = baseSalary.add(mealAllowance).add(transportAllowance).add(otherAllowance);
+        BigDecimal nationalPensionRate = rate(payload.get("nationalPensionRate"), "0.045");
+        BigDecimal healthInsuranceRate = rate(payload.get("healthInsuranceRate"), "0.03545");
+        BigDecimal longTermCareRate = rate(payload.get("longTermCareRate"), "0.1281");
+        BigDecimal employmentInsuranceRate = rate(payload.get("employmentInsuranceRate"), "0.009");
+
+        BigDecimal nationalPension = won(totalPayment.multiply(nationalPensionRate));
+        BigDecimal healthInsurance = won(totalPayment.multiply(healthInsuranceRate));
+        BigDecimal longTermCare = won(healthInsurance.multiply(longTermCareRate));
+        BigDecimal employmentInsurance = won(totalPayment.multiply(employmentInsuranceRate));
+        BigDecimal incomeTax = money(payload.get("incomeTax"));
+        BigDecimal localIncomeTax = money(payload.get("localIncomeTax"));
+        BigDecimal totalDeduction = nationalPension
+                .add(healthInsurance)
+                .add(longTermCare)
+                .add(employmentInsurance)
+                .add(incomeTax)
+                .add(localIncomeTax);
+        BigDecimal netPay = totalPayment.subtract(totalDeduction);
+        Long userId = payload.get("userId") == null || payload.get("userId").toString().isBlank()
+                ? findUserIdByName(employeeName)
+                : Long.valueOf(payload.get("userId").toString());
+
+        Long id = upsertCalculatedRecord(
+                payYearMonth,
+                employeeName,
+                userId,
+                salaryType,
+                annualSalary,
+                hourlyWage,
+                workDays,
+                workHours,
+                baseSalary,
+                mealAllowance,
+                transportAllowance,
+                otherAllowance,
+                totalPayment,
+                nationalPension,
+                healthInsurance,
+                longTermCare,
+                employmentInsurance,
+                incomeTax,
+                localIncomeTax,
+                totalDeduction,
+                netPay
+        );
+
+        return payrollRecordRepository.findById(id)
+                .map(PayrollDto.RecordResponse::from)
+                .orElseThrow();
+    }
+
+    private Long upsertCalculatedRecord(
+            String payYearMonth,
+            String employeeName,
+            Long userId,
+            String salaryType,
+            BigDecimal annualSalary,
+            BigDecimal hourlyWage,
+            BigDecimal workDays,
+            BigDecimal workHours,
+            BigDecimal baseSalary,
+            BigDecimal mealAllowance,
+            BigDecimal transportAllowance,
+            BigDecimal otherAllowance,
+            BigDecimal totalPayment,
+            BigDecimal nationalPension,
+            BigDecimal healthInsurance,
+            BigDecimal longTermCare,
+            BigDecimal employmentInsurance,
+            BigDecimal incomeTax,
+            BigDecimal localIncomeTax,
+            BigDecimal totalDeduction,
+            BigDecimal netPay
+    ) {
+        return jdbcTemplate.queryForObject("""
+                INSERT INTO payroll_record (
+                    company_id, pay_year_month, employee_name, user_id, salary_type,
+                    annual_salary, hourly_wage, work_days, work_hours,
+                    base_salary, meal_allowance, transport_allowance, other_allowance,
+                    total_payment, deduction_national_pension, deduction_health_insurance,
+                    deduction_long_term_care, deduction_employment_insurance,
+                    deduction_income_tax, deduction_local_income_tax, total_deduction, net_pay
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (company_id, pay_year_month, employee_name)
+                DO UPDATE SET
+                    user_id = EXCLUDED.user_id,
+                    salary_type = EXCLUDED.salary_type,
+                    annual_salary = EXCLUDED.annual_salary,
+                    hourly_wage = EXCLUDED.hourly_wage,
+                    work_days = EXCLUDED.work_days,
+                    work_hours = EXCLUDED.work_hours,
+                    base_salary = EXCLUDED.base_salary,
+                    meal_allowance = EXCLUDED.meal_allowance,
+                    transport_allowance = EXCLUDED.transport_allowance,
+                    other_allowance = EXCLUDED.other_allowance,
+                    total_payment = EXCLUDED.total_payment,
+                    deduction_national_pension = EXCLUDED.deduction_national_pension,
+                    deduction_health_insurance = EXCLUDED.deduction_health_insurance,
+                    deduction_long_term_care = EXCLUDED.deduction_long_term_care,
+                    deduction_employment_insurance = EXCLUDED.deduction_employment_insurance,
+                    deduction_income_tax = EXCLUDED.deduction_income_tax,
+                    deduction_local_income_tax = EXCLUDED.deduction_local_income_tax,
+                    total_deduction = EXCLUDED.total_deduction,
+                    net_pay = EXCLUDED.net_pay,
+                    updated_at = NOW()
+                RETURNING id
+                """,
+                Long.class,
+                DEFAULT_COMPANY_ID,
+                payYearMonth,
+                employeeName,
+                userId,
+                salaryType,
+                annualSalary,
+                hourlyWage,
+                workDays,
+                workHours,
+                baseSalary,
+                mealAllowance,
+                transportAllowance,
+                otherAllowance,
+                totalPayment,
+                nationalPension,
+                healthInsurance,
+                longTermCare,
+                employmentInsurance,
+                incomeTax,
+                localIncomeTax,
+                totalDeduction,
+                netPay
+        );
+    }
+
     // ──────────────────────────────────────────────
     // 이메일 발송
     // ──────────────────────────────────────────────
@@ -357,6 +514,42 @@ public class PayrollService {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private static String text(Object value, String fallback) {
+        return value == null || value.toString().isBlank() ? fallback : value.toString();
+    }
+
+    private static BigDecimal money(Object value) {
+        return won(decimal(value));
+    }
+
+    private static BigDecimal decimal(Object value) {
+        if (value == null || value.toString().isBlank()) {
+            return BigDecimal.ZERO;
+        }
+        if (value instanceof Number number) {
+            return BigDecimal.valueOf(number.doubleValue());
+        }
+        try {
+            return new BigDecimal(value.toString().replace(",", ""));
+        } catch (Exception e) {
+            return BigDecimal.ZERO;
+        }
+    }
+
+    private static BigDecimal rate(Object value, String fallback) {
+        BigDecimal parsed = value == null || value.toString().isBlank()
+                ? new BigDecimal(fallback)
+                : decimal(value);
+        if (parsed.compareTo(BigDecimal.valueOf(0.1)) >= 0) {
+            return parsed.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP);
+        }
+        return parsed;
+    }
+
+    private static BigDecimal won(BigDecimal value) {
+        return value.setScale(0, RoundingMode.HALF_UP);
     }
 
     private String resolveEmail(PayrollRecord record) {

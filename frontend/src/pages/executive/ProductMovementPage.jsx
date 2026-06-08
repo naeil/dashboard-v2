@@ -18,10 +18,10 @@ const formatDateTime = (value) => {
 }
 
 const statusMeta = {
-  OUT_OF_STOCK: { label: '품절', className: 'border-rose-500/30 bg-rose-500/15 text-rose-200' },
-  LOW_STOCK: { label: '안전재고 이하', className: 'border-amber-400/30 bg-amber-400/15 text-amber-100' },
-  NO_RECENT_OUTBOUND: { label: '최근 출고 없음', className: 'border-slate-500/30 bg-slate-500/15 text-slate-200' },
-  NORMAL: { label: '정상', className: 'border-emerald-400/30 bg-emerald-400/15 text-emerald-100' },
+  OUT_OF_STOCK: { label: '품절', className: 'border-rose-200 bg-rose-50 text-rose-700' },
+  LOW_STOCK: { label: '안전재고 이하', className: 'border-amber-200 bg-amber-50 text-amber-700' },
+  NO_RECENT_OUTBOUND: { label: '최근 출고 없음', className: 'border-slate-200 bg-slate-50 text-slate-600' },
+  NORMAL: { label: '정상', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
 }
 
 function MovementStatus({ value }) {
@@ -57,18 +57,18 @@ function rankRows(rows, valueGetter, limit = 5) {
 function RiskSignal({ row }) {
   const coverDays = stockCoverDays(row)
   if (row.stock_status === 'OUT_OF_STOCK') {
-    return <span className="font-black text-rose-200">즉시 품절 대응</span>
+    return <span className="font-black text-rose-600">즉시 품절 대응</span>
   }
   if (row.stock_status === 'LOW_STOCK') {
-    return <span className="font-black text-amber-100">재입고 필요</span>
+    return <span className="font-black text-amber-600">재입고 필요</span>
   }
   if (coverDays !== null && coverDays <= 14) {
-    return <span className="font-black text-amber-100">{Math.round(coverDays)}일 내 소진 가능</span>
+    return <span className="font-black text-amber-600">{Math.round(coverDays)}일 내 소진 가능</span>
   }
   if (numberValue(row.last_7_days_outbound_count) === 0) {
-    return <span className="font-black text-slate-300">최근 출고 없음</span>
+    return <span className="font-black text-slate-500">최근 출고 없음</span>
   }
-  return <span className="font-black text-emerald-100">정상 회전</span>
+  return <span className="font-black text-emerald-600">정상 회전</span>
 }
 
 function RankingPanel({ title, rows, metricLabel, metricGetter, emptyMessage }) {
@@ -76,20 +76,20 @@ function RankingPanel({ title, rows, metricLabel, metricGetter, emptyMessage }) 
     <Panel title={title}>
       <div className="space-y-3">
         {rows.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-white/10 bg-slate-950/40 px-4 py-8 text-center text-sm font-bold text-slate-500">
+          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm font-bold text-slate-500">
             {emptyMessage}
           </div>
         ) : rows.map((row, index) => (
-          <article key={`${title}-${productKey(row)}`} className="rounded-lg border border-white/10 bg-slate-950/55 p-4">
+          <article key={`${title}-${productKey(row)}`} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <p className="text-[11px] font-black text-sky-200">TOP {index + 1}</p>
-                <p className="mt-1 truncate text-sm font-black text-white">{row.product_name}</p>
-                <p className="mt-1 truncate text-xs font-bold text-slate-400">{row.brand_name || '미분류'} · {row.sku_cd || row.prod_no || '-'}</p>
+                <p className="text-[11px] font-black text-sky-600">TOP {index + 1}</p>
+                <p className="mt-1 truncate text-sm font-black text-slate-950">{row.product_name}</p>
+                <p className="mt-1 truncate text-xs font-bold text-slate-500">{row.brand_name || '미분류'} · {row.sku_cd || row.prod_no || '-'}</p>
               </div>
               <div className="shrink-0 text-right">
-                <p className="text-lg font-black text-white">{formatCount(metricGetter(row), '개')}</p>
-                <p className="text-[11px] font-black text-slate-400">{metricLabel}</p>
+                <p className="text-lg font-black text-slate-950">{formatCount(metricGetter(row), '개')}</p>
+                <p className="text-[11px] font-black text-slate-500">{metricLabel}</p>
               </div>
             </div>
           </article>
@@ -104,16 +104,16 @@ function RiskPanel({ rows }) {
     <Panel title="재고 대비 출고 위험">
       <div className="space-y-3">
         {rows.length === 0 ? (
-          <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-4 py-8 text-center text-sm font-bold text-emerald-100">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-8 text-center text-sm font-bold text-emerald-700">
             출고 흐름 기준 긴급 위험 제품이 없습니다.
           </div>
         ) : rows.map((row) => (
-          <article key={`risk-${productKey(row)}`} className="rounded-lg border border-white/10 bg-slate-950/55 p-4">
+          <article key={`risk-${productKey(row)}`} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <div className="mb-2"><MovementStatus value={row.stock_status} /></div>
-                <p className="truncate text-sm font-black text-white">{row.product_name}</p>
-                <p className="mt-1 text-xs font-bold text-slate-400">
+                <p className="truncate text-sm font-black text-slate-950">{row.product_name}</p>
+                <p className="mt-1 text-xs font-bold text-slate-500">
                   재고 {formatCount(row.real_stock, '개')} · 최근 7일 {formatCount(row.last_7_days_outbound_count, '개')}
                 </p>
               </div>
@@ -159,21 +159,21 @@ function ProductMovementTable({ rows }) {
     <div className="space-y-3">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <label className="relative block w-full max-w-md">
-          <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-base text-slate-500">search</span>
+          <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-base text-slate-400">search</span>
           <input
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="제품명, 브랜드, SKU 검색"
-            className="h-10 w-full rounded-lg border border-white/10 bg-slate-950 py-2 pl-10 pr-3 text-sm font-bold text-white outline-none transition-colors placeholder:text-slate-600 focus:border-sky-400"
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm font-bold text-slate-950 outline-none transition-colors placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
           />
         </label>
         <label className="flex items-center gap-2">
-          <span className="text-xs font-black text-slate-400">정렬</span>
+          <span className="text-xs font-black text-slate-500">정렬</span>
           <select
             value={sortMode}
             onChange={(event) => setSortMode(event.target.value)}
-            className="h-10 rounded-lg border border-white/10 bg-slate-950 px-3 text-sm font-bold text-white outline-none focus:border-sky-400"
+            className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-950 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
           >
             <option value="recentDesc">최근 7일 출고 많은 순</option>
             <option value="todayDesc">오늘 출고 많은 순</option>
@@ -185,29 +185,29 @@ function ProductMovementTable({ rows }) {
         </label>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-white/10">
-        <table className="min-w-full divide-y divide-white/10 text-left">
-          <thead className="bg-slate-950/70">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <table className="min-w-full divide-y divide-slate-200 text-left">
+          <thead className="bg-slate-50">
             <tr>
               {['상태', '제품명', '브랜드', 'SKU', '현재 재고', '안전 재고', '오늘 출고', '최근 7일 출고', '누적 출고', '재고 회전 신호', '수집 시각'].map((label) => (
-                <th key={label} className="whitespace-nowrap px-4 py-3 text-xs font-black text-slate-400">{label}</th>
+                <th key={label} className="whitespace-nowrap px-4 py-3 text-xs font-black text-slate-500">{label}</th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/10">
+          <tbody className="divide-y divide-slate-100">
             {filteredRows.map((row) => (
-              <tr key={row.id} className="hover:bg-white/[0.03]">
+              <tr key={row.id} className="hover:bg-sky-50/40">
                 <td className="whitespace-nowrap px-4 py-3"><MovementStatus value={row.stock_status} /></td>
-                <td className="min-w-[260px] px-4 py-3 text-sm font-black text-white">{row.product_name}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-slate-300">{row.brand_name || '-'}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-slate-300">{row.sku_cd || row.prod_no || '-'}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-sm font-black text-sky-100">{formatCount(row.real_stock, '개')}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-slate-300">{formatCount(row.safe_stock, '개')}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-sm font-black text-emerald-200">{formatCount(row.today_outbound_count, '개')}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-sm font-black text-emerald-200">{formatCount(row.last_7_days_outbound_count, '개')}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-slate-300">{formatCount(row.outbound_accum_snapshot, '개')}</td>
+                <td className="min-w-[260px] px-4 py-3 text-sm font-black text-slate-950">{row.product_name}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-slate-700">{row.brand_name || '-'}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-slate-700">{row.sku_cd || row.prod_no || '-'}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-sm font-black text-sky-700">{formatCount(row.real_stock, '개')}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-slate-700">{formatCount(row.safe_stock, '개')}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-sm font-black text-emerald-700">{formatCount(row.today_outbound_count, '개')}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-sm font-black text-emerald-700">{formatCount(row.last_7_days_outbound_count, '개')}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-slate-700">{formatCount(row.outbound_accum_snapshot, '개')}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-sm"><RiskSignal row={row} /></td>
-                <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-slate-400">{formatDateTime(row.collected_at)}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-slate-500">{formatDateTime(row.collected_at)}</td>
               </tr>
             ))}
             {filteredRows.length === 0 && (
@@ -280,7 +280,6 @@ export default function ProductMovementPage({ role = 'EXECUTIVE' }) {
   }
 
   const riskCount = Number(summary.out_of_stock_count || 0) + Number(summary.low_stock_count || 0)
-
   const todayTopRows = useMemo(() => rankRows(rows, (row) => numberValue(row.today_outbound_count), 5), [rows])
   const recentTopRows = useMemo(() => rankRows(rows, (row) => numberValue(row.last_7_days_outbound_count), 5), [rows])
   const accumulatedTopRows = useMemo(() => rankRows(rows, (row) => numberValue(row.outbound_accum_snapshot), 5), [rows])
@@ -316,25 +315,25 @@ export default function ProductMovementPage({ role = 'EXECUTIVE' }) {
       </section>
 
       <section className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-4">
-        <div className="rounded-lg border border-white/10 bg-slate-900/70 p-5">
-          <p className="text-xs font-black text-slate-400">가장 많이 나간 제품</p>
-          <p className="mt-3 truncate text-lg font-black text-white">{fastestProduct?.product_name || '데이터 없음'}</p>
-          <p className="mt-2 text-sm font-black text-emerald-200">{formatCount(fastestProduct?.last_7_days_outbound_count, '개')} / 최근 7일</p>
+        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-black text-slate-500">가장 많이 나간 제품</p>
+          <p className="mt-3 truncate text-lg font-black text-slate-950">{fastestProduct?.product_name || '데이터 없음'}</p>
+          <p className="mt-2 text-sm font-black text-emerald-700">{formatCount(fastestProduct?.last_7_days_outbound_count, '개')} / 최근 7일</p>
         </div>
-        <div className="rounded-lg border border-white/10 bg-slate-900/70 p-5">
-          <p className="text-xs font-black text-slate-400">출고 없는 제품</p>
-          <p className="mt-3 text-2xl font-black text-white">{formatCount(zeroOutboundCount, '개')}</p>
-          <p className="mt-2 text-sm font-bold text-slate-400">최근 7일 기준</p>
+        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-black text-slate-500">출고 없는 제품</p>
+          <p className="mt-3 text-2xl font-black text-slate-950">{formatCount(zeroOutboundCount, '개')}</p>
+          <p className="mt-2 text-sm font-bold text-slate-500">최근 7일 기준</p>
         </div>
-        <div className="rounded-lg border border-amber-400/20 bg-amber-400/10 p-5">
-          <p className="text-xs font-black text-amber-100">재고 부족 주의</p>
-          <p className="mt-3 text-2xl font-black text-white">{formatCount(stockRiskRows.length, '개')}</p>
-          <p className="mt-2 text-sm font-bold text-amber-100">출고 속도 대비 재고 점검 필요</p>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm">
+          <p className="text-xs font-black text-amber-700">재고 부족 주의</p>
+          <p className="mt-3 text-2xl font-black text-slate-950">{formatCount(stockRiskRows.length, '개')}</p>
+          <p className="mt-2 text-sm font-bold text-amber-700">출고 속도 대비 재고 점검 필요</p>
         </div>
-        <div className="rounded-lg border border-white/10 bg-slate-900/70 p-5">
-          <p className="text-xs font-black text-slate-400">마지막 수집</p>
-          <p className="mt-3 text-lg font-black text-white">{formatDateTime(summary.last_synced_at)}</p>
-          <p className="mt-2 text-sm font-bold text-slate-400">30초마다 화면 자동 갱신</p>
+        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-black text-slate-500">마지막 수집</p>
+          <p className="mt-3 text-lg font-black text-slate-950">{formatDateTime(summary.last_synced_at)}</p>
+          <p className="mt-2 text-sm font-bold text-slate-500">30초마다 화면 자동 갱신</p>
         </div>
       </section>
 
@@ -367,15 +366,15 @@ export default function ProductMovementPage({ role = 'EXECUTIVE' }) {
         title="PlayAuto 출입고 현황"
         right={
           <div className="flex flex-wrap items-center justify-end gap-3">
-            <span className="text-xs font-black text-slate-400">마지막 수집 {formatDateTime(summary.last_synced_at)}</span>
+            <span className="text-xs font-black text-slate-500">마지막 수집 {formatDateTime(summary.last_synced_at)}</span>
             {canSync && (
               <button
                 type="button"
                 onClick={handleSync}
                 disabled={syncing}
-                className="inline-flex h-10 items-center gap-2 rounded-lg bg-sky-400 px-4 text-sm font-black text-slate-950 transition-colors hover:bg-sky-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                className="inline-flex h-10 items-center gap-2 rounded-lg bg-sky-500 px-4 text-sm font-black text-white transition-colors hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
               >
-                <span className="material-symbols-outlined text-lg">{syncing ? 'sync' : 'cloud_sync'}</span>
+                <span className={`material-symbols-outlined text-lg ${syncing ? 'animate-spin' : ''}`}>{syncing ? 'sync' : 'cloud_sync'}</span>
                 {syncing ? '동기화 중' : 'PlayAuto 실시간 동기화'}
               </button>
             )}
@@ -383,12 +382,12 @@ export default function ProductMovementPage({ role = 'EXECUTIVE' }) {
         }
       >
         {message && (
-          <div className="mb-4 rounded-lg border border-sky-400/20 bg-sky-400/10 px-4 py-3 text-sm font-bold text-sky-100">
+          <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-bold text-sky-700">
             {message}
           </div>
         )}
         {loading ? (
-          <div className="rounded-lg border border-dashed border-white/10 bg-slate-950/40 py-12 text-center text-sm font-bold text-slate-500">
+          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 py-12 text-center text-sm font-bold text-slate-500">
             제품 출입고 데이터를 불러오는 중입니다.
           </div>
         ) : (

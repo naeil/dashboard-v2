@@ -6,6 +6,9 @@ export const getPayrollMonths = () =>
 export const getPayrollRecords = (payYearMonth) =>
   api.get('/payroll', { params: payYearMonth ? { payYearMonth } : {} })
 
+export const calculatePayroll = (payload) =>
+  api.post('/payroll/calculate', payload)
+
 export const uploadPayrollExcel = (file, payYearMonth) => {
   const formData = new FormData()
   formData.append('file', file)

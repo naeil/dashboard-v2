@@ -5,21 +5,28 @@ export const count = (value, suffix = '') => `${Math.round(Number(value ?? 0)).t
 export const pct = (value) => `${Number(value ?? 0).toFixed(1)}%`
 
 export const riskClass = (value) => {
-  if (['위험', '필수 필요', 'CRITICAL', 'HIGH', 'DELAYED', 'LOW_MARGIN'].includes(value)) {
-    return 'border-rose-500/30 bg-rose-500/15 text-rose-200'
+  if (['위험', '회수 필요', 'CRITICAL', 'HIGH', 'DELAYED', 'LOW_MARGIN', 'OVERDUE'].includes(value)) {
+    return 'border-rose-200 bg-rose-50 text-rose-700'
   }
-  if (['주의', 'WATCH', 'LOW_STOCK', 'OVER_STOCK', 'EXPECTED', 'SCHEDULED', 'CONSERVATIVE'].includes(value)) {
-    return 'border-amber-400/30 bg-amber-400/15 text-amber-100'
+  if (['주의', 'WATCH', 'LOW_STOCK', 'OVER_STOCK', 'EXPECTED', 'SCHEDULED', 'CONSERVATIVE', 'PARTIAL'].includes(value)) {
+    return 'border-amber-200 bg-amber-50 text-amber-700'
   }
-  return 'border-emerald-400/30 bg-emerald-400/15 text-emerald-100'
+  if (['PAUSED', 'PENDING'].includes(value)) {
+    return 'border-slate-200 bg-slate-50 text-slate-600'
+  }
+  return 'border-emerald-200 bg-emerald-50 text-emerald-700'
 }
 
 export const statusLabel = (value) => {
   const labels = {
+    ACTIVE: '거래중',
+    PENDING: '검토중',
+    PAUSED: '보류',
+    ENDED: '종료',
     NORMAL: '정상',
     WATCH: '주의',
     HIGH: '위험',
-    CRITICAL: '필수 필요',
+    CRITICAL: '회수 필요',
     EXPECTED: '예정',
     SCHEDULED: '예정',
     CONFIRMED: '확정',

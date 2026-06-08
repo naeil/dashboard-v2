@@ -17,7 +17,7 @@ const menuSections = [
     items: [
       { id: 'ceo-dashboard',       icon: 'monitoring',            label: 'CEO 전략 대시보드', roles: ['EXECUTIVE'] },
       { id: 'cash-flow',           icon: 'account_balance_wallet', label: '현금 흐름',         roles: ['EXECUTIVE'] },
-      { id: 'profit-management',   icon: 'trending_up',           label: '수익 구조 분석',     roles: ['EXECUTIVE'] },
+      { id: 'profit-management',   icon: 'trending_up',           label: 'BEP / 손익 시뮬레이션', roles: ['EXECUTIVE'] },
       { id: 'debts',               icon: 'credit_score',          label: '대출 / 부채',        roles: ['EXECUTIVE'] },
       { id: 'operating-expenses',  icon: 'receipt_long',          label: '운영 비용',          roles: ['EXECUTIVE'] },
     ],
@@ -40,9 +40,11 @@ const menuSections = [
     group: 'staff',
     departments: ['all'],
     items: [
+      { id: 'platform',        icon: 'apps',        label: '업무 홈',          roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], emphasis: true },
       { id: 'staff-dashboard', icon: 'dashboard',   label: '직원 대시보드', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'staff-work-report', icon: 'assignment_add', label: '업무 보고', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], personal: true, personalSuffix: '업무 보고' },
+      { id: 'staff-project-status', icon: 'view_timeline', label: '프로젝트 현황', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], personal: true, personalSuffix: '프로젝트 현황' },
       { id: 'brand-health',    icon: 'storefront',  label: '브랜드 사업 현황', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-      { id: 'platform',        icon: 'apps',        label: '업무 홈',          roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'channel-sales',   icon: 'leaderboard', label: '실시간 매출',      roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'work-input',      icon: 'edit_note',   label: '내 업무 입력',     roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], personal: true },
       { id: 'payment-request', icon: 'request_page',label: '지출결의 / 기안서', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
@@ -88,6 +90,7 @@ const menuSections = [
     items: [
       { id: 'account',    icon: 'account_circle',  label: '내 계정',   roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'employees',  icon: 'manage_accounts', label: '직원 관리', roles: ['EXECUTIVE'] },
+      { id: 'attendance-admin', icon: 'badge',      label: '출퇴근 기록', roles: ['EXECUTIVE'] },
       { id: 'settings',   icon: 'settings',        label: '설정',      roles: ['EXECUTIVE'] },
     ],
   },
@@ -166,7 +169,7 @@ export default function Sidebar({
   allowedMenuSections = null,
 }) {
   const [collapsed, setCollapsed] = useState(getInitialCollapsed)
-  const personalLabel = [department, displayName || username].filter(Boolean).join(' / ') || '내 업무 입력'
+  const personalBaseLabel = displayName || username || '실무진'
 
   function toggleSection(title) {
     setCollapsed((prev) => {
@@ -238,10 +241,10 @@ export default function Sidebar({
                     event.preventDefault()
                     onNavigate(item.id)
                   }}
-                  className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold transition-colors ${isActive ? 'bg-sky-500 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'}`}
+                  className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm transition-colors ${item.emphasis ? 'font-black' : 'font-bold'} ${isActive ? 'bg-sky-500 text-white shadow-sm' : item.emphasis ? 'text-slate-900 hover:bg-slate-100 hover:text-slate-950' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'}`}
                 >
                   <span className="material-symbols-outlined shrink-0 text-xl">{item.icon}</span>
-                  <MenuLabel isExpanded={isExpanded}>{item.personal ? personalLabel : item.label}</MenuLabel>
+                  <MenuLabel isExpanded={isExpanded}>{item.personal ? `${personalBaseLabel} / ${item.personalSuffix || item.label}` : item.label}</MenuLabel>
                 </a>
               )
             })}

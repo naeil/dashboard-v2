@@ -3,6 +3,8 @@ import ExecutiveHeader from './components/ExecutiveHeader'
 import Sidebar from './components/Sidebar'
 import AccountSecurityPage from './pages/executive/AccountSecurityPage'
 import AdPerformancePage from './pages/executive/AdPerformancePage'
+import AttendanceAdminPage from './pages/executive/AttendanceAdminPage'
+import BrandHealthPage from './pages/executive/BrandHealthPage'
 import CashFlowPage from './pages/executive/CashFlowPage'
 import ChannelCredentialPage from './pages/executive/ChannelCredentialPage'
 import ChannelOperationsPage from './pages/executive/ChannelOperationsPage'
@@ -40,12 +42,17 @@ import WorkManagementPage from './pages/executive/WorkManagementPage'
 import Settings from './pages/Settings'
 import LoginPage from './pages/LoginPage'
 import StaffDashboardPage from './pages/staff/StaffDashboardPage'
+import StaffProjectStatusPage from './pages/staff/StaffProjectStatusPage'
+import StaffWorkReportPage from './pages/staff/StaffWorkReportPage'
 import { getAuthToken, getSession, logout } from './api/authApi'
 
 const pages = {
   platform: PlatformOverviewPage,
   'staff-dashboard': StaffDashboardPage,
+  'staff-work-report': StaffWorkReportPage,
+  'staff-project-status': StaffProjectStatusPage,
   account: AccountSecurityPage,
+  'attendance-admin': AttendanceAdminPage,
   'ceo-dashboard': CEOStrategicDashboard,
   summary: ExecutiveSummary,
   'cash-flow': CashFlowPage,
@@ -80,16 +87,106 @@ const pages = {
   'profit-management': ProfitManagementPage,
   'product-cost': ProductCostPage,
   'blog-auto-publish': BlogAutoPublishPage,
-  'brand-health': ChannelSalesPage,
+  'brand-health': BrandHealthPage,
 }
 
 const executivePages = new Set(['summary', 'employee-performance', 'cash-flow', 'receivables', 'operating-expenses', 'debts'])
+const mobilePageIds = new Set(['platform', 'staff-dashboard', 'staff-work-report', 'staff-project-status', 'account'])
+const mobileTabs = [
+  { id: 'platform', label: '홈', icon: 'apps' },
+  { id: 'staff-dashboard', label: '대시보드', icon: 'dashboard' },
+  { id: 'staff-work-report', label: '업무보고', icon: 'assignment_add' },
+  { id: 'staff-project-status', label: '프로젝트', icon: 'view_timeline' },
+  { id: 'account', label: '계정', icon: 'account_circle' },
+]
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.matchMedia('(max-width: 767px)').matches
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const media = window.matchMedia('(max-width: 767px)')
+    const update = () => setIsMobile(media.matches)
+    update()
+    media.addEventListener?.('change', update)
+    return () => media.removeEventListener?.('change', update)
+  }, [])
+
+  return isMobile
+}
+
+function MobileShell({ page, setPage, pages, session, userRole, onLogout }) {
+  const activePage = mobilePageIds.has(page) ? page : 'platform'
+  const PageComponent = pages[activePage] || PlatformOverviewPage
+
+  const pageProps = {
+    onNavigate: (nextPage) => setPage(mobilePageIds.has(nextPage) ? nextPage : 'platform'),
+    username: session.username,
+    displayName: session.displayName,
+    department: session.department,
+    positionName: session.positionName,
+    role: userRole,
+    mobile: true,
+  }
+
+  return (
+    <div className="app-light min-h-screen bg-slate-50 text-slate-950">
+      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-sky-600">Naeil Group</p>
+            <h1 className="mt-0.5 truncate text-base font-black text-slate-950">Mobile Dashboard</h1>
+            <p className="mt-0.5 truncate text-[11px] font-bold text-slate-500">
+              {session.displayName || session.username} · {session.department || userRole}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onLogout}
+            className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600"
+          >
+            로그아웃
+          </button>
+        </div>
+      </header>
+
+      <main className="min-h-[calc(100vh-64px)] px-3 pb-24 pt-3">
+        <div className="mobile-page-scope">
+          <PageComponent {...pageProps} />
+        </div>
+      </main>
+
+      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_20px_rgba(15,23,42,0.08)] backdrop-blur">
+        <div className="grid h-16 grid-cols-5">
+          {mobileTabs.map((tab) => {
+            const active = activePage === tab.id
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setPage(tab.id)}
+                className={`flex flex-col items-center justify-center gap-0.5 rounded-lg text-[11px] font-black transition-colors ${active ? 'text-sky-700' : 'text-slate-400'}`}
+              >
+                <span className={`material-symbols-outlined text-[22px] ${active ? 'filled' : ''}`}>{tab.icon}</span>
+                <span>{tab.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </nav>
+    </div>
+  )
+}
 
 export default function App() {
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true)
   const [page, setPage] = useState('platform')
   const [authLoading, setAuthLoading] = useState(true)
   const [session, setSession] = useState(null)
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     const checkSession = async () => {
@@ -172,6 +269,19 @@ export default function App() {
   const PageComponent = pages[page]
   const userRole = session.role || 'EXECUTIVE'
   const shellTone = executivePages.has(page) ? 'executive-hybrid' : 'ops-light'
+
+  if (isMobile) {
+    return (
+      <MobileShell
+        page={page}
+        setPage={setPage}
+        pages={pages}
+        session={session}
+        userRole={userRole}
+        onLogout={handleLogout}
+      />
+    )
+  }
 
   return (
     <div className={`app-light min-h-screen bg-slate-50 ${shellTone}`}>

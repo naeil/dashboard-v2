@@ -47,6 +47,8 @@ const toInitialValues = (row) => ({
   memo: row.memo || '',
 })
 
+const dateText = (value) => String(value || '').slice(0, 10)
+
 export default function OperatingExpensesPage() {
   const [rows, setRows] = useState([])
   const [editingRow, setEditingRow] = useState(null)
@@ -111,7 +113,20 @@ export default function OperatingExpensesPage() {
             { key: 'category', label: '비용 항목' },
             { key: 'expense_type', label: '구분', render: (row) => (row.expense_type === 'FIXED' ? '고정비' : '변동비') },
             { key: 'amount', label: '금액', render: (row) => won(row.amount) },
-            { key: 'payment_date', label: '지급일' },
+            {
+              key: 'payment_date',
+              label: '지급일',
+              render: (row) => (
+                <div className="flex items-center gap-2">
+                  <span>{dateText(row.payment_date)}</span>
+                  {row.recurrence_status === 'RECURRING' && (
+                    <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-black text-sky-700">
+                      매월 반복
+                    </span>
+                  )}
+                </div>
+              ),
+            },
             { key: 'vendor', label: '지급처' },
             { key: 'memo', label: '메모' },
             {

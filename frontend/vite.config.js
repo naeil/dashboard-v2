@@ -9,6 +9,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       port: 5173,
+      allowedHosts: ['.trycloudflare.com', '192.168.0.86'],
       proxy: {
         '/api': {
           target: proxyTarget,

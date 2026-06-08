@@ -158,7 +158,7 @@ public class PlayAutoApiClient {
     }
 
     public JsonNode getOrderList(String token, String apiKey, String sDate, String eDate) {
-        // PlayAuto 대시보드와 동일하게 주문일(ord_date) 기준으로 조회
+        // PlayAuto 대시보드와 동일하게 주문일(ord_time) 기준으로 조회
         // 페이지네이션으로 1000건 초과 주문도 누락 없이 수집
         final int PAGE_SIZE = 500;
         String url = "https://openapi.playauto.io/api/orders";
@@ -173,7 +173,7 @@ public class PlayAutoApiClient {
             body.put("start", start);
             body.put("length", PAGE_SIZE);
             body.put("orderby", "wdate");
-            body.put("date_type", "ord_date");
+            body.put("date_type", "ord_time");
             body.put("sdate", sDate);
             body.put("edate", eDate);
             body.put("delay_status", false);

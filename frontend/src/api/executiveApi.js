@@ -30,6 +30,7 @@ export const importPlayAutoChannelSales = (params = {}) =>
     params: { ...companyParams, refreshOrders: true, ...params },
   })
 export const getExecutiveReceivables = () => api.get('/executive/receivables', { params: companyParams })
+export const getExecutivePartners = () => api.get('/executive/partners', { params: companyParams })
 export const getExecutiveOperatingExpenses = () => api.get('/executive/operating-expenses', { params: companyParams })
 export const getExecutiveDebts = () => api.get('/executive/debts', { params: companyParams })
 export const getExecutiveExportPipeline = () => api.get('/executive/export-pipeline', { params: companyParams })
@@ -62,7 +63,8 @@ export const deployMarketingAgentNaverBlog = (payload) =>
 export const getBrandHealth = (params = {}) =>
   api.get('/executive/brand-health', { params: { ...companyParams, ...params } })
 
-export const getProfitManagement = () => api.get('/executive/profit-management', { params: companyParams })
+export const getProfitManagement = (params = {}) =>
+  api.get('/executive/profit-management', { params: { ...companyParams, ...params } })
 export const saveProfitPlan = (planMonth, items) =>
   api.post('/executive/profit-management/plan', items, { params: { ...companyParams, planMonth } })
 

@@ -6,6 +6,7 @@ import {
   getExecutiveSummary,
   getExecutiveWorkTasks,
 } from '../../api/executiveApi'
+import { clockStaffAttendance, getStaffTodayAttendance } from '../../api/staffApi'
 import { PageHeader, Panel } from './ExecutiveComponents'
 import { count, pct, won } from './formatters'
 import { isTaskDelayed, taskProgress, taskStatusClass, taskStatusLabels } from './workTaskUtils'
@@ -13,6 +14,26 @@ import { paymentStatusClass, paymentStatusLabels } from './paymentUtils'
 import IssueBriefingPanel from './IssueBriefingPanel'
 import CustomerInquiryPanel from './CustomerInquiryPanel'
 import MailWidget from './MailWidget'
+
+const dateTimeFormatter = new Intl.DateTimeFormat('ko-KR', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  weekday: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+})
+
+const timeFormatter = new Intl.DateTimeFormat('ko-KR', {
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
+function formatClockTime(value) {
+  if (!value) return '-'
+  return timeFormatter.format(new Date(value))
+}
 
 function StatCard({ label, value, helper, icon, tone = 'sky', onClick }) {
   const tones = {
@@ -184,7 +205,7 @@ function KakaoConsultationPanel() {
   )
 }
 
-export default function PlatformOverviewPage({ onNavigate, username = 'admin', role = 'EXECUTIVE' }) {
+export default function PlatformOverviewPage({ onNavigate, username = 'admin', role = 'EXECUTIVE', mobile = false }) {
   const isExecutive = role === 'EXECUTIVE'
   const [summary, setSummary] = useState(null)
   const [cashFlow, setCashFlow] = useState(null)
@@ -192,6 +213,9 @@ export default function PlatformOverviewPage({ onNavigate, username = 'admin', r
   const [payments, setPayments] = useState([])
   const [forecasts, setForecasts] = useState([])
   const [loading, setLoading] = useState(true)
+  const [attendance, setAttendance] = useState(null)
+  const [attendanceSaving, setAttendanceSaving] = useState(false)
+  const [clockNow, setClockNow] = useState(new Date())
 
   const load = () => {
     setLoading(true)
@@ -212,9 +236,29 @@ export default function PlatformOverviewPage({ onNavigate, username = 'admin', r
       .finally(() => setLoading(false))
   }
 
+  const loadAttendance = () => getStaffTodayAttendance()
+    .then((res) => setAttendance(res.data || null))
+    .catch(() => setAttendance(null))
+
   useEffect(() => {
     load()
+    loadAttendance()
   }, [])
+
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  async function handleAttendance(action) {
+    setAttendanceSaving(true)
+    try {
+      const res = await clockStaffAttendance(action)
+      setAttendance(res.data || null)
+    } finally {
+      setAttendanceSaving(false)
+    }
+  }
 
   const activeTasks = tasks.filter((task) => task.status !== 'DONE')
   const delayedTasks = tasks.filter((task) => isTaskDelayed(task))
@@ -278,6 +322,12 @@ export default function PlatformOverviewPage({ onNavigate, username = 'admin', r
     ['issue-briefing', '이슈 브리핑', '오늘의 경영 이슈 확인', 'campaign'],
     ['resource-library', '자료실', '공유 문서와 파일 확인', 'folder_open'],
   ].filter(([page]) => role === 'EXECUTIVE' || !['cash-flow', 'payment-approval'].includes(page))
+  const mobileQuickLinks = [
+    ['staff-dashboard', '직원 대시보드', '매출, 업무, 출퇴근 확인', 'dashboard'],
+    ['staff-work-report', '업무 보고', '일일·주간 업무 작성', 'assignment_add'],
+    ['staff-project-status', '프로젝트 현황', '일정과 마감 관리', 'view_timeline'],
+    ['account', '계정 관리', '로그인 보안 확인', 'account_circle'],
+  ]
   const calendarItems = [
     ['10:00', '미팅 및 매출 현황 확인', '대표 / 관리'],
     ['10:30', '오프라인 공급가표 전달', '영업'],
@@ -300,8 +350,36 @@ export default function PlatformOverviewPage({ onNavigate, username = 'admin', r
             <h1 className="mt-2 text-2xl font-black tracking-normal text-slate-950">대표 업무 홈</h1>
             <p className="mt-2 text-sm font-bold text-slate-500">주요 업무로 바로 이동하고, 일정과 메일을 한 화면에서 확인합니다.</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={load} disabled={loading} className="inline-flex h-10 items-center gap-2 rounded border border-slate-300 bg-white px-4 text-sm font-black text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 sm:min-w-[320px] xl:w-auto">
+              <span className="material-symbols-outlined text-base text-sky-600">schedule</span>
+              <div className="mr-1">
+                <p className="text-[11px] font-black text-slate-500">실시간 출퇴근</p>
+                <p className="text-sm font-black text-slate-950">{dateTimeFormatter.format(clockNow)}</p>
+                <p className="mt-0.5 text-[11px] font-bold text-slate-500">
+                  출근 {formatClockTime(attendance?.clock_in_at)} · 퇴근 {formatClockTime(attendance?.clock_out_at)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleAttendance('IN')}
+                disabled={attendanceSaving || Boolean(attendance?.clock_in_at)}
+                className="inline-flex h-9 items-center gap-1 rounded bg-sky-600 px-3 text-xs font-black text-white transition-colors hover:bg-sky-700 disabled:bg-slate-300 disabled:text-slate-500"
+              >
+                <span className="material-symbols-outlined text-sm">login</span>
+                출근
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAttendance('OUT')}
+                disabled={attendanceSaving || !attendance?.clock_in_at || Boolean(attendance?.clock_out_at)}
+                className="inline-flex h-9 items-center gap-1 rounded bg-slate-800 px-3 text-xs font-black text-white transition-colors hover:bg-slate-950 disabled:bg-slate-300 disabled:text-slate-500"
+              >
+                <span className="material-symbols-outlined text-sm">logout</span>
+                퇴근
+              </button>
+            </div>
+            <button type="button" onClick={() => { load(); loadAttendance() }} disabled={loading} className="inline-flex h-10 items-center gap-2 rounded border border-slate-300 bg-white px-4 text-sm font-black text-slate-700 hover:bg-slate-50 disabled:opacity-60">
               <span className="material-symbols-outlined text-base">sync</span>
               {loading ? '갱신 중' : '새로고침'}
             </button>
@@ -317,7 +395,7 @@ export default function PlatformOverviewPage({ onNavigate, username = 'admin', r
         </div>
 
         <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
-          {quickLinks.map(([page, title, body, icon]) => (
+          {(mobile ? mobileQuickLinks : quickLinks).map(([page, title, body, icon]) => (
             <button key={page} type="button" onClick={() => onNavigate?.(page)} className="group min-h-[110px] rounded border border-slate-200 bg-slate-50 p-4 text-left hover:border-blue-300 hover:bg-blue-50">
               <span className="material-symbols-outlined text-xl text-slate-500 group-hover:text-blue-700">{icon}</span>
               <span className="mt-3 block text-sm font-black text-slate-950">{title}</span>

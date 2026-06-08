@@ -157,6 +157,11 @@ public class ExecutiveDashboardController {
         return ResponseEntity.ok(executiveDashboardService.getReceivables(companyId));
     }
 
+    @GetMapping("/partners")
+    public ResponseEntity<List<Map<String, Object>>> getPartners(@RequestParam(defaultValue = "1") Long companyId) {
+        return ResponseEntity.ok(executiveDashboardService.getPartners(companyId));
+    }
+
     @GetMapping("/operating-expenses")
     public ResponseEntity<List<Map<String, Object>>> getOperatingExpenses(@RequestParam(defaultValue = "1") Long companyId) {
         return ResponseEntity.ok(executiveDashboardService.getOperatingExpenses(companyId));
@@ -263,8 +268,11 @@ public class ExecutiveDashboardController {
     }
 
     @GetMapping("/profit-management")
-    public ResponseEntity<Map<String, Object>> getProfitManagement(@RequestParam(defaultValue = "1") Long companyId) {
-        return ResponseEntity.ok(executiveDashboardService.getProfitManagement(companyId));
+    public ResponseEntity<Map<String, Object>> getProfitManagement(
+            @RequestParam(defaultValue = "1") Long companyId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate planMonth
+    ) {
+        return ResponseEntity.ok(executiveDashboardService.getProfitManagement(companyId, planMonth));
     }
 
     @PostMapping("/profit-management/plan")

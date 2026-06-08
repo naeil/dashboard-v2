@@ -60,7 +60,7 @@ app:
   mail:
     from: ${MAIL_FROM:${DAOU_MAIL_USERNAME:noreply@example.com}}
   cors:
-    allowed-origin-patterns: ${APP_CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:5173,http://localhost:3000}
+    allowed-origin-patterns: ${APP_CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:5173,http://localhost:3000,http://192.168.0.86:5173,https://*.trycloudflare.com}
 
 openai:
   api-key: ${OPENAI_API_KEY:}

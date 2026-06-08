@@ -38,6 +38,12 @@ public class PayrollController {
         return ResponseEntity.ok(payrollService.uploadExcel(file, payYearMonth));
     }
 
+    /** 급여 계산 후 명세서 저장 */
+    @PostMapping("/calculate")
+    public ResponseEntity<PayrollDto.RecordResponse> calculate(@RequestBody Map<String, Object> payload) {
+        return ResponseEntity.ok(payrollService.calculateAndSave(payload));
+    }
+
     /** 특정 월 급여명세서 이메일 발송 */
     @PostMapping("/send")
     public ResponseEntity<PayrollDto.SendResult> send(

@@ -12,7 +12,7 @@ export default function LoginPage({ onLogin }) {
   const initialInviteCode = getInitialInviteCode()
   const [mode, setMode] = useState(initialInviteCode ? 'register' : 'login')
   const [username, setUsername] = useState(initialInviteCode ? '' : 'admin')
-  const [password, setPassword] = useState(initialInviteCode ? '' : 'change-me-1234')
+  const [password, setPassword] = useState(initialInviteCode ? '' : '123456789')
   const [inviteCode, setInviteCode] = useState(initialInviteCode)
   const [inviteInfo, setInviteInfo] = useState(null)
   const [submitting, setSubmitting] = useState(false)
@@ -85,7 +85,7 @@ export default function LoginPage({ onLogin }) {
             onClick={() => {
               setMode('login')
               setUsername('admin')
-              setPassword('change-me-1234')
+              setPassword('123456789')
               setError('')
             }}
             className={`h-10 rounded-md text-sm font-black transition-colors ${mode === 'login' ? 'bg-sky-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-950'}`}

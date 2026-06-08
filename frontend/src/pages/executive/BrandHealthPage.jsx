@@ -5,10 +5,7 @@ import { getBrandHealth } from '../../api/executiveApi'
 
 function fmtWon(n) {
   if (n == null || isNaN(n)) return '-'
-  const v = Number(n)
-  if (Math.abs(v) >= 100_000_000) return '₩' + (v / 100_000_000).toFixed(1) + '억'
-  if (Math.abs(v) >= 10_000)       return '₩' + (v / 10_000).toFixed(1) + 'M'
-  return '₩' + v.toLocaleString()
+  return `${Math.round(Number(n)).toLocaleString('ko-KR')}원`
 }
 
 function fmtNum(n, unit = '') {
@@ -104,9 +101,18 @@ function ProfitBarChart({ data }) {
 
 // ── KPI 카드 ──────────────────────────────────────────────────────────────────
 
-function KpiCard({ icon, label, value, sub, badge, extra }) {
+function KpiCard({ icon, label, value, sub, badge, extra, onClick, active = false }) {
+  const Component = onClick ? 'button' : 'div'
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+    <Component
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={`w-full rounded-2xl border bg-white p-4 text-left transition-all ${
+        active
+          ? 'border-sky-400 shadow-md ring-2 ring-sky-100'
+          : 'border-slate-200 hover:border-sky-300 hover:shadow-sm'
+      }`}
+    >
       <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 mb-2">
         <span className="material-symbols-outlined text-base text-slate-400">{icon}</span>
         {label}
@@ -117,7 +123,7 @@ function KpiCard({ icon, label, value, sub, badge, extra }) {
       </div>
       {sub  && <p className="mt-1 text-[11px] text-slate-400">{sub}</p>}
       {extra && <p className="mt-0.5 text-[11px] font-bold text-slate-500">{extra}</p>}
-    </div>
+    </Component>
   )
 }
 
@@ -134,6 +140,7 @@ export default function BrandHealthPage() {
   const [brandId,   setBrandId]   = useState(null)
   const [startDate, setStartDate] = useState(ymStart)
   const [endDate,   setEndDate]   = useState(ymEnd)
+  const [activeDetail, setActiveDetail] = useState('channel')
 
   async function load(bId, sd, ed) {
     setLoading(true); setError(null)
@@ -155,6 +162,11 @@ export default function BrandHealthPage() {
 
   function handleSearch() { load(brandId, startDate, endDate) }
 
+  function selectBrand(nextBrandId) {
+    setBrandId(nextBrandId)
+    load(nextBrandId, startDate, endDate)
+  }
+
   function setThisMonth() {
     setStartDate(ymStart); setEndDate(ymEnd)
   }
@@ -173,6 +185,9 @@ export default function BrandHealthPage() {
   const summary   = data?.summary         || {}
 
   const brandName = brands.find((b) => String(b.id) === String(brandId))?.brand_name || '전체 브랜드'
+  const brandOptions = ['하이프리', '국민한상', '미분류']
+    .map((name) => brands.find((brand) => brand.brand_name === name))
+    .filter(Boolean)
 
   // 월별 이익 (6개월)
   const monthlyProfit = useMemo(() => {
@@ -195,22 +210,16 @@ export default function BrandHealthPage() {
     return prev > 0 ? ((curr - prev) / prev) * 100 : null
   }, [monthlyProfit])
 
-  // 재고 회전율 (브랜드 전체 합산)
-  const turnoverRate = useMemo(() => {
-    const totalStock = inventory.reduce((s, r) => s + Number(r.real_stock || 0), 0)
-    const totalOut30 = inventory.reduce((s, r) => s + Number(r.last_30d_outbound || 0), 0)
-    if (totalStock === 0) return null
-    return totalOut30 / totalStock
-  }, [inventory])
+  // 제품 원가 관리 SKU의 전체 재고/출고를 기준으로 계산한 가중 지표
+  const turnoverRate = summary.inventory_turnover_rate != null
+    ? Number(summary.inventory_turnover_rate)
+    : null
 
   const prevTurnover = null // 전월 회전율 — 현재 API에서 미지원, 추후 확장
 
-  // 평균 소진 예상일
-  const avgDays = useMemo(() => {
-    const active = inventory.filter((r) => r.days_to_depletion != null)
-    if (active.length === 0) return null
-    return active.reduce((s, r) => s + Number(r.days_to_depletion), 0) / active.length
-  }, [inventory])
+  const avgDays = summary.avg_days_to_depletion != null
+    ? Number(summary.avg_days_to_depletion)
+    : null
 
   const daysStatus = avgDays == null ? null : avgDays > 45 ? '안전' : avgDays > 14 ? '주의' : '위험'
   const daysStatusCls = { '안전': 'bg-emerald-100 text-emerald-700', '주의': 'bg-amber-100 text-amber-600', '위험': 'bg-red-100 text-red-700' }[daysStatus] || ''
@@ -241,12 +250,12 @@ export default function BrandHealthPage() {
           {/* 브랜드 탭 */}
           <div className="flex items-center gap-2">
             <div className="flex rounded-xl border border-slate-200 bg-slate-50 p-1 gap-1">
-              <button type="button" onClick={() => setBrandId(null)}
+              <button type="button" onClick={() => selectBrand(null)}
                 className={`rounded-lg px-4 py-1.5 text-sm font-black transition-colors ${brandId === null ? 'bg-sky-500 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
                 전체
               </button>
-              {brands.map((b) => (
-                <button key={b.id} type="button" onClick={() => setBrandId(b.id)}
+              {brandOptions.map((b) => (
+                <button key={b.id} type="button" onClick={() => selectBrand(b.id)}
                   className={`rounded-lg px-4 py-1.5 text-sm font-black transition-colors ${String(brandId) === String(b.id) ? 'bg-sky-500 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
                   {b.brand_name}
                 </button>
@@ -296,6 +305,8 @@ export default function BrandHealthPage() {
                   value={fmtWon(summary.total_profit)}
                   badge={diffBadge(momProfitPct)}
                   sub={`전월 대비 · 이익률 ${Number(summary.avg_margin ?? 0).toFixed(1)}%`}
+                  onClick={() => setActiveDetail('channel')}
+                  active={activeDetail === 'channel'}
                 />
                 <KpiCard
                   icon="autorenew"
@@ -306,8 +317,10 @@ export default function BrandHealthPage() {
                       ? <span className={`rounded-full px-2 py-0.5 text-[11px] font-black ${turnoverLabelCls}`}>{turnoverLabel}</span>
                       : null
                   }
-                  sub="월 기준"
+                  sub="원가 관리 SKU · 최근 30일 출고 기준"
                   extra={prevTurnover != null ? `전월 ${prevTurnover.toFixed(1)}회` : undefined}
+                  onClick={() => setActiveDetail('inventory')}
+                  active={activeDetail === 'inventory'}
                 />
                 <KpiCard
                   icon="schedule"
@@ -318,22 +331,54 @@ export default function BrandHealthPage() {
                       ? <span className={`rounded-full px-2 py-0.5 text-[11px] font-black ${daysStatusCls}`}>{daysStatus}</span>
                       : null
                   }
-                  sub="평균 일 판매량 기준"
+                  sub="원가 관리 SKU · 최근 7일 출고 기준"
+                  onClick={() => setActiveDetail('inventory')}
+                  active={activeDetail === 'inventory'}
                 />
                 <KpiCard
                   icon="inventory_2"
                   label="전체 재고"
                   value={fmtNum(summary.total_stock, '개')}
                   badge={null}
-                  sub={`SKU ${inventory.length}개 운영 중`}
+                  sub={`제품 원가 관리 SKU ${inventory.length}개 기준`}
                   extra={`긴급발주 ${sortedInventory.filter((r) => ['OUT_OF_STOCK','URGENT'].includes(skuStatus(r))).length}개`}
+                  onClick={() => setActiveDetail('inventory')}
+                  active={activeDetail === 'inventory'}
                 />
               </div>
             </div>
 
-            {/* ─── 채널별 + SKU 재고 ─── */}
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {/* ─── 상세 데이터 전환 ─── */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-2">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveDetail('channel')}
+                  className={`rounded-xl px-4 py-3 text-sm font-black transition-colors ${
+                    activeDetail === 'channel'
+                      ? 'bg-sky-500 text-white shadow-sm'
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  채널별 매출 기여도
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveDetail('inventory')}
+                  className={`rounded-xl px-4 py-3 text-sm font-black transition-colors ${
+                    activeDetail === 'inventory'
+                      ? 'bg-sky-500 text-white shadow-sm'
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  SKU 재고 현황
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4">
               {/* 채널별 매출 기여 + 영업이익률 */}
+              {activeDetail === 'channel' && (
               <div className="rounded-2xl border border-slate-200 bg-white p-5">
                 {channels.length === 0
                   ? <p className="py-8 text-center text-xs text-slate-400">채널 데이터 없음</p>
@@ -387,8 +432,10 @@ export default function BrandHealthPage() {
                     </>
                   )}
               </div>
+              )}
 
               {/* SKU별 재고 현황 */}
+              {activeDetail === 'inventory' && (
               <div className="rounded-2xl border border-slate-200 bg-white p-5">
                 <p className="mb-3 text-xs font-black text-slate-700">SKU별 재고 현황</p>
                 {sortedInventory.length === 0
@@ -431,6 +478,7 @@ export default function BrandHealthPage() {
                     </div>
                   )}
               </div>
+              )}
             </div>
 
             {/* ─── 월별 영업이익 추세 ─── */}

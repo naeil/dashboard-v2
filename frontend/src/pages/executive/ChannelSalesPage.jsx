@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   createExecutiveRecord,
   deleteExecutiveRecord,
@@ -56,6 +56,8 @@ const METHOD_FILTERS = [
   { key: 'overseas', label: '해외', icon: 'flight_takeoff' },
   { key: 'b2b', label: 'B2B', icon: 'business_center' },
 ]
+const ALL_METHOD_KEYS = METHOD_FILTERS.map((item) => item.key)
+const LIVE_SYNC_INTERVAL_MS = 60000
 
 const sourceOptions = [
   { value: 'MANUAL', label: '온라인 직접 입력' },
@@ -297,13 +299,13 @@ export default function ChannelSalesPage() {
   const [startDate, setStartDate] = useState(initialPreset.start)
   const [endDate, setEndDate] = useState(initialPreset.end)
   const [brands, setBrands] = useState([])
-  const [selectedChannel, setSelectedChannel] = useState('쿠팡')
+  const [selectedChannel, setSelectedChannel] = useState('')
   const [selectedBrandId, setSelectedBrandId] = useState('')
   const [selectedProductGroup, setSelectedProductGroup] = useState('')
   const [searchText, setSearchText] = useState('')
   const [analytics, setAnalytics] = useState({ summary: {}, channels: [], products: [], trend: [] })
   const [manualRecords, setManualRecords] = useState([])
-  const [selectedMethods, setSelectedMethods] = useState(['online'])
+  const [selectedMethods, setSelectedMethods] = useState(ALL_METHOD_KEYS)
   const [openPanel, setOpenPanel] = useState('')
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES)
   const [selectedCategory, setSelectedCategory] = useState('')
@@ -314,13 +316,14 @@ export default function ChannelSalesPage() {
   const [sortBy, setSortBy] = useState('salesDesc')
   const [productFilter, setProductFilter] = useState('all')
   const [importing, setImporting] = useState(false)
-  const [autoSync, setAutoSync] = useState(false)
+  const [autoSync, setAutoSync] = useState(true)
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null)
   const [naverCpc, setNaverCpc] = useState({ summary: {}, rows: [] })
   const [naverCpcLoading, setNaverCpcLoading] = useState(false)
   const [naverCpcError, setNaverCpcError] = useState('')
   const [message, setMessage] = useState('')
   const [deletingId, setDeletingId] = useState(null)
+  const filtersRef = useRef({ selectedBrandId, searchText, selectedProductGroup, selectedChannel })
 
   const selectedBrandName = brands.find((b) => String(b.id) === String(selectedBrandId))?.brand_name || ''
   const productGroupOptions = BRAND_TREE[selectedBrandName] || []
@@ -381,6 +384,10 @@ export default function ChannelSalesPage() {
   }, [categories])
 
   useEffect(() => {
+    filtersRef.current = { selectedBrandId, searchText, selectedProductGroup, selectedChannel }
+  }, [selectedBrandId, searchText, selectedProductGroup, selectedChannel])
+
+  useEffect(() => {
     const id = window.setTimeout(() => {
       loadAnalytics(startDate, endDate, selectedBrandId, searchText, selectedProductGroup, selectedChannel)
       loadNaverCpc(startDate, endDate, searchText, selectedProductGroup, selectedBrandName)
@@ -390,12 +397,20 @@ export default function ChannelSalesPage() {
 
   useEffect(() => {
     if (!autoSync) return undefined
-    const id = window.setInterval(() => {
-      loadAnalytics(startDate, endDate, selectedBrandId, searchText, selectedProductGroup, selectedChannel)
+    importPlayAutoChannelSales({ startDate, endDate })
+      .then(() => {
+        const filters = filtersRef.current
+        return loadAnalytics(startDate, endDate, filters.selectedBrandId, filters.searchText, filters.selectedProductGroup, filters.selectedChannel)
+      })
+      .catch((err) => setMessage(err?.response?.data?.message || 'PlayAuto API sync failed'))
+    const id = window.setInterval(async () => {
+      await importPlayAutoChannelSales({ startDate, endDate }).catch((err) => setMessage(err?.response?.data?.message || 'PlayAuto API sync failed'))
+      const filters = filtersRef.current
+      loadAnalytics(startDate, endDate, filters.selectedBrandId, filters.searchText, filters.selectedProductGroup, filters.selectedChannel)
         .catch((err) => setMessage(err?.response?.data?.message || '화면 갱신 실패'))
-    }, 15000)
+    }, LIVE_SYNC_INTERVAL_MS)
     return () => window.clearInterval(id)
-  }, [autoSync, startDate, endDate, selectedBrandId, searchText, selectedProductGroup, selectedChannel])
+  }, [autoSync, startDate, endDate])
 
   function applyPreset(nextPreset) {
     setPreset(nextPreset)

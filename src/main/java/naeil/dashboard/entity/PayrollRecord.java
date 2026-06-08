@@ -32,6 +32,26 @@ public class PayrollRecord {
     @Column(name = "user_id")
     private Long userId;
 
+    @Column(name = "salary_type", nullable = false, length = 20)
+    @Builder.Default
+    private String salaryType = "EXCEL";
+
+    @Column(name = "annual_salary", nullable = false, precision = 15, scale = 2)
+    @Builder.Default
+    private BigDecimal annualSalary = BigDecimal.ZERO;
+
+    @Column(name = "hourly_wage", nullable = false, precision = 15, scale = 2)
+    @Builder.Default
+    private BigDecimal hourlyWage = BigDecimal.ZERO;
+
+    @Column(name = "work_days", nullable = false, precision = 8, scale = 2)
+    @Builder.Default
+    private BigDecimal workDays = BigDecimal.ZERO;
+
+    @Column(name = "work_hours", nullable = false, precision = 8, scale = 2)
+    @Builder.Default
+    private BigDecimal workHours = BigDecimal.ZERO;
+
     @Column(name = "base_salary", nullable = false, precision = 15, scale = 2)
     @Builder.Default
     private BigDecimal baseSalary = BigDecimal.ZERO;

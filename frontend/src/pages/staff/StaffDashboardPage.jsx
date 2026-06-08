@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getProductSales, getShopSales, getSummary } from '../../api/salesApi'
+import { getStaffAttendance } from '../../api/staffApi'
 import MailWidget from '../executive/MailWidget'
 
 function startOfMonth(date) {
@@ -37,13 +38,27 @@ function statusBadge(status) {
   }[status] || 'bg-slate-100 text-slate-600'
 }
 
+function dateKey(value) {
+  if (!value) return ''
+  return String(value).slice(0, 10)
+}
+
+function localDateText(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function timeLabel(value) {
+  if (!value) return '-'
+  return new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit' }).format(new Date(value))
+}
+
 const staffTasks = [
   { id: 1, title: '오늘 매출 현황 확인', owner: '채널 운영', progress: 85, status: 'IN_PROGRESS' },
   { id: 2, title: '제품 원가 수정 요청 검토', owner: '상품 관리', progress: 55, status: 'IN_PROGRESS' },
   { id: 3, title: '다우오피스 메일 회신', owner: '업무 지원', progress: 25, status: 'DELAYED' },
 ]
 
-export default function StaffDashboardPage({ isExpanded = false }) {
+export default function StaffDashboardPage({ isExpanded = false, mobile = false }) {
   const today = useMemo(() => new Date(), [])
   const [companyId] = useState(1)
   const [startDate] = useState(startOfMonth(today))
@@ -51,6 +66,7 @@ export default function StaffDashboardPage({ isExpanded = false }) {
   const [summary, setSummary] = useState(null)
   const [products, setProducts] = useState([])
   const [shops, setShops] = useState([])
+  const [attendanceRows, setAttendanceRows] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -58,14 +74,16 @@ export default function StaffDashboardPage({ isExpanded = false }) {
     setLoading(true)
     setError('')
     try {
-      const [summaryRes, productRes, shopRes] = await Promise.all([
+      const [summaryRes, productRes, shopRes, attendanceRes] = await Promise.all([
         getSummary(companyId, startDate, endDate),
         getProductSales(companyId, startDate, endDate),
         getShopSales(companyId, startDate, endDate),
+        getStaffAttendance({ month: localDateText(startDate) }),
       ])
       setSummary(summaryRes.data || {})
       setProducts(Array.isArray(productRes.data) ? productRes.data : [])
       setShops(Array.isArray(shopRes.data) ? shopRes.data : [])
+      setAttendanceRows(Array.isArray(attendanceRes.data) ? attendanceRes.data : [])
     } catch (err) {
       console.error('Staff dashboard API error:', err)
       setError('대시보드 데이터를 불러오지 못했습니다.')
@@ -80,9 +98,25 @@ export default function StaffDashboardPage({ isExpanded = false }) {
 
   const topProductRevenue = products.reduce((sum, item) => sum + Number(item.totalNetRevenue || 0), 0)
   const topShopRevenue = shops.reduce((sum, item) => sum + Number(item.totalNetRevenue || 0), 0)
+  const attendanceByDate = useMemo(() => {
+    const map = new Map()
+    attendanceRows.forEach((row) => map.set(dateKey(row.work_date), row))
+    return map
+  }, [attendanceRows])
+  const calendarDays = useMemo(() => {
+    const firstOffset = startDate.getDay()
+    const days = []
+    for (let i = 0; i < firstOffset; i += 1) days.push(null)
+    for (let day = 1; day <= endDate.getDate(); day += 1) {
+      const d = new Date(startDate.getFullYear(), startDate.getMonth(), day)
+      const key = localDateText(d)
+      days.push({ day, key, record: attendanceByDate.get(key) })
+    }
+    return days
+  }, [startDate, endDate, attendanceByDate])
 
   return (
-    <main className={`min-h-screen bg-slate-50 p-6 transition-all duration-300 ${isExpanded ? 'ml-64' : 'ml-20'}`}>
+    <main className={`min-h-screen bg-slate-50 transition-all duration-300 ${mobile ? 'p-0' : `p-6 ${isExpanded ? 'ml-64' : 'ml-20'}`}`}>
       <section className="mb-6 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -126,6 +160,54 @@ export default function StaffDashboardPage({ isExpanded = false }) {
           <p className="mt-3 text-2xl font-black text-slate-950">{count(shops.length, '개')}</p>
           <p className="mt-2 text-xs font-bold text-slate-500">{won(topShopRevenue)}</p>
         </article>
+      </section>
+
+      <section className="mb-6 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h2 className="text-lg font-black text-slate-950">출퇴근 달력</h2>
+            <p className="mt-1 text-xs font-bold text-slate-500">
+              업무 홈에서 찍은 출근/퇴근 시간이 월별로 저장됩니다.
+            </p>
+          </div>
+          <p className="text-sm font-black text-slate-700">
+            {startDate.getFullYear()}년 {startDate.getMonth() + 1}월
+          </p>
+        </div>
+        <div className="grid grid-cols-7 overflow-hidden rounded-lg border border-slate-200 text-sm">
+          {['일', '월', '화', '수', '목', '금', '토'].map((day) => (
+            <div key={day} className="bg-slate-50 px-3 py-2 text-center text-xs font-black text-slate-500">
+              {day}
+            </div>
+          ))}
+          {calendarDays.map((item, index) => {
+            if (!item) {
+              return <div key={`empty-${index}`} className="min-h-[98px] border-t border-slate-100 bg-slate-50/50" />
+            }
+            const done = Boolean(item.record?.clock_out_at)
+            const started = Boolean(item.record?.clock_in_at)
+            return (
+              <div key={item.key} className="min-h-[98px] border-t border-slate-100 bg-white p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-700">{item.day}</span>
+                  {started && (
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${done ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-100 text-sky-700'}`}>
+                      {done ? '완료' : '근무중'}
+                    </span>
+                  )}
+                </div>
+                {started ? (
+                  <div className="mt-3 space-y-1 text-[11px] font-bold text-slate-600">
+                    <p>출근 {timeLabel(item.record.clock_in_at)}</p>
+                    <p>퇴근 {timeLabel(item.record.clock_out_at)}</p>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-[11px] font-bold text-slate-300">기록 없음</p>
+                )}
+              </div>
+            )
+          })}
+        </div>
       </section>
 
       <section className="mb-6 grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">

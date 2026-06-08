@@ -28,7 +28,7 @@ export function PageHeader({ title, description }) {
   )
 }
 
-export function KpiCard({ label, value, change, badge, tone = 'sky', icon = 'monitoring', onClick, actionLabel, helperText }) {
+export function KpiCard({ label, value, change, badge, tone = 'sky', icon = 'monitoring', onClick, actionLabel, helperText, valueClassName = 'text-slate-950' }) {
   const toneMap = {
     sky: 'bg-sky-50 text-sky-700 border-sky-200',
     emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -44,7 +44,7 @@ export function KpiCard({ label, value, change, badge, tone = 'sky', icon = 'mon
           {icon}
         </span>
       </div>
-      <div className="mt-3 text-2xl font-black tracking-tight text-slate-950">{value}</div>
+      <div className={`mt-3 text-2xl font-black tracking-tight ${valueClassName}`}>{value}</div>
       <div className="mt-4 flex items-center justify-between gap-3">
         <span className={`text-xs font-bold ${Number(change || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
           {helperText || (change == null ? '기준 데이터' : `전월 대비 ${Number(change) >= 0 ? '+' : ''}${pct(change)}`)}
