@@ -1,9 +1,19 @@
 import { useEffect, useState } from 'react'
-import { createInvite, getInvites, getUsers, resetUserPassword, updateMenuPermissions } from '../../api/authApi'
+import { createInvite, deleteUser, getInvites, getUsers, resetUserPassword, updateMenuPermissions } from '../../api/authApi'
 import { DataTable, PageHeader, Panel } from './ExecutiveComponents'
 
 // 섹션별 개별 메뉴 항목 (새 Sidebar 구조와 일치)
 const CONFIGURABLE_ITEMS = [
+  {
+    section: '운영 · 팀관리',
+    items: [
+      { id: 'work-management',      label: '업무 진행 관리' },
+      { id: 'payment-approval',     label: '입출금 결재 관리' },
+      { id: 'employee-performance', label: '직원 성과 분석' },
+      { id: 'channel-credentials',  label: '채널 계정 관리' },
+      { id: 'product-cost',         label: '제품 원가 관리' },
+    ],
+  },
   {
     section: '영업 지원',
     items: [
@@ -306,6 +316,25 @@ export default function EmployeeManagementPage() {
     }
   }
 
+  const removeUser = async (user) => {
+    const ok = window.confirm(`${user.display_name || user.username} 계정을 삭제 처리할까요? 삭제된 직원은 로그인할 수 없습니다.`)
+    if (!ok) return
+    try {
+      await deleteUser(user.id)
+      setMessage(`${user.display_name || user.username} 계정을 삭제 처리했습니다.`)
+      if (selectedUser?.id === user.id) {
+        setSelectedUser(null)
+        setNewPassword('')
+      }
+      if (permissionUser?.id === user.id) {
+        setPermissionUser(null)
+      }
+      await load()
+    } catch (error) {
+      setMessage(error?.response?.data?.message || error.message || '직원 삭제 처리에 실패했습니다.')
+    }
+  }
+
   return (
     <>
       {permissionUser && (
@@ -385,6 +414,16 @@ export default function EmployeeManagementPage() {
                       >
                         <span className="material-symbols-outlined text-sm">tune</span>
                         메뉴 권한
+                      </button>
+                    )}
+                    {row.role !== 'EXECUTIVE' && row.status !== 'LEFT' && (
+                      <button
+                        type="button"
+                        onClick={() => removeUser(row)}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-400/30 px-2 text-xs font-black text-rose-200 transition-colors hover:bg-rose-400/10"
+                      >
+                        <span className="material-symbols-outlined text-sm">delete</span>
+                        삭제
                       </button>
                     )}
                   </div>

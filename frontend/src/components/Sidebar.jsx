@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 const departmentAliases = {
   salesSupport: ['영업지원', '영업 지원', '운영', '물류', '생산', 'CS'],
@@ -7,10 +7,13 @@ const departmentAliases = {
   sales: ['영업', '영업팀', '해외영업', '수출', '컨설팅', 'B2B'],
 }
 
+export const SIDEBAR_MENU_ORDER_KEY = 'sidebar_menu_order_v1'
+
 // group: 'executive' | 'staff' | 'system'
-const menuSections = [
+export const defaultMenuSections = [
   // ─── 경영진 그룹 ───────────────────────────────────────────────
   {
+    id: 'strategy-finance',
     title: '전략 · 재무',
     group: 'executive',
     departments: ['executive'],
@@ -23,6 +26,7 @@ const menuSections = [
     ],
   },
   {
+    id: 'operations-management',
     title: '운영 · 팀관리',
     group: 'executive',
     departments: ['manager'],
@@ -36,6 +40,7 @@ const menuSections = [
   },
   // ─── 실무진 그룹 ───────────────────────────────────────────────
   {
+    id: 'common',
     title: '공통',
     group: 'staff',
     departments: ['all'],
@@ -51,6 +56,7 @@ const menuSections = [
     ],
   },
   {
+    id: 'sales-support',
     title: '영업 지원',
     group: 'staff',
     departments: ['salesSupport'],
@@ -62,6 +68,7 @@ const menuSections = [
     ],
   },
   {
+    id: 'marketing',
     title: '마케팅팀',
     group: 'staff',
     departments: ['marketing'],
@@ -73,6 +80,7 @@ const menuSections = [
     ],
   },
   {
+    id: 'accounting-sales',
     title: '회계 · 영업팀',
     group: 'staff',
     departments: ['accounting', 'sales'],
@@ -84,6 +92,7 @@ const menuSections = [
   },
   // ─── 시스템 ────────────────────────────────────────────────────
   {
+    id: 'system',
     title: '시스템',
     group: 'system',
     departments: ['all'],
@@ -91,10 +100,40 @@ const menuSections = [
       { id: 'account',    icon: 'account_circle',  label: '내 계정',   roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'employees',  icon: 'manage_accounts', label: '직원 관리', roles: ['EXECUTIVE'] },
       { id: 'attendance-admin', icon: 'badge',      label: '출퇴근 기록', roles: ['EXECUTIVE'] },
+      { id: 'menu-order-settings', icon: 'swap_vert', label: '카테고리 이동', roles: ['EXECUTIVE'] },
       { id: 'settings',   icon: 'settings',        label: '설정',      roles: ['EXECUTIVE'] },
     ],
   },
 ]
+
+export function getStoredMenuOrder() {
+  try {
+    const saved = localStorage.getItem(SIDEBAR_MENU_ORDER_KEY)
+    return saved ? JSON.parse(saved) : null
+  } catch {
+    return null
+  }
+}
+
+export function getOrderedMenuSections(order = getStoredMenuOrder()) {
+  const sectionById = new Map(defaultMenuSections.map((section) => [section.id, section]))
+  const orderedSectionIds = Array.isArray(order?.sections) ? order.sections : []
+  const sectionIds = [
+    ...orderedSectionIds.filter((id) => sectionById.has(id)),
+    ...defaultMenuSections.map((section) => section.id).filter((id) => !orderedSectionIds.includes(id)),
+  ]
+
+  return sectionIds.map((sectionId) => {
+    const section = sectionById.get(sectionId)
+    const itemById = new Map(section.items.map((item) => [item.id, item]))
+    const orderedItemIds = Array.isArray(order?.items?.[sectionId]) ? order.items[sectionId] : []
+    const itemIds = [
+      ...orderedItemIds.filter((id) => itemById.has(id)),
+      ...section.items.map((item) => item.id).filter((id) => !orderedItemIds.includes(id)),
+    ]
+    return { ...section, items: itemIds.map((itemId) => itemById.get(itemId)) }
+  })
+}
 
 const roleLabels = {
   EXECUTIVE: '대표 / 임원',
@@ -169,7 +208,18 @@ export default function Sidebar({
   allowedMenuSections = null,
 }) {
   const [collapsed, setCollapsed] = useState(getInitialCollapsed)
+  const [, setMenuOrderVersion] = useState(0)
   const personalBaseLabel = displayName || username || '실무진'
+
+  useEffect(() => {
+    const refreshMenuOrder = () => setMenuOrderVersion((version) => version + 1)
+    window.addEventListener('storage', refreshMenuOrder)
+    window.addEventListener('sidebar:menu-order-updated', refreshMenuOrder)
+    return () => {
+      window.removeEventListener('storage', refreshMenuOrder)
+      window.removeEventListener('sidebar:menu-order-updated', refreshMenuOrder)
+    }
+  }, [])
 
   function toggleSection(title) {
     setCollapsed((prev) => {
@@ -185,13 +235,13 @@ export default function Sidebar({
     && allowedMenuSections.some((v) => v.includes('-'))
 
   // 렌더링할 섹션 필터링
-  const visibleSections = menuSections
+  const visibleSections = getOrderedMenuSections()
     .map((section) => {
       if (!matchesDepartment(section.departments, department, role)) return null
       let items = section.items.filter((item) => item.roles.includes(role))
 
       // 항목 ID 단위 권한 — 공통(all)·시스템 섹션은 항상 전체 표시
-      if (hasItemLevelPermissions && section.group === 'staff' && !section.departments.includes('all')) {
+      if (hasItemLevelPermissions && section.group !== 'system' && !section.departments.includes('all')) {
         items = items.filter((item) => isItemAllowed(item.id, allowedMenuSections))
       }
 

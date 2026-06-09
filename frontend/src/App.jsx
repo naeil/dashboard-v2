@@ -22,6 +22,7 @@ import IssueBriefingPage from './pages/executive/IssueBriefingPage'
 import MarketingAgentPage from './pages/executive/MarketingAgentPage'
 import MarketingProjectBoardPage from './pages/executive/MarketingProjectBoardPage'
 import MarketingStatusPage from './pages/executive/MarketingStatusPage'
+import MenuOrderSettingsPage from './pages/executive/MenuOrderSettingsPage'
 import OperatingExpensesPage from './pages/executive/OperatingExpensesPage'
 import PartnerManagementPage from './pages/executive/PartnerManagementPage'
 import PayrollPage from './pages/executive/PayrollPage'
@@ -68,6 +69,7 @@ const pages = {
   'operating-expenses': OperatingExpensesPage,
   debts: DebtPage,
   employees: EmployeeManagementPage,
+  'menu-order-settings': MenuOrderSettingsPage,
   'employee-performance': EmployeePerformancePage,
   'payment-request': PaymentRequestPage,
   'payment-approval': PaymentApprovalPage,

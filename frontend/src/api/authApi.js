@@ -122,6 +122,7 @@ export const getInvites = () => authApi.get('/auth/invites')
 export const createInvite = (payload) => authApi.post('/auth/invites', payload)
 export const changePassword = (payload) => authApi.post('/auth/password', payload)
 export const resetUserPassword = (id, payload) => authApi.post(`/auth/users/${id}/password`, payload)
+export const deleteUser = (id) => authApi.delete(`/auth/users/${id}`)
 export const updateMenuPermissions = (id, sections) =>
   authApi.post(`/auth/users/${id}/menu-permissions`, { sections: JSON.stringify(sections) })
 

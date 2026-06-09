@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getExecutiveProductProfits, updateExecutiveRecord } from '../../api/executiveApi'
+import { getExecutiveProductProfits, syncPlayAutoProductMovements, updateExecutiveRecord } from '../../api/executiveApi'
 import { DataTable, KpiCard, PageHeader, Panel, StatusBadge } from './ExecutiveComponents'
 import { count, won } from './formatters'
 
@@ -105,7 +105,10 @@ export default function InventoryRiskPage() {
   const [selectedProduct, setSelectedProduct] = useState(null)
   const [stockValue, setStockValue] = useState('')
   const [saving, setSaving] = useState(false)
+  const [syncing, setSyncing] = useState(false)
   const [message, setMessage] = useState('')
+  const [syncMessage, setSyncMessage] = useState('')
+  const [lastSyncedAt, setLastSyncedAt] = useState('')
 
   const load = () => getExecutiveProductProfits().then((res) => setRows(res.data || []))
 
@@ -145,11 +148,60 @@ export default function InventoryRiskPage() {
     }
   }
 
+  const syncInventory = async () => {
+    if (syncing) return
+    setSyncing(true)
+    setSyncMessage('PlayAuto API에서 최신 재고를 가져오는 중입니다.')
+    try {
+      const response = await syncPlayAutoProductMovements()
+      await load()
+      const syncedAt = response.data?.summary?.last_synced_at || new Date().toISOString()
+      setLastSyncedAt(syncedAt)
+      setSyncMessage('최신 재고 데이터가 반영되었습니다.')
+    } catch (error) {
+      setSyncMessage(error?.response?.data?.message || 'PlayAuto 재고 업데이트에 실패했습니다. 연동 설정을 확인해주세요.')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   return (
     <>
       <PageHeader title="재고 관리" description="하이프리와 국민한상 카테고리별 재고 평가 금액, 안전재고 미달, 과다 재고를 확인합니다." />
 
       <CategoryTabs selectedCategory={selectedCategory} setSelectedCategory={setSelectedCategory} rows={rows} />
+
+      <section className="mb-6 rounded-2xl border border-sky-200 bg-sky-50 p-5 shadow-sm">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-sky-700">Realtime Inventory API</p>
+            <h2 className="mt-1 text-xl font-black text-slate-950">재고 관리 API 실시간 업데이트</h2>
+            <p className="mt-1 text-sm font-bold text-slate-600">
+              PlayAuto의 제품 재고와 출고 스냅샷을 다시 수집한 뒤, 이 화면의 현재 재고와 재고 위험 값을 갱신합니다.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs font-black">
+              <span className="rounded-full bg-white px-3 py-1 text-slate-600">제품 {count(rows.length, '개')}</span>
+              <span className="rounded-full bg-white px-3 py-1 text-amber-700">부족 {count(lowStock, '개')}</span>
+              <span className="rounded-full bg-white px-3 py-1 text-rose-700">과다 {count(overStock, '개')}</span>
+              {lastSyncedAt && <span className="rounded-full bg-white px-3 py-1 text-sky-700">최근 업데이트 {new Date(lastSyncedAt).toLocaleString('ko-KR')}</span>}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={syncInventory}
+            disabled={syncing}
+            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 text-sm font-black text-white shadow-sm transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+          >
+            <span className={`material-symbols-outlined text-lg ${syncing ? 'animate-spin' : ''}`}>{syncing ? 'sync' : 'cloud_sync'}</span>
+            {syncing ? '업데이트 중' : 'API 실시간 업데이트'}
+          </button>
+        </div>
+        {syncMessage && (
+          <div className="mt-4 rounded-xl border border-sky-200 bg-white px-4 py-3 text-sm font-bold text-sky-700">
+            {syncMessage}
+          </div>
+        )}
+      </section>
 
       <QuickStockEditor
         rows={filteredRows}

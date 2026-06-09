@@ -81,6 +81,25 @@ function statusLabel(status) {
   return statusOptions.find(([value]) => value === status)?.[1] || status
 }
 
+function priorityLabel(priority) {
+  return priorityOptions.find(([value]) => value === priority)?.[1] || priority
+}
+
+function statusPillClass(status) {
+  if (status === 'DONE') return 'bg-emerald-100 text-emerald-700'
+  if (status === 'BLOCKED' || status === 'DELAYED') return 'bg-rose-100 text-rose-700'
+  if (status === 'REVIEW') return 'bg-amber-100 text-amber-700'
+  if (status === 'IN_PROGRESS') return 'bg-yellow-100 text-yellow-800 ring-1 ring-yellow-200'
+  return 'bg-blue-100 text-blue-700'
+}
+
+function priorityPillClass(priority) {
+  if (priority === 'URGENT') return 'bg-rose-100 text-rose-700 ring-1 ring-rose-200'
+  if (priority === 'HIGH') return 'bg-orange-100 text-orange-700 ring-1 ring-orange-200'
+  if (priority === 'MEDIUM') return 'bg-yellow-100 text-yellow-800 ring-1 ring-yellow-200'
+  return 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200'
+}
+
 function taskColor(task) {
   if (task.status === 'DONE') return 'bg-emerald-500'
   if (isTaskDelayed(task) || task.status === 'BLOCKED' || task.status === 'DELAYED') return 'bg-rose-500'
@@ -127,11 +146,15 @@ function rangePosition(task, days) {
 
 export default function StaffProjectStatusPage({ username, displayName, department }) {
   const [tasks, setTasks] = useState([])
-  const [view, setView] = useState('week')
+  const [view, setView] = useState('list')
   const [cursorDate, setCursorDate] = useState(toDate())
   const [projectFilter, setProjectFilter] = useState('ALL')
+  const [showProjectCalendar, setShowProjectCalendar] = useState(true)
+  const [showMyCalendar, setShowMyCalendar] = useState(true)
   const [showEditor, setShowEditor] = useState(false)
   const [editingId, setEditingId] = useState(null)
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false)
+  const [projectSearch, setProjectSearch] = useState('')
   const [form, setForm] = useState({
     ...emptyTask,
     assignee_name: username || '',
@@ -162,9 +185,52 @@ export default function StaffProjectStatusPage({ username, displayName, departme
     return ['ALL', ...names.sort((a, b) => a.localeCompare(b))]
   }, [tasks])
 
+  const projectNameOptions = useMemo(() => (
+    Array.from(new Set(tasks.map((task) => task.project_name).filter(Boolean))).sort((a, b) => a.localeCompare(b))
+  ), [tasks])
+
+  const projectSummaries = useMemo(() => (
+    projectNameOptions.map((project) => {
+      const projectTasks = tasks.filter((task) => task.project_name === project)
+      const active = projectTasks.filter((task) => task.status !== 'DONE').length
+      const dueDates = projectTasks.map((task) => task.due_date).filter(Boolean).sort()
+      return {
+        name: project,
+        total: projectTasks.length,
+        active,
+        dueDate: dueDates[0] || null,
+      }
+    })
+  ), [projectNameOptions, tasks])
+
+  const filteredProjectSummaries = useMemo(() => {
+    const keyword = projectSearch.trim().toLowerCase()
+    if (!keyword) return projectSummaries
+    return projectSummaries.filter((project) => project.name.toLowerCase().includes(keyword))
+  }, [projectSearch, projectSummaries])
+
+  const relatedTasks = useMemo(() => (
+    tasks
+      .filter((task) => form.project_name && task.project_name === form.project_name && task.id !== editingId)
+      .sort((a, b) => String(a.due_date || '').localeCompare(String(b.due_date || '')))
+      .slice(0, 6)
+  ), [editingId, form.project_name, tasks])
+
+  const calendarTasks = useMemo(() => {
+    const ownerKeys = [username, displayName].filter(Boolean).map((value) => String(value).trim().toLowerCase())
+    return tasks.filter((task) => {
+      const assignee = String(task.assignee_name || '').trim().toLowerCase()
+      const isMine = ownerKeys.length > 0 && ownerKeys.includes(assignee)
+      if (!showProjectCalendar && !showMyCalendar) return false
+      if (showProjectCalendar && showMyCalendar) return true
+      if (showMyCalendar) return isMine
+      return !isMine
+    })
+  }, [displayName, showMyCalendar, showProjectCalendar, tasks, username])
+
   const visibleTasks = useMemo(() => (
-    projectFilter === 'ALL' ? tasks : tasks.filter((task) => (task.project_name || '프로젝트 미지정') === projectFilter)
-  ), [projectFilter, tasks])
+    projectFilter === 'ALL' ? calendarTasks : calendarTasks.filter((task) => (task.project_name || '프로젝트 미지정') === projectFilter)
+  ), [calendarTasks, projectFilter])
 
   const stats = useMemo(() => ({
     active: visibleTasks.filter((task) => task.status !== 'DONE').length,
@@ -178,13 +244,18 @@ export default function StaffProjectStatusPage({ username, displayName, departme
   const monthDays = useMemo(() => monthGrid(cursorDate), [cursorDate])
 
   const groupedList = useMemo(() => {
-    const map = new Map()
+    const map = new Map(statusOptions.map(([status]) => [status, []]))
     visibleTasks.forEach((task) => {
-      const key = task.project_name || '프로젝트 미지정'
+      const key = task.status || 'WAITING'
       if (!map.has(key)) map.set(key, [])
       map.get(key).push(task)
     })
     return Array.from(map.entries())
+      .filter(([, rows]) => rows.length > 0)
+      .map(([status, rows]) => [
+        status,
+        rows.sort((a, b) => String(a.due_date || '').localeCompare(String(b.due_date || ''))),
+      ])
   }, [visibleTasks])
 
   const moveCursor = (amount) => {
@@ -201,10 +272,19 @@ export default function StaffProjectStatusPage({ username, displayName, departme
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
+  const selectProject = (projectName) => {
+    setField('project_name', projectName)
+    setProjectSearch('')
+    setProjectPickerOpen(false)
+  }
+
   const openCreate = (date = cursorDate) => {
     setEditingId(null)
+    setProjectSearch('')
+    setProjectPickerOpen(false)
     setForm({
       ...emptyTask,
+      project_name: projectFilter === 'ALL' ? '' : projectFilter,
       assignee_name: username || '',
       department: department || '',
       start_date: dateText(date),
@@ -213,8 +293,29 @@ export default function StaffProjectStatusPage({ username, displayName, departme
     setShowEditor(true)
   }
 
+  const openNextActionAsTask = () => {
+    if (!form.next_action.trim()) return
+    const nextDate = dateText(addDays(form.due_date || cursorDate, 1))
+    setEditingId(null)
+    setForm({
+      ...emptyTask,
+      project_name: form.project_name,
+      task_name: form.next_action.trim(),
+      assignee_name: form.assignee_name || username || '',
+      department: form.department || department || '',
+      start_date: nextDate,
+      due_date: nextDate,
+      today_work: form.next_action.trim(),
+      source_type: 'RELATED_TASK',
+      source_key: editingId ? `WORK_TASK:${editingId}:NEXT_ACTION:${Date.now()}` : null,
+    })
+    setShowEditor(true)
+  }
+
   const openEdit = (task) => {
     setEditingId(task.id)
+    setProjectSearch('')
+    setProjectPickerOpen(false)
     setForm({
       project_name: task.project_name || '',
       task_name: task.task_name || '',
@@ -240,6 +341,11 @@ export default function StaffProjectStatusPage({ username, displayName, departme
 
   const submit = async (event) => {
     event.preventDefault()
+    if (!form.project_name.trim()) {
+      alert('프로젝트를 선택하거나 새 프로젝트를 만들어주세요.')
+      setProjectPickerOpen(true)
+      return
+    }
     const payload = {
       ...form,
       progress_rate: Number(form.progress_rate || 0),
@@ -257,6 +363,24 @@ export default function StaffProjectStatusPage({ username, displayName, departme
     if (!editingId) return
     await deleteExecutiveRecord('work-tasks', editingId)
     closeEditor()
+    await load()
+  }
+
+  const removeTaskFromList = async (task) => {
+    const ok = window.confirm(`"${task.task_name}" 일정을 삭제할까요?`)
+    if (!ok) return
+    await deleteExecutiveRecord('work-tasks', task.id)
+    if (editingId === task.id) closeEditor()
+    await load()
+  }
+
+  const updateTaskStatus = async (task, status) => {
+    await updateExecutiveRecord('work-tasks', task.id, {
+      ...task,
+      status,
+      progress_rate: Number(task.progress_rate || taskProgress(task) || 0),
+      completed_date: status === 'DONE' ? dateText() : null,
+    })
     await load()
   }
 
@@ -289,12 +413,18 @@ export default function StaffProjectStatusPage({ username, displayName, departme
               <span className="material-symbols-outlined text-sm text-slate-400">edit</span>
             </div>
             <div className="space-y-3 text-sm font-bold text-slate-700">
-              <label className="flex items-center justify-between">
-                <span className="flex items-center gap-2"><input type="checkbox" checked readOnly /> 프로젝트</span>
+              <label className="flex cursor-pointer items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <input type="checkbox" checked={showProjectCalendar} onChange={(event) => setShowProjectCalendar(event.target.checked)} />
+                  프로젝트
+                </span>
                 <span className="h-3 w-3 rounded-full bg-orange-500" />
               </label>
-              <label className="flex items-center justify-between">
-                <span className="flex items-center gap-2"><input type="checkbox" checked readOnly /> 내 일정</span>
+              <label className="flex cursor-pointer items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <input type="checkbox" checked={showMyCalendar} onChange={(event) => setShowMyCalendar(event.target.checked)} />
+                  내 일정
+                </span>
                 <span className="h-3 w-3 rounded-full bg-blue-500" />
               </label>
             </div>
@@ -381,7 +511,7 @@ export default function StaffProjectStatusPage({ username, displayName, departme
           )}
 
           {view === 'list' && (
-            <ListView grouped={groupedList} onEdit={openEdit} />
+            <ListView grouped={groupedList} onEdit={openEdit} onDelete={removeTaskFromList} onStatusChange={updateTaskStatus} onCreate={openCreate} />
           )}
         </section>
       </div>
@@ -396,9 +526,39 @@ export default function StaffProjectStatusPage({ username, displayName, departme
               </button>
             </div>
 
-            <Field label="프로젝트명">
-              <input value={form.project_name} onChange={(event) => setField('project_name', event.target.value)} required className={inputClass} />
-            </Field>
+            <ProjectRelationPicker
+              value={form.project_name}
+              open={projectPickerOpen}
+              search={projectSearch}
+              projects={filteredProjectSummaries}
+              onToggle={() => setProjectPickerOpen((prev) => !prev)}
+              onSearch={setProjectSearch}
+              onSelect={selectProject}
+            />
+            {relatedTasks.length > 0 && (
+              <div className="mb-4 rounded-lg border border-sky-100 bg-sky-50 p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-xs font-black text-sky-700">같은 프로젝트의 기존 일정</p>
+                  <span className="text-[11px] font-black text-slate-400">{relatedTasks.length}건</span>
+                </div>
+                <div className="space-y-2">
+                  {relatedTasks.map((task) => (
+                    <button
+                      key={task.id}
+                      type="button"
+                      onClick={() => openEdit(task)}
+                      className="flex w-full items-center justify-between gap-3 rounded border border-sky-100 bg-white px-3 py-2 text-left text-xs font-bold text-slate-700 hover:border-sky-300 hover:bg-sky-50"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-black text-slate-950">{task.task_name}</span>
+                        <span className="mt-0.5 block text-slate-500">{String(task.start_date || '-').slice(0, 10)} ~ {String(task.due_date || '-').slice(0, 10)}</span>
+                      </span>
+                      <span className="shrink-0 rounded-full border border-slate-200 px-2 py-1 text-[10px] font-black text-slate-500">{statusLabel(task.status)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <Field label="일정 제목">
               <input value={form.task_name} onChange={(event) => setField('task_name', event.target.value)} required className={inputClass} />
             </Field>
@@ -434,6 +594,16 @@ export default function StaffProjectStatusPage({ username, displayName, departme
             </Field>
             <Field label="다음 액션">
               <textarea value={form.next_action} onChange={(event) => setField('next_action', event.target.value)} rows="3" className={textareaClass} />
+              {form.project_name.trim() && form.next_action.trim() && (
+                <button
+                  type="button"
+                  onClick={openNextActionAsTask}
+                  className="mt-2 inline-flex h-9 items-center gap-2 rounded border border-sky-200 bg-sky-50 px-3 text-xs font-black text-sky-700 hover:border-sky-300 hover:bg-sky-100"
+                >
+                  <span className="material-symbols-outlined text-sm">add_task</span>
+                  다음 액션으로 새 일정 만들기
+                </button>
+              )}
             </Field>
             <Field label="막힌 이슈">
               <textarea value={form.blocker_text} onChange={(event) => setField('blocker_text', event.target.value)} rows="3" className={textareaClass} />
@@ -462,6 +632,73 @@ function Field({ label, children }) {
       <span className="mb-1 block text-xs font-black text-slate-500">{label}</span>
       {children}
     </label>
+  )
+}
+
+function ProjectRelationPicker({ value, open, search, projects, onToggle, onSearch, onSelect }) {
+  const trimmedSearch = search.trim()
+  const canCreate = trimmedSearch && !projects.some((project) => project.name === trimmedSearch)
+
+  return (
+    <div className="mb-4">
+      <span className="mb-1 block text-xs font-black text-slate-500">프로젝트</span>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex min-h-11 w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm font-black text-slate-950 outline-none hover:border-slate-400"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="material-symbols-outlined text-base text-slate-400">target</span>
+          <span className="truncate">{value || '프로젝트 선택'}</span>
+        </span>
+        <span className="material-symbols-outlined text-base text-slate-400">{open ? 'expand_less' : 'expand_more'}</span>
+      </button>
+
+      {open && (
+        <div className="mt-2 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+          <div className="mb-2 flex items-center gap-2 rounded border border-slate-200 px-3">
+            <span className="material-symbols-outlined text-sm text-slate-400">search</span>
+            <input
+              value={search}
+              onChange={(event) => onSearch(event.target.value)}
+              placeholder="프로젝트 검색"
+              className="h-10 min-w-0 flex-1 text-sm font-bold text-slate-950 outline-none"
+            />
+          </div>
+          <div className="max-h-64 space-y-1 overflow-y-auto">
+            {projects.map((project) => (
+              <button
+                key={project.name}
+                type="button"
+                onClick={() => onSelect(project.name)}
+                className={`flex w-full items-center justify-between gap-3 rounded px-3 py-2 text-left text-sm hover:bg-slate-50 ${value === project.name ? 'bg-sky-50 text-sky-700' : 'text-slate-700'}`}
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-black">{project.name}</span>
+                  <span className="mt-0.5 block text-[11px] font-bold text-slate-400">
+                    진행 {project.active}건 · 전체 {project.total}건{project.dueDate ? ` · 다음 마감 ${String(project.dueDate).slice(0, 10)}` : ''}
+                  </span>
+                </span>
+                {value === project.name && <span className="material-symbols-outlined text-base">check</span>}
+              </button>
+            ))}
+            {canCreate && (
+              <button
+                type="button"
+                onClick={() => onSelect(trimmedSearch)}
+                className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm font-black text-sky-700 hover:bg-sky-50"
+              >
+                <span className="material-symbols-outlined text-base">add</span>
+                새 프로젝트 만들기: {trimmedSearch}
+              </button>
+            )}
+            {projects.length === 0 && !canCreate && (
+              <p className="px-3 py-4 text-center text-xs font-bold text-slate-400">선택할 프로젝트가 없습니다.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -560,28 +797,81 @@ function MonthView({ days, cursorDate, rows, onCreate, onEdit }) {
   )
 }
 
-function ListView({ grouped, onEdit }) {
+function ListView({ grouped, onEdit, onDelete, onStatusChange, onCreate }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white">
-      <div className="grid grid-cols-[120px_1fr_160px_160px] border-b border-slate-900 px-4 py-3 text-sm font-bold text-slate-700">
+    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="grid grid-cols-[minmax(220px,1.5fr)_130px_120px_180px_120px_120px_minmax(180px,1fr)_112px] border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-black text-slate-500">
+        <span>프로젝트 이름</span>
         <span>상태</span>
-        <span>제목</span>
-        <span>시작일</span>
-        <span>마감일</span>
+        <span>소유자</span>
+        <span>날짜</span>
+        <span>우선순위</span>
+        <span>진행률</span>
+        <span>선행 작업</span>
+        <span>관리</span>
       </div>
-      {grouped.map(([project, tasks]) => (
-        <div key={project}>
-          <div className="border-b border-slate-100 bg-slate-50 px-4 py-3 text-sm font-black text-slate-950">{project}</div>
+      {grouped.map(([status, tasks]) => (
+        <div key={status}>
+          <div className="flex items-center gap-2 border-b border-slate-100 bg-white px-4 py-3">
+            <span className={`rounded-full px-2.5 py-1 text-xs font-black ${statusPillClass(status)}`}>{statusLabel(status)}</span>
+            <span className="text-xs font-black text-slate-400">{tasks.length}</span>
+          </div>
           {tasks.map((task) => (
-            <button key={task.id} type="button" onClick={() => onEdit(task)} className="grid w-full grid-cols-[120px_1fr_160px_160px] border-b border-slate-100 px-4 py-4 text-left text-sm hover:bg-slate-50">
-              <span className="flex items-center gap-2 font-bold text-slate-600"><span className={`h-3 w-3 rounded-full ${taskDot(task)}`} />{statusLabel(task.status)}</span>
-              <span className="font-black text-slate-950">{task.task_name}</span>
-              <span className="font-bold text-slate-500">{String(task.start_date || '-').slice(0, 10)}</span>
-              <span className="font-bold text-slate-500">{String(task.due_date || '-').slice(0, 10)}</span>
-            </button>
+            <div key={task.id} className="grid grid-cols-[minmax(220px,1.5fr)_130px_120px_180px_120px_120px_minmax(180px,1fr)_112px] items-center border-b border-slate-100 px-4 py-3 text-sm hover:bg-slate-50">
+              <button type="button" onClick={() => onEdit(task)} className="min-w-0 text-left font-black text-slate-950">
+                <span className="block truncate">{task.task_name}</span>
+                <span className="mt-0.5 block truncate text-[11px] font-bold text-slate-400">{task.project_name || '프로젝트 미지정'}</span>
+              </button>
+              <select
+                value={task.status || 'WAITING'}
+                onChange={(event) => onStatusChange(task, event.target.value)}
+                className={`h-8 w-28 rounded-full border-0 px-3 text-xs font-black shadow-sm outline-none transition hover:brightness-95 ${statusPillClass(task.status || 'WAITING')}`}
+              >
+                {statusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+              <button type="button" onClick={() => onEdit(task)} className="truncate text-left font-bold text-slate-600">{task.assignee_name || '-'}</button>
+              <button type="button" onClick={() => onEdit(task)} className="truncate text-left font-bold text-slate-600">
+                {String(task.start_date || '-').slice(0, 10)} → {String(task.due_date || '-').slice(0, 10)}
+              </button>
+              <button type="button" onClick={() => onEdit(task)} className="text-left">
+                <span className={`inline-flex h-7 items-center rounded-full px-2.5 text-xs font-black ${priorityPillClass(task.priority || 'MEDIUM')}`}>
+                  {priorityLabel(task.priority || 'MEDIUM')}
+                </span>
+              </button>
+              <button type="button" onClick={() => onEdit(task)} className="flex items-center gap-2 text-left font-bold text-slate-700">
+                <span className="w-12 font-black text-blue-700">{Number(task.progress_rate || taskProgress(task) || 0).toFixed(0)}%</span>
+                <span className="h-2 flex-1 overflow-hidden rounded-full bg-blue-50 ring-1 ring-blue-100">
+                  <span className="block h-full rounded-full bg-blue-500" style={{ width: `${Math.min(100, Number(task.progress_rate || taskProgress(task) || 0))}%` }} />
+                </span>
+              </button>
+              <button type="button" onClick={() => onEdit(task)} className="truncate text-left font-bold text-slate-600">{task.next_action || '-'}</button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onEdit(task)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded border border-sky-200 bg-white text-sky-700 hover:bg-sky-50"
+                  title="수정"
+                >
+                  <span className="material-symbols-outlined text-base">edit</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDelete(task)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
+                  title="삭제"
+                >
+                  <span className="material-symbols-outlined text-base">delete</span>
+                </button>
+              </div>
+            </div>
           ))}
+          <button type="button" onClick={() => onCreate()} className="flex h-10 w-full items-center gap-2 border-b border-slate-100 px-4 text-left text-sm font-bold text-slate-400 hover:bg-slate-50 hover:text-slate-700">
+            <span className="material-symbols-outlined text-base">add</span>
+            새 프로젝트
+          </button>
         </div>
       ))}
+      {grouped.length === 0 && <p className="p-8 text-center text-sm font-bold text-slate-400">표시할 프로젝트가 없습니다.</p>}
     </section>
   )
 }

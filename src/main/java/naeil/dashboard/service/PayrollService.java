@@ -28,6 +28,10 @@ import java.util.LinkedHashMap;
 public class PayrollService {
 
     private static final Long DEFAULT_COMPANY_ID = 1L;
+    private static final Map<Integer, InsuranceRates> INSURANCE_RATES_BY_YEAR = Map.of(
+            2025, new InsuranceRates("0.045", "0.03545", "0.1281", "0.009"),
+            2026, new InsuranceRates("0.0475", "0.03595", "0.1314", "0.009")
+    );
 
     private final PayrollRecordRepository payrollRecordRepository;
     private final JavaMailSender mailSender;
@@ -62,6 +66,9 @@ public class PayrollService {
                     .employeeName(record.getEmployeeName())
                     .userId(userId)
                     .baseSalary(record.getBaseSalary())
+                    .weeklyHolidayWeeks(record.getWeeklyHolidayWeeks())
+                    .weeklyHolidayAuto(record.getWeeklyHolidayAuto())
+                    .weeklyHolidayAllowance(record.getWeeklyHolidayAllowance())
                     .mealAllowance(record.getMealAllowance())
                     .transportAllowance(record.getTransportAllowance())
                     .otherAllowance(record.getOtherAllowance())
@@ -248,6 +255,10 @@ public class PayrollService {
         BigDecimal hourlyWage = money(payload.get("hourlyWage"));
         BigDecimal workDays = decimal(payload.get("workDays"));
         BigDecimal workHours = decimal(payload.get("workHours"));
+        BigDecimal hoursPerDay = decimal(payload.get("hoursPerDay"));
+        BigDecimal weeklyHolidayWeeks = decimal(payload.get("weeklyHolidayWeeks"));
+        boolean weeklyHolidayAuto = booleanValue(payload.get("weeklyHolidayAuto"));
+        BigDecimal requestedWeeklyHolidayAllowance = money(payload.get("weeklyHolidayAllowance"));
         BigDecimal mealAllowance = money(payload.get("mealAllowance"));
         BigDecimal transportAllowance = money(payload.get("transportAllowance"));
         BigDecimal otherAllowance = money(payload.get("otherAllowance"));
@@ -256,11 +267,25 @@ public class PayrollService {
                 ? hourlyWage.multiply(workHours)
                 : annualSalary.divide(BigDecimal.valueOf(12), 0, RoundingMode.HALF_UP);
 
-        BigDecimal totalPayment = baseSalary.add(mealAllowance).add(transportAllowance).add(otherAllowance);
-        BigDecimal nationalPensionRate = rate(payload.get("nationalPensionRate"), "0.045");
-        BigDecimal healthInsuranceRate = rate(payload.get("healthInsuranceRate"), "0.03545");
-        BigDecimal longTermCareRate = rate(payload.get("longTermCareRate"), "0.1281");
-        BigDecimal employmentInsuranceRate = rate(payload.get("employmentInsuranceRate"), "0.009");
+        if (hoursPerDay.compareTo(BigDecimal.ZERO) == 0 && workDays.compareTo(BigDecimal.ZERO) > 0) {
+            hoursPerDay = workHours.divide(workDays, 4, RoundingMode.HALF_UP);
+        }
+        BigDecimal weeklyHolidayAllowance = "HOURLY".equals(salaryType)
+                ? (weeklyHolidayAuto
+                    ? won(hourlyWage.multiply(hoursPerDay).multiply(weeklyHolidayWeeks))
+                    : requestedWeeklyHolidayAllowance)
+                : BigDecimal.ZERO;
+
+        BigDecimal totalPayment = baseSalary
+                .add(weeklyHolidayAllowance)
+                .add(mealAllowance)
+                .add(transportAllowance)
+                .add(otherAllowance);
+        InsuranceRates insuranceRates = insuranceRatesFor(payYearMonth);
+        BigDecimal nationalPensionRate = rate(payload.get("nationalPensionRate"), insuranceRates.nationalPension());
+        BigDecimal healthInsuranceRate = rate(payload.get("healthInsuranceRate"), insuranceRates.healthInsurance());
+        BigDecimal longTermCareRate = rate(payload.get("longTermCareRate"), insuranceRates.longTermCare());
+        BigDecimal employmentInsuranceRate = rate(payload.get("employmentInsuranceRate"), insuranceRates.employmentInsurance());
 
         BigDecimal nationalPension = won(totalPayment.multiply(nationalPensionRate));
         BigDecimal healthInsurance = won(totalPayment.multiply(healthInsuranceRate));
@@ -289,6 +314,9 @@ public class PayrollService {
                 workDays,
                 workHours,
                 baseSalary,
+                weeklyHolidayWeeks,
+                weeklyHolidayAuto,
+                weeklyHolidayAllowance,
                 mealAllowance,
                 transportAllowance,
                 otherAllowance,
@@ -318,6 +346,9 @@ public class PayrollService {
             BigDecimal workDays,
             BigDecimal workHours,
             BigDecimal baseSalary,
+            BigDecimal weeklyHolidayWeeks,
+            boolean weeklyHolidayAuto,
+            BigDecimal weeklyHolidayAllowance,
             BigDecimal mealAllowance,
             BigDecimal transportAllowance,
             BigDecimal otherAllowance,
@@ -335,12 +366,13 @@ public class PayrollService {
                 INSERT INTO payroll_record (
                     company_id, pay_year_month, employee_name, user_id, salary_type,
                     annual_salary, hourly_wage, work_days, work_hours,
-                    base_salary, meal_allowance, transport_allowance, other_allowance,
+                    base_salary, weekly_holiday_weeks, weekly_holiday_auto, weekly_holiday_allowance,
+                    meal_allowance, transport_allowance, other_allowance,
                     total_payment, deduction_national_pension, deduction_health_insurance,
                     deduction_long_term_care, deduction_employment_insurance,
                     deduction_income_tax, deduction_local_income_tax, total_deduction, net_pay
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (company_id, pay_year_month, employee_name)
                 DO UPDATE SET
                     user_id = EXCLUDED.user_id,
@@ -350,6 +382,9 @@ public class PayrollService {
                     work_days = EXCLUDED.work_days,
                     work_hours = EXCLUDED.work_hours,
                     base_salary = EXCLUDED.base_salary,
+                    weekly_holiday_weeks = EXCLUDED.weekly_holiday_weeks,
+                    weekly_holiday_auto = EXCLUDED.weekly_holiday_auto,
+                    weekly_holiday_allowance = EXCLUDED.weekly_holiday_allowance,
                     meal_allowance = EXCLUDED.meal_allowance,
                     transport_allowance = EXCLUDED.transport_allowance,
                     other_allowance = EXCLUDED.other_allowance,
@@ -376,6 +411,9 @@ public class PayrollService {
                 workDays,
                 workHours,
                 baseSalary,
+                weeklyHolidayWeeks,
+                weeklyHolidayAuto,
+                weeklyHolidayAllowance,
                 mealAllowance,
                 transportAllowance,
                 otherAllowance,
@@ -441,6 +479,7 @@ public class PayrollService {
             <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%%;max-width:480px;">
               <tr style="background:#f1f5f9;"><th colspan="2">지급 내역</th></tr>
               <tr><td>기본급</td><td style="text-align:right;">%,d 원</td></tr>
+              <tr><td>주휴수당</td><td style="text-align:right;">%,d 원</td></tr>
               <tr><td>식대</td><td style="text-align:right;">%,d 원</td></tr>
               <tr><td>교통비</td><td style="text-align:right;">%,d 원</td></tr>
               <tr><td>기타수당</td><td style="text-align:right;">%,d 원</td></tr>
@@ -460,6 +499,7 @@ public class PayrollService {
             """.formatted(
                 r.getPayYearMonth(), r.getEmployeeName(), r.getPayYearMonth(),
                 r.getBaseSalary().longValue(),
+                r.getWeeklyHolidayAllowance().longValue(),
                 r.getMealAllowance().longValue(),
                 r.getTransportAllowance().longValue(),
                 r.getOtherAllowance().longValue(),
@@ -546,6 +586,38 @@ public class PayrollService {
             return parsed.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP);
         }
         return parsed;
+    }
+
+    private static InsuranceRates insuranceRatesFor(String payYearMonth) {
+        int year = java.time.YearMonth.now().getYear();
+        try {
+            if (payYearMonth != null && payYearMonth.length() >= 4) {
+                year = Integer.parseInt(payYearMonth.substring(0, 4));
+            }
+        } catch (Exception ignored) {}
+        if (INSURANCE_RATES_BY_YEAR.containsKey(year)) {
+            return INSURANCE_RATES_BY_YEAR.get(year);
+        }
+        int latestYear = INSURANCE_RATES_BY_YEAR.keySet().stream().max(Integer::compareTo).orElse(2026);
+        return INSURANCE_RATES_BY_YEAR.get(latestYear);
+    }
+
+    private record InsuranceRates(
+            String nationalPension,
+            String healthInsurance,
+            String longTermCare,
+            String employmentInsurance
+    ) {}
+
+    private static boolean booleanValue(Object value) {
+        if (value == null) {
+            return false;
+        }
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        String text = value.toString().trim();
+        return "true".equalsIgnoreCase(text) || "1".equals(text) || "Y".equalsIgnoreCase(text);
     }
 
     private static BigDecimal won(BigDecimal value) {

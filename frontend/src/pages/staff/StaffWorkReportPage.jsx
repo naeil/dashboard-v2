@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createStaffWorkReport, deleteStaffWorkReport, getStaffWorkReports, updateStaffWorkReport } from '../../api/staffApi'
+import { getExecutiveWorkTasks } from '../../api/executiveApi'
 
 const todayText = () => new Date().toISOString().slice(0, 10)
 
@@ -21,6 +22,8 @@ const emptyForm = {
   blockers: '',
   memo: '',
   status: 'SUBMITTED',
+  linked_task_id: '',
+  linked_project_name: '',
 }
 
 const reportTypeLabels = {
@@ -34,8 +37,9 @@ function statusBadge(status) {
     : 'border-emerald-200 bg-emerald-50 text-emerald-700'
 }
 
-export default function StaffWorkReportPage({ username, displayName }) {
+export default function StaffWorkReportPage({ username, displayName, onNavigate }) {
   const [reports, setReports] = useState([])
+  const [workTasks, setWorkTasks] = useState([])
   const [filter, setFilter] = useState('ALL')
   const [form, setForm] = useState(emptyForm)
   const [editingId, setEditingId] = useState(null)
@@ -47,8 +51,12 @@ export default function StaffWorkReportPage({ username, displayName }) {
   const load = async () => {
     setLoading(true)
     try {
-      const response = await getStaffWorkReports(filter === 'ALL' ? {} : { reportType: filter })
+      const [response, taskResponse] = await Promise.all([
+        getStaffWorkReports(filter === 'ALL' ? {} : { reportType: filter }),
+        getExecutiveWorkTasks(),
+      ])
       setReports(response.data || [])
+      setWorkTasks(taskResponse.data || [])
     } finally {
       setLoading(false)
     }
@@ -64,6 +72,22 @@ export default function StaffWorkReportPage({ username, displayName }) {
     const blockers = reports.filter((report) => report.blockers).length
     return { daily, weekly, blockers }
   }, [reports])
+
+  const projectNames = useMemo(() => (
+    Array.from(new Set(workTasks.map((task) => task.project_name).filter(Boolean))).sort((a, b) => a.localeCompare(b))
+  ), [workTasks])
+
+  const linkedProjectTasks = useMemo(() => (
+    workTasks
+      .filter((task) => form.linked_project_name && task.project_name === form.linked_project_name)
+      .sort((a, b) => String(a.due_date || '').localeCompare(String(b.due_date || '')))
+  ), [form.linked_project_name, workTasks])
+
+  const taskById = useMemo(() => {
+    const map = new Map()
+    workTasks.forEach((task) => map.set(String(task.id), task))
+    return map
+  }, [workTasks])
 
   const setField = (key, value) => {
     setForm((prev) => {
@@ -93,6 +117,8 @@ export default function StaffWorkReportPage({ username, displayName }) {
       blockers: report.blockers || '',
       memo: report.memo || '',
       status: report.status || 'SUBMITTED',
+      linked_task_id: report.linked_task_id || '',
+      linked_project_name: report.linked_project_name || '',
     })
     setMessage('')
   }
@@ -107,6 +133,8 @@ export default function StaffWorkReportPage({ username, displayName }) {
     const payload = {
       ...form,
       week_start_date: form.report_type === 'WEEKLY' ? form.week_start_date : null,
+      linked_task_id: form.linked_task_id || null,
+      linked_project_name: form.linked_project_name || null,
     }
 
     if (editingId) {
@@ -199,6 +227,55 @@ export default function StaffWorkReportPage({ username, displayName }) {
             <input value={form.title} onChange={(event) => setField('title', event.target.value)} placeholder="예: 쿠팡 상세페이지 수정 및 재고 점검" className="h-11 w-full rounded border border-slate-200 px-3 text-sm font-bold outline-none focus:border-sky-400" />
           </label>
 
+          <div className="mt-3 rounded-lg border border-sky-100 bg-sky-50 p-3">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <p className="text-xs font-black text-sky-700">기존 프로젝트 / 일정 연결</p>
+              {form.linked_project_name && (
+                <button type="button" onClick={() => setForm((prev) => ({ ...prev, linked_project_name: '', linked_task_id: '' }))} className="text-[11px] font-black text-slate-500">
+                  연결 해제
+                </button>
+              )}
+            </div>
+            <label className="block">
+              <span className="mb-1 block text-xs font-black text-slate-500">프로젝트명</span>
+              <input
+                list="staff-report-project-options"
+                value={form.linked_project_name}
+                onChange={(event) => setField('linked_project_name', event.target.value)}
+                placeholder="기존 프로젝트명을 선택하거나 입력"
+                className="h-11 w-full rounded border border-slate-200 bg-white px-3 text-sm font-bold outline-none focus:border-sky-400"
+              />
+              <datalist id="staff-report-project-options">
+                {projectNames.map((project) => <option key={project} value={project} />)}
+              </datalist>
+            </label>
+            {linkedProjectTasks.length > 0 && (
+              <label className="mt-3 block">
+                <span className="mb-1 block text-xs font-black text-slate-500">연관 일정</span>
+                <select
+                  value={form.linked_task_id}
+                  onChange={(event) => {
+                    const task = workTasks.find((item) => String(item.id) === event.target.value)
+                    setForm((prev) => ({
+                      ...prev,
+                      linked_task_id: event.target.value,
+                      linked_project_name: task?.project_name || prev.linked_project_name,
+                      title: prev.title || task?.task_name || '',
+                    }))
+                  }}
+                  className="h-11 w-full rounded border border-slate-200 bg-white px-3 text-sm font-bold outline-none focus:border-sky-400"
+                >
+                  <option value="">프로젝트만 연결</option>
+                  {linkedProjectTasks.map((task) => (
+                    <option key={task.id} value={task.id}>
+                      {task.task_name} · {String(task.due_date || '마감일 없음').slice(0, 10)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+
           {[
             ['completed_work', '완료 / 진행한 업무'],
             ['planned_work', '다음 업무'],
@@ -250,6 +327,22 @@ export default function StaffWorkReportPage({ username, displayName }) {
                       <span className="text-xs font-bold text-slate-400">{String(report.report_date).slice(0, 10)}</span>
                     </div>
                     <h3 className="mt-3 text-base font-black text-slate-950">{report.title}</h3>
+                    {report.linked_project_name && (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-black text-sky-700">
+                          <span className="material-symbols-outlined text-sm">link</span>
+                          {report.linked_project_name}
+                        </span>
+                        {report.linked_task_id && taskById.get(String(report.linked_task_id)) && (
+                          <span className="inline-flex max-w-full items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-black text-slate-600">
+                            <span className="truncate">{taskById.get(String(report.linked_task_id)).task_name}</span>
+                          </span>
+                        )}
+                        <button type="button" onClick={() => onNavigate?.('staff-project-status')} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-black text-slate-600 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700">
+                          프로젝트 현황 열기
+                        </button>
+                      </div>
+                    )}
                     <p className="mt-2 whitespace-pre-line text-sm font-bold leading-6 text-slate-600">{report.completed_work || report.planned_work || '내용 없음'}</p>
                     {report.blockers && <p className="mt-3 rounded border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-black text-amber-800">막힌 이슈: {report.blockers}</p>}
                   </div>

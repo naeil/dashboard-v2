@@ -40,3 +40,4 @@ frontend/.env.production.local
 .DS_Store
 Thumbs.db
 docs/
+backup/

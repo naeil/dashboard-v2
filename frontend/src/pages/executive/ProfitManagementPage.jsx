@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getProfitManagement, saveProfitPlan } from '../../api/executiveApi'
+import { getProfitManagement, importPlayAutoChannelSales, saveProfitPlan } from '../../api/executiveApi'
 import { KpiCard, PageHeader, Panel } from './ExecutiveComponents'
 
 /* ─── 포맷 헬퍼 ─────────────────────────────────────────────────────── */
@@ -16,6 +16,12 @@ const nextMonthText = (value, offset) => {
   const d = new Date(`${monthInputText(value)}-01T00:00:00`)
   d.setMonth(d.getMonth() + offset)
   return monthStartText(d)
+}
+const monthEndText = (value) => {
+  const d = new Date(`${monthInputText(value)}-01T00:00:00`)
+  d.setMonth(d.getMonth() + 1)
+  d.setDate(0)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function parseNum(raw) {
@@ -443,6 +449,9 @@ export default function ProfitManagementPage() {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [saved, setSaved] = useState(false)
+  const [refreshingSales, setRefreshingSales] = useState(false)
+  const [salesRefreshMessage, setSalesRefreshMessage] = useState('')
+  const [salesUpdatedAt, setSalesUpdatedAt] = useState('')
   const [selectedMonth, setSelectedMonth] = useState(monthStartText())
 
   const [productsByChannel, setProductsByChannel] = useState({ online: [], offline: [], export: [], consulting: [] })
@@ -590,6 +599,49 @@ export default function ProfitManagementPage() {
       ...prev,
       [channelId]: { ...(prev[channelId] || {}), [key]: qty },
     }))
+  }
+
+  function applyRealtimeSales(d) {
+    setData(d)
+    const actualByKey = new Map((d.products || []).map((p) => [
+      `${p.channel_name || ''}::${p.product_code || ''}::${p.product_name || ''}`,
+      p,
+    ]))
+    setProductsByChannel((prev) => ({
+      ...prev,
+      online: (prev.online || []).map((row) => {
+        const fresh = actualByKey.get(`${row.channel_name || ''}::${row.product_code || ''}::${row.product_name || ''}`)
+        if (!fresh) return row
+        return {
+          ...row,
+          sold_qty: num(fresh.sold_qty),
+          sold_amount: num(fresh.sold_amount),
+          target_qty: num(fresh.target_qty),
+        }
+      }),
+    }))
+  }
+
+  async function handleRefreshRealtimeSales() {
+    if (refreshingSales) return
+    setRefreshingSales(true)
+    setSalesRefreshMessage('PlayAuto 주문 원장과 채널 매출 데이터를 다시 수집하는 중입니다.')
+    try {
+      await importPlayAutoChannelSales({
+        startDate: selectedMonth,
+        endDate: monthEndText(selectedMonth),
+        refreshOrders: true,
+      })
+      const response = await getProfitManagement({ planMonth: selectedMonth })
+      applyRealtimeSales(response.data)
+      const now = new Date()
+      setSalesUpdatedAt(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`)
+      setSalesRefreshMessage('실시간 총매출이 최신 주문 데이터 기준으로 업데이트되었습니다.')
+    } catch (error) {
+      setSalesRefreshMessage(error?.response?.data?.message || '실시간 총매출 업데이트에 실패했습니다. PlayAuto 연동 설정을 확인해주세요.')
+    } finally {
+      setRefreshingSales(false)
+    }
   }
 
   async function handleSave() {
@@ -755,6 +807,40 @@ export default function ProfitManagementPage() {
       </div>
 
       <div className="space-y-6">
+        <section className="rounded-2xl border border-sky-200 bg-sky-50 p-5 shadow-sm">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-sky-700">Realtime Sales API</p>
+              <h2 className="mt-1 text-xl font-black text-slate-950">BEP/손익 시뮬레이션 실시간 총매출 업데이트</h2>
+              <p className="mt-1 text-sm font-bold text-slate-600">
+                선택한 월의 PlayAuto 주문 원장을 다시 수집해서 실제 총매출, 제품별 실제 판매 수량, BEP 달성률을 갱신합니다.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs font-black">
+                <span className="rounded-full bg-white px-3 py-1 text-slate-700">대상 월 {monthInputText(selectedMonth)}</span>
+                <span className="rounded-full bg-white px-3 py-1 text-sky-700">실제 총매출 {wonFmt(summary.totalActualSales)}</span>
+                <span className={`rounded-full bg-white px-3 py-1 ${summary.bepRate >= 100 ? 'text-sky-700' : 'text-rose-700'}`}>
+                  BEP 달성률 {pctFmt(summary.bepRate)}
+                </span>
+                {salesUpdatedAt && <span className="rounded-full bg-white px-3 py-1 text-emerald-700">최근 업데이트 {salesUpdatedAt}</span>}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleRefreshRealtimeSales}
+              disabled={refreshingSales}
+              className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 text-sm font-black text-white shadow-sm transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+            >
+              <span className={`material-symbols-outlined text-lg ${refreshingSales ? 'animate-spin' : ''}`}>{refreshingSales ? 'sync' : 'cloud_sync'}</span>
+              {refreshingSales ? '총매출 업데이트 중' : '실시간 총매출 업데이트'}
+            </button>
+          </div>
+          {salesRefreshMessage && (
+            <div className="mt-4 rounded-xl border border-sky-200 bg-white px-4 py-3 text-sm font-bold text-sky-700">
+              {salesRefreshMessage}
+            </div>
+          )}
+        </section>
+
         {bepChannels.map((ch) => (
           <ChannelBepSummary key={ch.id} title={ch.title} rows={buildChannelBepRows(ch)} />
         ))}

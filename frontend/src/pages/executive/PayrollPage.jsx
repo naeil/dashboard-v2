@@ -6,6 +6,27 @@ import { DataTable, PageHeader, Panel, StatusBadge } from './ExecutiveComponents
 const fmt = (val) => val != null ? `${Number(val).toLocaleString('ko-KR')}원` : '-'
 const fmtDate = (val) => val ? String(val).replace('T', ' ').slice(0, 16) : '-'
 const currentMonth = () => new Date().toISOString().slice(0, 7)
+const insuranceRatesByYear = {
+  2025: {
+    nationalPensionRate: 4.5,
+    healthInsuranceRate: 3.545,
+    longTermCareRate: 12.81,
+    employmentInsuranceRate: 0.9,
+  },
+  2026: {
+    nationalPensionRate: 4.75,
+    healthInsuranceRate: 3.595,
+    longTermCareRate: 13.14,
+    employmentInsuranceRate: 0.9,
+  },
+}
+
+function insuranceRatesFor(payYearMonth = currentMonth()) {
+  const year = Number(String(payYearMonth || '').slice(0, 4))
+  if (insuranceRatesByYear[year]) return insuranceRatesByYear[year]
+  const latestYear = Math.max(...Object.keys(insuranceRatesByYear).map(Number))
+  return insuranceRatesByYear[latestYear]
+}
 
 const emptyCalcForm = {
   payYearMonth: currentMonth(),
@@ -16,13 +37,13 @@ const emptyCalcForm = {
   hourlyWage: '',
   workDays: 0,
   hoursPerDay: 8,
+  weeklyHolidayWeeks: 0,
+  weeklyHolidayAuto: true,
+  weeklyHolidayAllowance: 0,
   mealAllowance: 0,
   transportAllowance: 0,
   otherAllowance: 0,
-  nationalPensionRate: 4.5,
-  healthInsuranceRate: 3.545,
-  longTermCareRate: 12.81,
-  employmentInsuranceRate: 0.9,
+  ...insuranceRatesFor(),
   incomeTax: 0,
   localIncomeTax: 0,
 }
@@ -47,7 +68,19 @@ function previewCalculation(form) {
   const baseSalary = form.salaryType === 'HOURLY'
     ? toNumber(form.hourlyWage) * workHours
     : Math.round(toNumber(form.annualSalary) / 12)
-  const totalPayment = baseSalary + toNumber(form.mealAllowance) + toNumber(form.transportAllowance) + toNumber(form.otherAllowance)
+  const dailyWeeklyHolidayAllowance = form.salaryType === 'HOURLY'
+    ? Math.round(toNumber(form.hourlyWage) * toNumber(form.hoursPerDay))
+    : 0
+  const weeklyHolidayAllowance = form.salaryType === 'HOURLY'
+    ? (form.weeklyHolidayAuto
+        ? Math.round(dailyWeeklyHolidayAllowance * toNumber(form.weeklyHolidayWeeks))
+        : toNumber(form.weeklyHolidayAllowance))
+    : 0
+  const totalPayment = baseSalary
+    + weeklyHolidayAllowance
+    + toNumber(form.mealAllowance)
+    + toNumber(form.transportAllowance)
+    + toNumber(form.otherAllowance)
   const nationalPension = Math.round(totalPayment * (toNumber(form.nationalPensionRate) / 100))
   const healthInsurance = Math.round(totalPayment * (toNumber(form.healthInsuranceRate) / 100))
   const longTermCare = Math.round(healthInsurance * (toNumber(form.longTermCareRate) / 100))
@@ -58,6 +91,8 @@ function previewCalculation(form) {
   return {
     workHours,
     baseSalary,
+    dailyWeeklyHolidayAllowance,
+    weeklyHolidayAllowance,
     totalPayment,
     nationalPension,
     healthInsurance,
@@ -110,7 +145,12 @@ export default function PayrollPage() {
   const preview = useMemo(() => previewCalculation(calcForm), [calcForm])
 
   const setCalcValue = (key, value) => {
-    setCalcForm((prev) => ({ ...prev, [key]: value }))
+    setCalcForm((prev) => {
+      if (key === 'payYearMonth') {
+        return { ...prev, payYearMonth: value, ...insuranceRatesFor(value) }
+      }
+      return { ...prev, [key]: value }
+    })
   }
 
   const applyUser = (userId) => {
@@ -272,16 +312,49 @@ export default function PayrollPage() {
                   <input type="number" value={calcForm.annualSalary} onChange={(e) => setCalcValue('annualSalary', e.target.value)} className={fieldClass} placeholder="예: 36000000" />
                 </Field>
               ) : (
-                <div className="grid grid-cols-3 gap-3">
-                  <Field label="시급">
-                    <input type="number" value={calcForm.hourlyWage} onChange={(e) => setCalcValue('hourlyWage', e.target.value)} className={fieldClass} />
-                  </Field>
-                  <Field label="출근일">
-                    <input type="number" value={calcForm.workDays} onChange={(e) => setCalcValue('workDays', e.target.value)} className={fieldClass} />
-                  </Field>
-                  <Field label="1일 시간">
-                    <input type="number" value={calcForm.hoursPerDay} onChange={(e) => setCalcValue('hoursPerDay', e.target.value)} className={fieldClass} />
-                  </Field>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-3">
+                    <Field label="시급">
+                      <input type="number" value={calcForm.hourlyWage} onChange={(e) => setCalcValue('hourlyWage', e.target.value)} className={fieldClass} />
+                    </Field>
+                    <Field label="출근일">
+                      <input type="number" value={calcForm.workDays} onChange={(e) => setCalcValue('workDays', e.target.value)} className={fieldClass} />
+                    </Field>
+                    <Field label="1일 근무시간">
+                      <input type="number" step="0.5" value={calcForm.hoursPerDay} onChange={(e) => setCalcValue('hoursPerDay', e.target.value)} className={fieldClass} />
+                    </Field>
+                  </div>
+                  <div className="rounded-lg border border-sky-100 bg-sky-50 p-3">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <p className="text-xs font-black text-sky-700">주휴수당</p>
+                      <label className="inline-flex items-center gap-2 text-xs font-black text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(calcForm.weeklyHolidayAuto)}
+                          onChange={(e) => setCalcValue('weeklyHolidayAuto', e.target.checked)}
+                          className="h-4 w-4 rounded border-slate-300 text-sky-600"
+                        />
+                        자동계산
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="주휴 발생 주수">
+                        <input type="number" step="0.5" value={calcForm.weeklyHolidayWeeks} onChange={(e) => setCalcValue('weeklyHolidayWeeks', e.target.value)} className={fieldClass} />
+                      </Field>
+                      <Field label="주휴수당 금액">
+                        <input
+                          type="number"
+                          value={calcForm.weeklyHolidayAuto ? preview.weeklyHolidayAllowance : calcForm.weeklyHolidayAllowance}
+                          onChange={(e) => setCalcValue('weeklyHolidayAllowance', e.target.value)}
+                          readOnly={Boolean(calcForm.weeklyHolidayAuto)}
+                          className={`${fieldClass} ${calcForm.weeklyHolidayAuto ? 'bg-slate-100 text-slate-500' : ''}`}
+                        />
+                      </Field>
+                    </div>
+                    <p className="mt-2 text-[11px] font-bold text-slate-500">
+                      하루 주휴수당 {fmt(preview.dailyWeeklyHolidayAllowance)} × {toNumber(calcForm.weeklyHolidayWeeks).toLocaleString('ko-KR')}주
+                    </p>
+                  </div>
                 </div>
               )}
 
@@ -298,7 +371,12 @@ export default function PayrollPage() {
               </div>
 
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <p className="mb-3 text-xs font-black text-slate-500">4대보험 요율</p>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-black text-slate-500">4대보험 요율</p>
+                  <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-sky-700">
+                    {String(calcForm.payYearMonth || currentMonth()).slice(0, 4)}년 기준 자동 적용
+                  </span>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="국민연금 %">
                     <input type="number" step="0.001" value={calcForm.nationalPensionRate} onChange={(e) => setCalcValue('nationalPensionRate', e.target.value)} className={fieldClass} />
@@ -334,6 +412,7 @@ export default function PayrollPage() {
             <div className="grid gap-3 md:grid-cols-2">
               <Preview label="근무시간" value={`${preview.workHours.toLocaleString('ko-KR')}시간`} />
               <Preview label="기본급" value={fmt(preview.baseSalary)} />
+              <Preview label="주휴수당" value={fmt(preview.weeklyHolidayAllowance)} />
               <Preview label="지급 합계" value={fmt(preview.totalPayment)} strong />
               <Preview label="국민연금" value={fmt(preview.nationalPension)} tone="rose" />
               <Preview label="건강보험" value={fmt(preview.healthInsurance)} tone="rose" />
@@ -413,6 +492,7 @@ export default function PayrollPage() {
               { key: 'employeeName', label: '직원', render: (row) => <span className="font-black text-slate-950">{row.employeeName}</span> },
               { key: 'salaryType', label: '방식', render: (row) => <StatusBadge value={row.salaryType === 'HOURLY' ? '시급제' : row.salaryType === 'ANNUAL' ? '연봉제' : 'EXCEL'} /> },
               { key: 'baseSalary', label: '기본급', render: (row) => fmt(row.baseSalary) },
+              { key: 'weeklyHolidayAllowance', label: '주휴수당', render: (row) => fmt(row.weeklyHolidayAllowance || 0) },
               { key: 'workHours', label: '근무시간', render: (row) => Number(row.workHours || 0) ? `${Number(row.workHours).toLocaleString('ko-KR')}시간` : '-' },
               { key: 'totalPayment', label: '지급합계', render: (row) => fmt(row.totalPayment) },
               { key: 'totalDeduction', label: '공제합계', render: (row) => <span className="font-bold text-rose-600">{fmt(row.totalDeduction)}</span> },
@@ -469,6 +549,7 @@ function PayrollSendPanel({ selectedMonth, setSelectedMonth, months, records, se
           { key: 'employeeName', label: '직원', render: (row) => <span className="font-black text-slate-950">{row.employeeName}</span> },
           { key: 'netPay', label: '실지급액', render: (row) => <span className="font-bold text-emerald-600">{fmt(row.netPay)}</span> },
           { key: 'totalPayment', label: '지급합계', render: (row) => fmt(row.totalPayment) },
+          { key: 'weeklyHolidayAllowance', label: '주휴수당', render: (row) => fmt(row.weeklyHolidayAllowance || 0) },
           { key: 'totalDeduction', label: '공제합계', render: (row) => <span className="text-rose-600">{fmt(row.totalDeduction)}</span> },
           { key: 'emailSentAt', label: '발송', render: (row) => row.emailSentAt ? fmtDate(row.emailSentAt) : '미발송' },
         ]}

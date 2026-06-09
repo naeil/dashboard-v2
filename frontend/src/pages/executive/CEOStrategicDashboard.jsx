@@ -89,7 +89,7 @@ function WeekCashCard({ weekNetCash, weekInflows, weekOutflows }) {
 }
 
 // ── 액션 아이템 ───────────────────────────────────────────────────────────
-function ActionItem({ level, icon, title, sub, detail }) {
+function ActionItem({ level, icon, title, sub, detail, cta, onClick }) {
   const cfg = {
     RED:    'border-rose-200 bg-rose-50',
     YELLOW: 'border-amber-200 bg-amber-50',
@@ -97,7 +97,11 @@ function ActionItem({ level, icon, title, sub, detail }) {
   }
   const dot = { RED: 'bg-rose-500', YELLOW: 'bg-amber-500', BLUE: 'bg-sky-500' }
   return (
-    <div className={`flex items-start gap-3 rounded-xl border px-4 py-3 ${cfg[level] || cfg.YELLOW}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${cfg[level] || cfg.YELLOW}`}
+    >
       <div className={`mt-2 h-2 w-2 shrink-0 rounded-full ${dot[level] || dot.YELLOW}`} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -107,7 +111,12 @@ function ActionItem({ level, icon, title, sub, detail }) {
         {sub    && <p className="mt-0.5 text-xs text-slate-500">{sub}</p>}
         {detail && <p className="mt-0.5 text-xs font-bold text-slate-700">{detail}</p>}
       </div>
-    </div>
+      {cta && (
+        <span className="mt-1 shrink-0 rounded-lg bg-white/80 px-3 py-1 text-xs font-black text-slate-700 shadow-sm">
+          {cta}
+        </span>
+      )}
+    </button>
   )
 }
 
@@ -239,6 +248,97 @@ export default function CEOStrategicDashboard({ onNavigate }) {
     })
   })
 
+  const elapsedRate = pct(d.daysPassed || 1, d.daysInMonth || 30)
+  const achievedRate = pct(totalSales, totalGoal)
+  const salesGap = elapsedRate - achievedRate
+  const overdueTotal = (d.overdueReceivables || []).reduce((sum, row) => sum + Number(row.outstanding || 0), 0)
+  const bigPaymentTotal = (d.bigPayments || []).reduce((sum, row) => sum + Number(row.amount || 0), 0)
+  const exportPipelineTotal = (d.exportActions || []).reduce((sum, row) => sum + Number(row.expected_sales || 0), 0)
+  const lowStockCount = (d.lowStockProducts || []).length
+
+  const decisions = []
+  if ((d.cashDays || 999) < 45) {
+    decisions.push({
+      level: 'RED',
+      icon: 'account_balance_wallet',
+      title: '현금 방어 판단',
+      sub: `현금 생존 ${d.cashDays || 0}일 · 월 고정비 ${won(d.fixedTotal || 0)}`,
+      detail: '큰 출금 보류, 미수금 회수, 광고비 조정 중 오늘 우선순위를 정해야 합니다.',
+      cta: '현금흐름',
+      page: 'cash-flow',
+    })
+  }
+  if (salesGap > 10) {
+    decisions.push({
+      level: 'YELLOW',
+      icon: 'trending_down',
+      title: '매출 페이스 회복 전략 결정',
+      sub: `목표 대비 ${achievedRate}% 달성 · 시간 경과 ${elapsedRate}%`,
+      detail: '온라인, 국내 오프라인, 해외 중 이번 주 집중 채널과 프로모션 강도를 정해야 합니다.',
+      cta: 'BEP 보기',
+      page: 'profit-management',
+    })
+  }
+  if (overdueTotal > 0) {
+    decisions.push({
+      level: overdueTotal >= 50_000_000 ? 'RED' : 'YELLOW',
+      icon: 'request_quote',
+      title: `미수금 회수 우선순위 결정 ${won(overdueTotal)}`,
+      sub: `${(d.overdueReceivables || []).length}개 거래처 지연`,
+      detail: '대표 직접 연락, 결제 조건 조정, 출고 보류 기준을 결정해야 합니다.',
+      cta: '미수금',
+      page: 'receivables',
+    })
+  }
+  if (bigPaymentTotal > 0) {
+    decisions.push({
+      level: 'YELLOW',
+      icon: 'payments',
+      title: `이번 주 큰 출금 승인 검토 ${won(bigPaymentTotal)}`,
+      sub: `${(d.bigPayments || []).length}건 예정`,
+      detail: '필수 지출과 보류 가능한 지출을 나누고 현금흐름 영향도를 확인해야 합니다.',
+      cta: '출금 확인',
+      page: 'cash-flow',
+    })
+  }
+  if (exportPipelineTotal > 0) {
+    decisions.push({
+      level: 'BLUE',
+      icon: 'public',
+      title: `해외/수출 파이프라인 클로징 판단 ${won(exportPipelineTotal)}`,
+      sub: `${(d.exportActions || []).length}건 다음 액션 대기`,
+      detail: '대표가 밀어줘야 하는 바이어, 견적, 샘플, 결제 조건을 먼저 정리합니다.',
+      cta: '수출 파이프라인',
+      page: 'export-pipeline',
+    })
+  }
+  if (decisions.length === 0) {
+    decisions.push({
+      level: 'BLUE',
+      icon: 'check_circle',
+      title: '오늘 대표 직접 판단 리스크 낮음',
+      sub: '현금, 매출 페이스, 미수금, 큰 출금 기준에서 긴급 의사결정이 없습니다.',
+      detail: '실무진 진행 현황과 이번 달 목표 달성률만 모니터링하면 됩니다.',
+      cta: '월간 현황',
+      onClick: () => setTab('monthly'),
+    })
+  }
+
+  const delegatedOps = [
+    lowStockCount > 0 && {
+      title: '재고 부족',
+      value: `${lowStockCount}건`,
+      detail: '실무진 발주/생산 체크 항목으로 위임',
+      page: 'inventory',
+    },
+    {
+      title: '운영 이슈',
+      value: (d.weekOutflows || []).length ? `${(d.weekOutflows || []).length}건` : '확인',
+      detail: '입출금·운영 담당자가 처리 후 대표에게 예외만 보고',
+      page: 'work-management',
+    },
+  ].filter(Boolean)
+
   return (
     <div className="space-y-6 pb-12">
 
@@ -304,17 +404,54 @@ export default function CEOStrategicDashboard({ onNavigate }) {
         />
       </div>
 
-      {/* ─── 긴급 액션 ───────────────────────────────────────────────────── */}
-      {actions.length > 0 && (
-        <div>
-          <h2 className="mb-3 text-xs font-black uppercase tracking-widest text-slate-500">
-            ⚡ 오늘 처리할 것 ({actions.length}건)
-          </h2>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-slate-500">CEO Decision</p>
+              <h2 className="mt-1 text-lg font-black text-slate-950">오늘 대표 판단 ({decisions.length}건)</h2>
+            </div>
+            <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-black text-sky-700">
+              직접 결정
+            </span>
+          </div>
           <div className="space-y-2">
-            {actions.map((a, i) => <ActionItem key={i} {...a} />)}
+            {decisions.map((a, i) => (
+              <ActionItem
+                key={i}
+                {...a}
+                onClick={a.onClick || (() => a.page && onNavigate?.(a.page))}
+              />
+            ))}
           </div>
         </div>
-      )}
+
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+          <div className="mb-4">
+            <p className="text-xs font-black uppercase tracking-widest text-slate-500">Delegation</p>
+            <h2 className="mt-1 text-lg font-black text-slate-950">실무 위임 현황</h2>
+            <p className="mt-1 text-xs font-bold text-slate-500">
+              대표가 직접 체크하지 않아도 되는 운영 항목입니다.
+            </p>
+          </div>
+          <div className="space-y-3">
+            {delegatedOps.map((item, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => item.page && onNavigate?.(item.page)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-sky-200 hover:shadow-sm"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-black text-slate-900">{item.title}</span>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-700">{item.value}</span>
+                </div>
+                <p className="mt-1 text-xs font-bold text-slate-500">{item.detail}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {/* ─── 매출 페이스 상세 ─────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

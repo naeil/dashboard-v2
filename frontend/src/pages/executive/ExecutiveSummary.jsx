@@ -104,7 +104,7 @@ export default function ExecutiveSummary({ onNavigate }) {
     },
     {
       key: 'stock',
-      title: '재고 위험',
+      title: '운영 위임 이슈',
       value: count(safeSummary.inventory_risk_count, '개 감지'),
       active: Number(safeSummary.inventory_risk_count || 0) > 0,
       page: 'inventory',
@@ -249,32 +249,32 @@ export default function ExecutiveSummary({ onNavigate }) {
       <section className="mb-6 grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_1fr]">
         <Panel
           title="AI 경영 브리핑"
-          right={<span className={`rounded-full border px-3 py-1 text-[11px] font-black ${todayRisks.length ? 'border-rose-400/30 bg-rose-400/10 text-rose-100' : 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100'}`}>{todayRisks.length ? `오늘 위험 ${todayRisks.length}건` : '정상 범위'}</span>}
+          right={<span className={`rounded-full border px-3 py-1 text-[11px] font-black ${todayRisks.length ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>{todayRisks.length ? `오늘 위험 ${todayRisks.length}건` : '정상 범위'}</span>}
         >
           <div className="grid gap-3 md:grid-cols-2">
-            <button type="button" onClick={() => onNavigate?.('cash-flow')} className="rounded-lg border border-white/10 bg-slate-950/60 p-4 text-left transition-colors hover:border-sky-400/40">
-              <p className="flex items-center gap-2 text-xs font-black text-slate-400"><span className="material-symbols-outlined text-base">account_balance_wallet</span>금주 현금 흐름</p>
-              <p className="mt-2 text-lg font-black text-white">{summary.expectedCashShortageDate ? `${summary.expectedCashShortageDate} 부족 예상` : '30일 내 부족 없음'}</p>
+            <button type="button" onClick={() => onNavigate?.('cash-flow')} className="rounded-lg border border-slate-200 bg-white p-4 text-left transition-colors hover:border-sky-300 hover:bg-sky-50">
+              <p className="flex items-center gap-2 text-xs font-black text-slate-500"><span className="material-symbols-outlined text-base">account_balance_wallet</span>금주 현금 흐름</p>
+              <p className="mt-2 text-lg font-black text-slate-950">{summary.expectedCashShortageDate ? `${summary.expectedCashShortageDate} 부족 예상` : '30일 내 부족 없음'}</p>
             </button>
-            <button type="button" onClick={() => onNavigate?.('channel-sales')} className="rounded-lg border border-white/10 bg-slate-950/60 p-4 text-left transition-colors hover:border-sky-400/40">
-              <p className="flex items-center gap-2 text-xs font-black text-slate-400"><span className="material-symbols-outlined text-base">leaderboard</span>매출 위험</p>
-              <p className="mt-2 text-lg font-black text-white">전월 대비 {pct(salesChangeRate)}</p>
+            <button type="button" onClick={() => onNavigate?.('channel-sales')} className="rounded-lg border border-slate-200 bg-white p-4 text-left transition-colors hover:border-sky-300 hover:bg-sky-50">
+              <p className="flex items-center gap-2 text-xs font-black text-slate-500"><span className="material-symbols-outlined text-base">leaderboard</span>매출 위험</p>
+              <p className="mt-2 text-lg font-black text-slate-950">전월 대비 {pct(salesChangeRate)}</p>
             </button>
-            <button type="button" onClick={() => onNavigate?.('ad-performance')} className="rounded-lg border border-white/10 bg-slate-950/60 p-4 text-left transition-colors hover:border-sky-400/40">
-              <p className="flex items-center gap-2 text-xs font-black text-slate-400"><span className="material-symbols-outlined text-base">campaign</span>광고 위험</p>
-              <p className="mt-2 text-lg font-black text-white">광고비율 {pct(adCostRate)}</p>
+            <button type="button" onClick={() => onNavigate?.('ad-performance')} className="rounded-lg border border-slate-200 bg-white p-4 text-left transition-colors hover:border-sky-300 hover:bg-sky-50">
+              <p className="flex items-center gap-2 text-xs font-black text-slate-500"><span className="material-symbols-outlined text-base">campaign</span>광고 위험</p>
+              <p className="mt-2 text-lg font-black text-slate-950">광고비율 {pct(adCostRate)}</p>
             </button>
-            <button type="button" onClick={() => onNavigate?.('inventory')} className="rounded-lg border border-white/10 bg-slate-950/60 p-4 text-left transition-colors hover:border-sky-400/40">
-              <p className="flex items-center gap-2 text-xs font-black text-slate-400"><span className="material-symbols-outlined text-base">warehouse</span>재고 위험</p>
-              <p className="mt-2 text-lg font-black text-white">{count(summary.inventory_risk_count, '개')}</p>
+            <button type="button" onClick={() => onNavigate?.('inventory')} className="rounded-lg border border-slate-200 bg-white p-4 text-left transition-colors hover:border-sky-300 hover:bg-sky-50">
+              <p className="flex items-center gap-2 text-xs font-black text-slate-500"><span className="material-symbols-outlined text-base">warehouse</span>운영 위임 이슈</p>
+              <p className="mt-2 text-lg font-black text-slate-950">{count(summary.inventory_risk_count, '개')}</p>
             </button>
           </div>
-          <div className="mt-4 rounded-lg border border-white/10 bg-slate-950/50 p-4">
-            <p className="text-xs font-black text-sky-200">우선 순위</p>
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-black text-sky-700">대표 우선 순위</p>
             <ol className="mt-3 space-y-2">
               {aiPriorities.map((priority, index) => (
-                <li key={priority} className="flex gap-3 text-sm font-bold text-slate-200">
-                  <span className="text-sky-300">{index + 1}</span>
+                <li key={priority} className="flex gap-3 text-sm font-bold text-slate-700">
+                  <span className="text-sky-600">{index + 1}</span>
                   <span>{priority}</span>
                 </li>
               ))}
@@ -294,9 +294,9 @@ export default function ExecutiveSummary({ onNavigate }) {
               value={aiQuestion}
               onChange={(event) => setAiQuestion(event.target.value)}
               placeholder="이번 달 손익이 왜 떨어졌어?"
-              className="h-11 min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-950 px-3 text-sm font-bold text-white outline-none placeholder:text-slate-600 focus:border-sky-400"
+              className="h-11 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-900 outline-none placeholder:text-slate-400 focus:border-sky-400"
             />
-            <button type="submit" className="h-11 rounded-lg bg-sky-400 px-4 text-sm font-black text-slate-950 transition-colors hover:bg-sky-300">
+            <button type="submit" className="h-11 rounded-lg bg-sky-600 px-4 text-sm font-black text-white transition-colors hover:bg-sky-500">
               질문
             </button>
           </form>
@@ -306,16 +306,16 @@ export default function ExecutiveSummary({ onNavigate }) {
                 key={question}
                 type="button"
                 onClick={() => handleAiQuestion(question)}
-                className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-bold text-slate-300 transition-colors hover:border-sky-400/40 hover:text-sky-100"
+                className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 transition-colors hover:border-sky-300 hover:text-sky-700"
               >
                 {question}
               </button>
             ))}
           </div>
-          <div className="mt-4 rounded-lg border border-white/10 bg-slate-950/60 p-3 text-[11px] font-bold leading-5 text-slate-400">
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-[11px] font-bold leading-5 text-slate-500">
             현금흐름, 수익성, 미수금, 재고 위험, 제품 마진, 채널 성과, 운영 우선순위 순서로 답변합니다. 제공된 대시보드 숫자만 사용합니다.
           </div>
-          <div className="mt-4 min-h-24 whitespace-pre-line rounded-lg border border-sky-400/20 bg-sky-400/10 p-4 text-sm font-bold leading-6 text-sky-50">
+          <div className="mt-4 min-h-24 whitespace-pre-line rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm font-bold leading-6 text-slate-700">
             {aiAnswer || '질문을 입력하면 현재 대시보드 지표를 기준으로 CFO/COO 관점의 답변을 제공합니다.'}
           </div>
         </Panel>
@@ -329,11 +329,11 @@ export default function ExecutiveSummary({ onNavigate }) {
                 key={alert.key}
                 type="button"
                 onClick={() => onNavigate?.(alert.page)}
-                className={`rounded-lg border p-4 text-left transition-colors ${alert.active ? 'border-rose-400/30 bg-rose-400/10 hover:bg-rose-400/15' : 'border-emerald-400/20 bg-emerald-400/10 hover:bg-emerald-400/15'}`}
+                className={`rounded-lg border p-4 text-left transition-colors ${alert.active ? 'border-rose-200 bg-rose-50 hover:bg-rose-100' : 'border-emerald-200 bg-emerald-50 hover:bg-emerald-100'}`}
               >
-                <p className="text-xs font-black text-slate-300">{alert.title}</p>
-                <p className="mt-2 text-lg font-black text-white">{alert.value}</p>
-                <p className={`mt-2 text-[11px] font-black ${alert.active ? 'text-rose-100' : 'text-emerald-100'}`}>{alert.active ? '감지됨' : '정상'}</p>
+                <p className="text-xs font-black text-slate-600">{alert.title}</p>
+                <p className="mt-2 text-lg font-black text-slate-950">{alert.value}</p>
+                <p className={`mt-2 text-[11px] font-black ${alert.active ? 'text-rose-700' : 'text-emerald-700'}`}>{alert.active ? '감지됨' : '정상'}</p>
               </button>
             ))}
           </div>
@@ -341,17 +341,17 @@ export default function ExecutiveSummary({ onNavigate }) {
 
         <Panel title="AI 전략 분석">
           <div className="space-y-3">
-            <button type="button" onClick={() => onNavigate?.('export-pipeline')} className="w-full rounded-lg border border-white/10 bg-slate-950/60 p-4 text-left transition-colors hover:border-sky-400/40">
-              <p className="text-sm font-black text-white">온라인 vs 수출 집중 방향</p>
-              <p className="mt-2 text-sm font-bold text-slate-400">온라인 매출 {won(summary.channel_month_sales)} / 수출·컨설팅 입금 {won(summary.consulting_month_sales)}. 현금 회수 속도와 마진율을 함께 비교하세요.</p>
+            <button type="button" onClick={() => onNavigate?.('export-pipeline')} className="w-full rounded-lg border border-slate-200 bg-white p-4 text-left transition-colors hover:border-sky-300 hover:bg-sky-50">
+              <p className="text-sm font-black text-slate-950">온라인 vs 수출 집중 방향</p>
+              <p className="mt-2 text-sm font-bold text-slate-500">온라인 매출 {won(summary.channel_month_sales)} / 수출·컨설팅 입금 {won(summary.consulting_month_sales)}. 현금 회수 속도와 마진율을 함께 비교하세요.</p>
             </button>
-            <button type="button" onClick={() => onNavigate?.('product-profit')} className="w-full rounded-lg border border-white/10 bg-slate-950/60 p-4 text-left transition-colors hover:border-sky-400/40">
-              <p className="text-sm font-black text-white">실제 이익 제품</p>
-              <p className="mt-2 text-sm font-bold text-slate-400">{bestProfitProduct?.product_name || '제품 데이터 없음'}이 현재 이익 기여 상위 후보입니다. 적자/저마진 SKU {count(riskyProducts.length, '개')}를 같이 정리하세요.</p>
+            <button type="button" onClick={() => onNavigate?.('product-profit')} className="w-full rounded-lg border border-slate-200 bg-white p-4 text-left transition-colors hover:border-sky-300 hover:bg-sky-50">
+              <p className="text-sm font-black text-slate-950">실제 이익 제품</p>
+              <p className="mt-2 text-sm font-bold text-slate-500">{bestProfitProduct?.product_name || '제품 데이터 없음'}이 현재 이익 기여 상위 후보입니다. 적자/저마진 SKU {count(riskyProducts.length, '개')}를 같이 정리하세요.</p>
             </button>
-            <button type="button" onClick={() => onNavigate?.('channel-sales')} className="w-full rounded-lg border border-white/10 bg-slate-950/60 p-4 text-left transition-colors hover:border-sky-400/40">
-              <p className="text-sm font-black text-white">채널 에너지 재배분</p>
-              <p className="mt-2 text-sm font-bold text-slate-400">강화 후보: {strongestChannel?.channel_name || '-'} / 축소 점검 후보: {weakestChannel?.channel_name || '-'}. 매출보다 순이익 기준으로 판단하세요.</p>
+            <button type="button" onClick={() => onNavigate?.('channel-sales')} className="w-full rounded-lg border border-slate-200 bg-white p-4 text-left transition-colors hover:border-sky-300 hover:bg-sky-50">
+              <p className="text-sm font-black text-slate-950">채널 에너지 재배분</p>
+              <p className="mt-2 text-sm font-bold text-slate-500">강화 후보: {strongestChannel?.channel_name || '-'} / 축소 점검 후보: {weakestChannel?.channel_name || '-'}. 매출보다 순이익 기준으로 판단하세요.</p>
             </button>
           </div>
         </Panel>

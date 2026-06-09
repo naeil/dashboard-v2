@@ -19,7 +19,7 @@ public class StaffWorkReportService {
 
     public List<Map<String, Object>> listReports(Long companyId, AuthUser user, String reportType) {
         String normalizedType = normalizeReportTypeOrNull(reportType);
-        if (UserRole.from(user.role()) == UserRole.EMPLOYEE) {
+        if (UserRole.from(user.role()) != UserRole.EXECUTIVE) {
             if (normalizedType == null) {
                 return jdbcTemplate.queryForList("""
                         SELECT *
@@ -65,9 +65,10 @@ public class StaffWorkReportService {
         jdbcTemplate.update("""
                 INSERT INTO staff_work_report (
                     company_id, username, display_name, report_type, report_date, week_start_date,
-                    title, completed_work, planned_work, blockers, memo, status
+                    title, completed_work, planned_work, blockers, memo, status,
+                    linked_task_id, linked_project_name
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 companyId,
                 user.username(),
@@ -80,7 +81,9 @@ public class StaffWorkReportService {
                 blankToNull(payload.get("planned_work")),
                 blankToNull(payload.get("blockers")),
                 blankToNull(payload.get("memo")),
-                normalizeStatus(stringValue(payload.get("status"), "SUBMITTED"))
+                normalizeStatus(stringValue(payload.get("status"), "SUBMITTED")),
+                longOrNull(payload.get("linked_task_id")),
+                blankToNull(payload.get("linked_project_name"))
         );
 
         Long id = jdbcTemplate.queryForObject("""
@@ -106,6 +109,12 @@ public class StaffWorkReportService {
         putIfPresent(values, "blockers", blankToNull(payload.get("blockers")));
         putIfPresent(values, "memo", blankToNull(payload.get("memo")));
         putIfPresent(values, "status", normalizeStatusOrNull(payload.get("status")));
+        if (payload.containsKey("linked_task_id")) {
+            values.put("linked_task_id", longOrNull(payload.get("linked_task_id")));
+        }
+        if (payload.containsKey("linked_project_name")) {
+            values.put("linked_project_name", blankToNull(payload.get("linked_project_name")));
+        }
 
         if (values.isEmpty()) {
             return getReport(id);
@@ -131,7 +140,7 @@ public class StaffWorkReportService {
     }
 
     private void ensureAccess(Long id, AuthUser user) {
-        if (UserRole.from(user.role()) != UserRole.EMPLOYEE) {
+        if (UserRole.from(user.role()) == UserRole.EXECUTIVE) {
             return;
         }
         Integer count = jdbcTemplate.queryForObject("""
@@ -196,5 +205,14 @@ public class StaffWorkReportService {
         if (value == null) return null;
         String text = value.toString().trim();
         return text.isEmpty() ? null : text;
+    }
+
+    private static Long longOrNull(Object value) {
+        if (value == null || value.toString().isBlank()) return null;
+        try {
+            return Long.valueOf(value.toString());
+        } catch (Exception exception) {
+            return null;
+        }
     }
 }

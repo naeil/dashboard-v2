@@ -1,0 +1,4 @@
+ALTER TABLE payroll_record
+    ADD COLUMN IF NOT EXISTS weekly_holiday_weeks NUMERIC(8,2) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS weekly_holiday_auto BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS weekly_holiday_allowance NUMERIC(15,2) NOT NULL DEFAULT 0;

@@ -56,6 +56,18 @@ public class PayrollRecord {
     @Builder.Default
     private BigDecimal baseSalary = BigDecimal.ZERO;
 
+    @Column(name = "weekly_holiday_weeks", nullable = false, precision = 8, scale = 2)
+    @Builder.Default
+    private BigDecimal weeklyHolidayWeeks = BigDecimal.ZERO;
+
+    @Column(name = "weekly_holiday_auto", nullable = false)
+    @Builder.Default
+    private Boolean weeklyHolidayAuto = false;
+
+    @Column(name = "weekly_holiday_allowance", nullable = false, precision = 15, scale = 2)
+    @Builder.Default
+    private BigDecimal weeklyHolidayAllowance = BigDecimal.ZERO;
+
     @Column(name = "meal_allowance", nullable = false, precision = 15, scale = 2)
     @Builder.Default
     private BigDecimal mealAllowance = BigDecimal.ZERO;

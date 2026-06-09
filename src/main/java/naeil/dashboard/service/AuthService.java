@@ -159,6 +159,37 @@ public class AuthService {
         }
     }
 
+    public void deleteUser(Long userId, AuthUser actor) {
+        requireRole(actor, UserRole.EXECUTIVE);
+        if (actor.id().equals(userId)) {
+            throw new CustomException(400, "본인 계정은 삭제할 수 없습니다.");
+        }
+
+        Map<String, Object> target;
+        try {
+            target = jdbcTemplate.queryForMap("""
+                    SELECT id, role, status
+                    FROM dashboard_user
+                    WHERE id = ?
+                    """, userId);
+        } catch (EmptyResultDataAccessException exception) {
+            throw new CustomException(404, "계정을 찾을 수 없습니다.");
+        }
+
+        if (UserRole.from(String.valueOf(target.get("role"))) == UserRole.EXECUTIVE) {
+            throw new CustomException(400, "대표 관리자 계정은 삭제할 수 없습니다.");
+        }
+        if ("LEFT".equals(String.valueOf(target.get("status")))) {
+            return;
+        }
+
+        jdbcTemplate.update("""
+                UPDATE dashboard_user
+                SET status = 'LEFT', allowed_menu_sections = NULL, updated_at = NOW()
+                WHERE id = ?
+                """, userId);
+    }
+
     @Transactional
     public AuthUser register(RegisterRequest request) {
         String inviteCode = required(request.inviteCode(), "초대 코드를 입력하세요.").trim().toUpperCase();
