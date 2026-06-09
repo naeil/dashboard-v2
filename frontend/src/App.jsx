@@ -303,7 +303,7 @@ export default function App() {
         })()}
       />
       <div className={`transition-all duration-300 ${isSidebarExpanded ? 'ml-72' : 'ml-20'}`}>
-        <ExecutiveHeader username={session.displayName || session.username} />
+        <ExecutiveHeader username={session.username} displayName={session.displayName} />
         {page === 'settings' ? (
           <Settings isExpanded={false} />
         ) : (

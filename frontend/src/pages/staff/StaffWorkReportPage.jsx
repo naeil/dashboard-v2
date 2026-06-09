@@ -184,9 +184,9 @@ export default function StaffWorkReportPage({ username, displayName, onNavigate 
           <p className="text-xs font-black text-slate-500">주간 보고</p>
           <p className="mt-3 text-2xl font-black text-slate-950">{summary.weekly.toLocaleString('ko-KR')}건</p>
         </article>
-        <article className="rounded-lg border border-amber-200 bg-amber-50 p-5">
-          <p className="text-xs font-black text-amber-700">막힌 이슈 포함</p>
-          <p className="mt-3 text-2xl font-black text-amber-900">{summary.blockers.toLocaleString('ko-KR')}건</p>
+        <article className="rounded-lg border border-rose-200 bg-rose-50 p-5">
+          <p className="text-xs font-black text-rose-700">막힌 이슈 포함</p>
+          <p className="mt-3 text-2xl font-black text-rose-700">{summary.blockers.toLocaleString('ko-KR')}건</p>
         </article>
       </section>
 
@@ -278,13 +278,22 @@ export default function StaffWorkReportPage({ username, displayName, onNavigate 
 
           {[
             ['completed_work', '완료 / 진행한 업무'],
-            ['planned_work', '다음 업무'],
+            ['planned_work', '다음 액션'],
             ['blockers', '막힌 이슈'],
             ['memo', '메모'],
           ].map(([key, label]) => (
             <label key={key} className="mt-3 block">
-              <span className="mb-1 block text-xs font-black text-slate-500">{label}</span>
-              <textarea value={form[key]} onChange={(event) => setField(key, event.target.value)} rows="4" className="w-full rounded border border-slate-200 px-3 py-2 text-sm font-bold outline-none focus:border-sky-400" />
+              <span className={`mb-1 block text-xs font-black ${key === 'blockers' ? 'text-rose-600' : 'text-slate-500'}`}>{label}</span>
+              <textarea
+                value={form[key]}
+                onChange={(event) => setField(key, event.target.value)}
+                rows="4"
+                className={`w-full rounded border px-3 py-2 text-sm font-bold outline-none ${
+                  key === 'blockers'
+                    ? 'border-rose-200 bg-rose-50 text-rose-700 placeholder:text-rose-300 focus:border-rose-400'
+                    : 'border-slate-200 focus:border-sky-400'
+                }`}
+              />
             </label>
           ))}
 
@@ -343,8 +352,29 @@ export default function StaffWorkReportPage({ username, displayName, onNavigate 
                         </button>
                       </div>
                     )}
-                    <p className="mt-2 whitespace-pre-line text-sm font-bold leading-6 text-slate-600">{report.completed_work || report.planned_work || '내용 없음'}</p>
-                    {report.blockers && <p className="mt-3 rounded border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-black text-amber-800">막힌 이슈: {report.blockers}</p>}
+                    <div className="mt-4 space-y-3">
+                      {report.completed_work && (
+                        <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-3">
+                          <p className="text-[11px] font-black text-slate-500">완료 / 진행한 업무</p>
+                          <p className="mt-2 whitespace-pre-line text-sm font-bold leading-6 text-slate-700">{report.completed_work}</p>
+                        </div>
+                      )}
+                      {report.planned_work && (
+                        <div className="rounded-lg border border-sky-100 bg-sky-50 px-3 py-3">
+                          <p className="text-[11px] font-black text-sky-700">다음 액션</p>
+                          <p className="mt-2 whitespace-pre-line text-sm font-bold leading-6 text-slate-700">{report.planned_work}</p>
+                        </div>
+                      )}
+                      {report.blockers && (
+                        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-3">
+                          <p className="text-[11px] font-black text-rose-700">막힌 이슈</p>
+                          <p className="mt-2 whitespace-pre-line text-sm font-black leading-6 text-rose-700">{report.blockers}</p>
+                        </div>
+                      )}
+                      {!report.completed_work && !report.planned_work && !report.blockers && (
+                        <p className="mt-2 text-sm font-bold text-slate-400">내용 없음</p>
+                      )}
+                    </div>
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <button type="button" onClick={() => editReport(report)} className="h-9 rounded border border-slate-300 px-3 text-xs font-black text-slate-600 hover:bg-white">

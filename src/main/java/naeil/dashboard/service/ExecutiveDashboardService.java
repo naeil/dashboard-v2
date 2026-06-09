@@ -827,10 +827,25 @@ public class ExecutiveDashboardService {
         if (UserRole.from(user.role()) != UserRole.EMPLOYEE) {
             return getWorkTasks(companyId);
         }
+        String usernameMention = "@" + user.username();
+        String displayMention = user.displayName() == null || user.displayName().isBlank()
+                ? usernameMention
+                : "@" + normalizeMentionName(user.displayName());
         return jdbcTemplate.queryForList("""
                 SELECT *
                 FROM executive_work_task
-                WHERE company_id = ? AND LOWER(assignee_name) = LOWER(?)
+                WHERE company_id = ?
+                  AND (
+                    LOWER(assignee_name) = LOWER(?)
+                    OR COALESCE(request_text, '') ILIKE ?
+                    OR COALESCE(request_text, '') ILIKE ?
+                    OR COALESCE(review_comment, '') ILIKE ?
+                    OR COALESCE(review_comment, '') ILIKE ?
+                    OR COALESCE(next_action, '') ILIKE ?
+                    OR COALESCE(next_action, '') ILIKE ?
+                    OR COALESCE(blocker_text, '') ILIKE ?
+                    OR COALESCE(blocker_text, '') ILIKE ?
+                  )
                 ORDER BY
                     CASE status
                         WHEN 'DELAYED' THEN 1
@@ -843,7 +858,18 @@ public class ExecutiveDashboardService {
                     END,
                     due_date NULLS LAST,
                     id DESC
-                """, companyId, user.username());
+                """,
+                companyId,
+                user.username(),
+                "%" + usernameMention + "%",
+                "%" + displayMention + "%",
+                "%" + usernameMention + "%",
+                "%" + displayMention + "%",
+                "%" + usernameMention + "%",
+                "%" + displayMention + "%",
+                "%" + usernameMention + "%",
+                "%" + displayMention + "%"
+        );
     }
 
     public List<Map<String, Object>> getChannelCredentials(Long companyId, AuthUser user) {
@@ -2180,17 +2206,48 @@ public class ExecutiveDashboardService {
         deleteRecord(resource, id);
     }
 
+    private String normalizeMentionName(String value) {
+        if (value == null) return "";
+        return value.trim()
+                .replaceAll("\\s+", "")
+                .replaceAll("(대표님|팀장님|매니저님|님|씨|대표|팀장|매니저)$", "");
+    }
+
     private void ensureRecordAccess(String resource, Long id, AuthUser user) {
         if (UserRole.from(user.role()) != UserRole.EMPLOYEE) {
             return;
         }
         ResourceDefinition definition = getResourceDefinition(resource);
         if ("work-tasks".equals(resource)) {
+            String displayName = user.displayName() == null || user.displayName().isBlank() ? user.username() : normalizeMentionName(user.displayName());
             Integer count = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM " + definition.tableName() + " WHERE id = ? AND LOWER(assignee_name) = LOWER(?)",
+                    """
+                    SELECT COUNT(*)
+                    FROM %s
+                    WHERE id = ?
+                      AND (
+                        LOWER(assignee_name) = LOWER(?)
+                        OR COALESCE(request_text, '') ILIKE ?
+                        OR COALESCE(request_text, '') ILIKE ?
+                        OR COALESCE(review_comment, '') ILIKE ?
+                        OR COALESCE(review_comment, '') ILIKE ?
+                        OR COALESCE(next_action, '') ILIKE ?
+                        OR COALESCE(next_action, '') ILIKE ?
+                        OR COALESCE(blocker_text, '') ILIKE ?
+                        OR COALESCE(blocker_text, '') ILIKE ?
+                      )
+                    """.formatted(definition.tableName()),
                     Integer.class,
                     id,
-                    user.username()
+                    user.username(),
+                    "%@" + user.username() + "%",
+                    "%@" + displayName + "%",
+                    "%@" + user.username() + "%",
+                    "%@" + displayName + "%",
+                    "%@" + user.username() + "%",
+                    "%@" + displayName + "%",
+                    "%@" + user.username() + "%",
+                    "%@" + displayName + "%"
             );
             if (count != null && count > 0) return;
         }

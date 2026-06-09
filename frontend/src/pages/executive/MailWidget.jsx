@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { connectDaouMail, getMailFolder } from '../../api/mailApi'
+import { useEffect, useState } from 'react'
+import { connectDaouMail, getMailFolder, getMailStatus } from '../../api/mailApi'
 
 const PAGE_SIZE = 10
 const FOLDERS = [
@@ -29,7 +29,33 @@ export default function MailWidget() {
   const [error, setError] = useState('')
   const [hasMore, setHasMore] = useState(true)
   const [hasLoaded, setHasLoaded] = useState(false)
+  const [status, setStatus] = useState(null)
   const [credentials, setCredentials] = useState({ loginId: '', password: '', host: 'imap.daouoffice.com' })
+
+  const loadStatus = async ({ validate = false, autoLoad = false } = {}) => {
+    setError('')
+    try {
+      const response = await getMailStatus({ validate })
+      setStatus(response.data)
+      if (response.data?.host || response.data?.username) {
+        setCredentials((current) => ({
+          ...current,
+          host: response.data.host || current.host,
+          loginId: response.data.username?.includes('*') ? current.loginId : response.data.username || current.loginId,
+        }))
+      }
+      if (autoLoad && response.data?.connected) {
+        await loadMails(0, folder)
+      } else if (!response.data?.connected) {
+        setShowConnect(true)
+      }
+    } catch (err) {
+      const message = err.response?.data?.message || '메일 연결 상태를 확인하지 못했습니다.'
+      setStatus(err.response?.data || { connected: false, message })
+      setError('')
+      setShowConnect(true)
+    }
+  }
 
   const loadMails = async (nextPage = 0, nextFolder = folder) => {
     setLoading(true)
@@ -61,11 +87,16 @@ export default function MailWidget() {
       setError('메일 ID와 비밀번호를 입력해주세요.')
       return
     }
+    if (!credentials.loginId.includes('@')) {
+      setError('다우오피스 ID는 admin이 아니라 메일 주소 전체를 입력해주세요. 예: name@company.com')
+      return
+    }
     setConnecting(true)
     setError('')
     try {
       await connectDaouMail(credentials)
       setCredentials({ loginId: credentials.loginId, password: '', host: credentials.host || 'imap.daouoffice.com' })
+      await loadStatus({ validate: false })
       await loadMails(0, folder)
     } catch (err) {
       setError(err.response?.data?.message || '다우오피스 메일 계정 연결에 실패했습니다.')
@@ -78,6 +109,10 @@ export default function MailWidget() {
     setFolder(nextFolder)
     loadMails(0, nextFolder)
   }
+
+  useEffect(() => {
+    loadStatus({ autoLoad: true })
+  }, [])
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
@@ -94,6 +129,14 @@ export default function MailWidget() {
           >
             <span className="material-symbols-outlined text-base">key</span>
             메일 계정 연결
+          </button>
+          <button
+            type="button"
+            onClick={() => loadStatus({ validate: true })}
+            className="inline-flex h-9 items-center gap-2 rounded border border-emerald-200 bg-emerald-50 px-3 text-xs font-black text-emerald-700 hover:bg-emerald-100"
+          >
+            <span className="material-symbols-outlined text-base">lan</span>
+            연결 상태 확인
           </button>
           <button
             type="button"
@@ -118,13 +161,14 @@ export default function MailWidget() {
               className="mt-2 h-10 w-full rounded border border-slate-300 bg-white px-3 text-sm font-bold text-slate-900 outline-none focus:border-blue-500"
               autoComplete="off"
             />
+            <span className="mt-1 block text-[11px] font-bold text-slate-500">기본값: imap.daouoffice.com:993 SSL</span>
           </label>
           <label className="block">
             <span className="text-xs font-black text-slate-600">다우오피스 ID</span>
             <input
               value={credentials.loginId}
               onChange={(event) => setCredentials((current) => ({ ...current, loginId: event.target.value }))}
-              placeholder="user@company.daouoffice.com"
+              placeholder="name@company.com"
               className="mt-2 h-10 w-full rounded border border-slate-300 bg-white px-3 text-sm font-bold text-slate-900 outline-none focus:border-blue-500"
               autoComplete="username"
             />
@@ -149,6 +193,17 @@ export default function MailWidget() {
             연결
           </button>
         </form>
+      )}
+
+      {status?.message && (
+        <div className={`mt-5 rounded border px-4 py-3 text-sm font-black ${
+          status.connected
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            : 'border-amber-200 bg-amber-50 text-amber-700'
+        }`}>
+          {status.message}
+          {status.host && <span className="ml-2 text-xs opacity-80">({status.host})</span>}
+        </div>
       )}
 
       <div className="mt-5 flex flex-wrap gap-2">

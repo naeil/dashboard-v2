@@ -17,6 +17,11 @@ const nextMonthText = (value, offset) => {
   d.setMonth(d.getMonth() + offset)
   return monthStartText(d)
 }
+const monthDiff = (fromValue, toValue) => {
+  const from = new Date(`${monthInputText(fromValue)}-01T00:00:00`)
+  const to = new Date(`${monthInputText(toValue)}-01T00:00:00`)
+  return (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth())
+}
 const monthEndText = (value) => {
   const d = new Date(`${monthInputText(value)}-01T00:00:00`)
   d.setMonth(d.getMonth() + 1)
@@ -372,6 +377,261 @@ function ActualVsPlanChart({ channels, productsByChannel, planQty, actualSales }
   )
 }
 
+function ForecastGrowthSettings({ channels, forecastGrowth, setForecastGrowth }) {
+  const forecastChannels = channels.filter((ch) => ['online', 'offline', 'export'].includes(ch.id))
+  const quickRates = [100, 105, 110, 120]
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-4">
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-sky-600">Forecast Growth Setting</p>
+        <h2 className="mt-1 text-xl font-black text-slate-950">익월 매출 성장률 설정</h2>
+        <p className="mt-1 text-sm font-bold text-slate-500">
+          상단의 현재 계획 총매출을 기준으로 다음 달 계획 매출을 몇 %로 볼지 설정합니다.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+        {forecastChannels.map((ch) => (
+          <div key={ch.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-lg text-slate-500">{ch.icon}</span>
+                <span className="text-sm font-black text-slate-900">{ch.label}</span>
+              </div>
+              <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1">
+                <input
+                  type="number"
+                  min="0"
+                  value={forecastGrowth[ch.id] ?? 100}
+                  onChange={(event) => setForecastGrowth((prev) => ({ ...prev, [ch.id]: parseNum(event.target.value) }))}
+                  className="w-16 bg-transparent text-right text-sm font-black text-slate-900 outline-none"
+                />
+                <span className="text-xs font-black text-slate-400">%</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-4 gap-1.5">
+              {quickRates.map((rate) => {
+                const active = Number(forecastGrowth[ch.id] || 100) === rate
+                return (
+                  <button
+                    key={rate}
+                    type="button"
+                    onClick={() => setForecastGrowth((prev) => ({ ...prev, [ch.id]: rate }))}
+                    className={`h-8 rounded-lg border text-xs font-black transition-colors ${
+                      active
+                        ? `${ch.headerCls} shadow-sm`
+                        : 'border-slate-200 bg-white text-slate-500 hover:border-sky-300 hover:text-sky-700'
+                    }`}
+                  >
+                    {rate}%
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function YearForecastChart({ channels, summary, actualSales, selectedMonth, forecastGrowth }) {
+  const coreChannels = channels.filter((ch) => ['online', 'offline', 'export'].includes(ch.id))
+  const forecastChannels = [
+    {
+      id: 'company',
+      label: '전사 매출',
+      icon: 'corporate_fare',
+      headerCls: 'bg-slate-50 border-slate-200 text-slate-800',
+      barCls: 'bg-slate-700',
+      channelIds: coreChannels.map((ch) => ch.id),
+    },
+    ...coreChannels.map((ch) => ({ ...ch, channelIds: [ch.id] })),
+  ]
+  const [activeId, setActiveId] = useState(forecastChannels[0]?.id || 'company')
+  const activeChannel = forecastChannels.find((ch) => ch.id === activeId) || forecastChannels[0]
+  const channelPlanAt = (channelId, index) => {
+    const base = num(summary.channelSummary?.[channelId]?.revenue)
+    const rate = num(forecastGrowth?.[channelId] || 100) / 100
+    return Math.round(base * Math.pow(rate, index))
+  }
+  const channelActualAt = (channelId, index) => {
+    const base = num(actualSales?.[channelId])
+    const rate = num(forecastGrowth?.[channelId] || 100) / 100
+    return Math.round(base * Math.pow(rate, index))
+  }
+  const basePlan = (activeChannel.channelIds || []).reduce((sum, channelId) => sum + channelPlanAt(channelId, 0), 0)
+  const baseActual = (activeChannel.channelIds || []).reduce((sum, channelId) => sum + channelActualAt(channelId, 0), 0)
+
+  const rows = Array.from({ length: 12 }, (_, index) => {
+    const date = new Date(`${monthInputText(selectedMonth)}-01T00:00:00`)
+    date.setMonth(date.getMonth() + index)
+    const planRevenue = (activeChannel.channelIds || []).reduce((sum, channelId) => sum + channelPlanAt(channelId, index), 0)
+    const actualForecast = (activeChannel.channelIds || []).reduce((sum, channelId) => sum + channelActualAt(channelId, index), 0)
+    const bepRate = planRevenue > 0 ? (actualForecast / planRevenue) * 100 : 0
+    return {
+      key: `${date.getFullYear()}-${date.getMonth() + 1}`,
+      label: `${date.getFullYear().toString().slice(2)}.${String(date.getMonth() + 1).padStart(2, '0')}`,
+      planRevenue,
+      actualForecast,
+      bepRate,
+    }
+  })
+
+  const maxRevenue = Math.max(...rows.flatMap((row) => [row.planRevenue, row.actualForecast]), 1)
+  const totalPlan = rows.reduce((sum, row) => sum + row.planRevenue, 0)
+  const totalActual = rows.reduce((sum, row) => sum + row.actualForecast, 0)
+  const avgBepRate = totalPlan > 0 ? (totalActual / totalPlan) * 100 : 0
+  const currentAchievementRate = totalPlan > 0 ? (baseActual / totalPlan) * 100 : 0
+  const firstBepMonth = rows.find((row) => row.planRevenue > 0 && row.actualForecast >= row.planRevenue)
+  const [hoveredRow, setHoveredRow] = useState(null)
+  const forecastPeriodLabel = rows.length > 0 ? `${rows[0].label} ~ ${rows[rows.length - 1].label}` : '-'
+
+  return (
+    <Panel
+      title="1년 Forecast 그래프"
+      right={
+        <div className="flex flex-wrap justify-end gap-2">
+          {forecastChannels.map((ch) => {
+            const active = ch.id === activeChannel.id
+            return (
+              <button
+                key={ch.id}
+                type="button"
+                onClick={() => setActiveId(ch.id)}
+                className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-black transition-colors ${
+                  active
+                    ? `${ch.headerCls} shadow-sm`
+                    : 'border-slate-200 bg-white text-slate-500 hover:border-sky-300 hover:text-sky-700'
+                }`}
+              >
+                <span className="material-symbols-outlined text-base">{ch.icon}</span>
+                {ch.label}
+              </button>
+            )
+          })}
+        </div>
+      }
+    >
+      <div className="space-y-5 p-5">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-black text-slate-500">12개월 전체 목표 매출</p>
+            <p className="mt-2 text-xl font-black text-slate-950">{wonFmt(totalPlan)}</p>
+            <p className="mt-1 text-xs font-bold text-slate-400">{forecastPeriodLabel}</p>
+          </div>
+          <div className="rounded-xl border border-sky-200 bg-sky-50 p-4">
+            <p className="text-xs font-black text-sky-700">12개월 누적 실매출</p>
+            <p className="mt-2 text-xl font-black text-slate-950">{wonFmt(totalActual)}</p>
+            <p className="mt-1 text-xs font-bold text-slate-500">현재 월 기준 {wonFmt(baseActual)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <p className="text-xs font-black text-slate-500">12개월 BEP 달성률</p>
+            <p className={`mt-2 text-xl font-black ${totalActual >= totalPlan ? 'text-sky-600' : 'text-rose-600'}`}>{pctFmt(avgBepRate)}</p>
+            <p className="mt-1 text-xs font-bold text-slate-400">실매출 / 목표매출</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <p className="text-xs font-black text-slate-500">현재 기준 달성률</p>
+            <p className={`mt-2 text-xl font-black ${currentAchievementRate >= 100 ? 'text-sky-600' : 'text-rose-600'}`}>
+              {pctFmt(currentAchievementRate)}
+            </p>
+            <p className="mt-1 text-xs font-bold text-slate-400">현재 월 실매출 / 12개월 목표</p>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+            <div className="rounded-xl bg-slate-50 p-3">
+              <p className="text-[11px] font-black text-slate-500">선택 월</p>
+              <p className="mt-1 text-lg font-black text-slate-950">{hoveredRow?.label || '월 선택'}</p>
+            </div>
+            <div className="rounded-xl bg-sky-50 p-3">
+              <p className="text-[11px] font-black text-sky-700">계획 매출</p>
+              <p className="mt-1 text-lg font-black text-slate-950">{hoveredRow ? wonFmt(hoveredRow.planRevenue) : '-'}</p>
+            </div>
+            <div className="rounded-xl bg-rose-50 p-3">
+              <p className="text-[11px] font-black text-rose-700">실제 매출</p>
+              <p className="mt-1 text-lg font-black text-slate-950">{hoveredRow ? wonFmt(hoveredRow.actualForecast) : '-'}</p>
+            </div>
+            <div className="rounded-xl bg-slate-50 p-3">
+              <p className="text-[11px] font-black text-slate-500">BEP 달성률</p>
+              <p className={`mt-1 text-lg font-black ${hoveredRow?.planRevenue > 0 && hoveredRow.actualForecast >= hoveredRow.planRevenue ? 'text-sky-600' : 'text-rose-600'}`}>
+                {hoveredRow?.planRevenue > 0 ? pctFmt(hoveredRow.bepRate, 1) : '-'}
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+          <div className="flex min-w-[1080px] items-end gap-3 rounded-2xl border border-slate-200 bg-white px-5 pb-5 pt-6">
+            {rows.map((row) => {
+              const planHeight = Math.max(4, (row.planRevenue / maxRevenue) * 180)
+              const actualHeight = Math.max(4, (row.actualForecast / maxRevenue) * 180)
+              const achieved = row.planRevenue > 0 && row.actualForecast >= row.planRevenue
+              return (
+                <div
+                  key={row.key}
+                  className="group relative flex flex-1 flex-col items-center gap-2"
+                  onMouseEnter={() => setHoveredRow(row)}
+                  onMouseLeave={() => setHoveredRow(null)}
+                >
+                  {false && hoveredRow?.key === row.key && (
+                    <div className="absolute bottom-[232px] left-1/2 z-10 w-52 -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-xl">
+                      <p className="text-xs font-black text-slate-900">{row.label} Forecast</p>
+                      <div className="mt-2 space-y-1 text-xs font-bold">
+                        <div className="flex justify-between gap-3">
+                          <span className="text-sky-600">계획 매출</span>
+                          <span className="text-slate-900">{wonFmt(row.planRevenue)}</span>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <span className="text-rose-600">실제 매출</span>
+                          <span className="text-slate-900">{wonFmt(row.actualForecast)}</span>
+                        </div>
+                        <div className="flex justify-between gap-3 border-t border-slate-100 pt-1">
+                          <span className="text-slate-500">BEP</span>
+                          <span className={achieved ? 'text-sky-600' : 'text-rose-600'}>{pctFmt(row.bepRate, 1)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex h-48 w-full items-end justify-center gap-1.5">
+                    <div
+                      className="w-5 rounded-t bg-sky-500 transition-all group-hover:scale-x-125 group-hover:opacity-90"
+                      style={{ height: `${planHeight}px` }}
+                      title={`계획 ${wonFmt(row.planRevenue)}`}
+                    />
+                    <div
+                      className="w-5 rounded-t bg-rose-500 transition-all group-hover:scale-x-125 group-hover:opacity-90"
+                      style={{ height: `${actualHeight}px` }}
+                      title={`실제 ${wonFmt(row.actualForecast)}`}
+                    />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[11px] font-black text-slate-700">{row.label}</p>
+                    <p className="mt-1 text-[10px] font-black text-sky-600">{wonFmt(row.planRevenue).replace(' 원', '')}</p>
+                    <p className="text-[10px] font-black text-rose-600">{wonFmt(row.actualForecast).replace(' 원', '')}</p>
+                    <p className={`mt-1 text-[11px] font-black ${achieved ? 'text-sky-600' : 'text-rose-600'}`}>
+                      {row.planRevenue > 0 ? pctFmt(row.bepRate, 0) : '-'}
+                    </p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-bold text-slate-500">
+          <div className="flex flex-wrap gap-3">
+            <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-sky-500" />계획 매출</span>
+            <span className="inline-flex items-center gap-1"><span className="h-3 w-3 rounded bg-rose-500" />실제 매출</span>
+          </div>
+          <span>첫 달은 상단 카드와 동일 · 이후 월은 설정한 익월 성장률 적용 · 전사 매출은 국내온라인+국내오프라인+해외수출 합산</span>
+        </div>
+      </div>
+      </div>
+    </Panel>
+  )
+}
+
 function SalesSourceAudit({ rows = [] }) {
   const usageClass = {
     actual: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -453,6 +713,7 @@ export default function ProfitManagementPage() {
   const [salesRefreshMessage, setSalesRefreshMessage] = useState('')
   const [salesUpdatedAt, setSalesUpdatedAt] = useState('')
   const [selectedMonth, setSelectedMonth] = useState(monthStartText())
+  const [forecastGrowth, setForecastGrowth] = useState({ online: 100, offline: 100, export: 100 })
 
   const [productsByChannel, setProductsByChannel] = useState({ online: [], offline: [], export: [], consulting: [] })
   const [planQty, setPlanQty] = useState({ online: {}, offline: {}, export: {}, consulting: {} })
@@ -460,11 +721,11 @@ export default function ProfitManagementPage() {
   useEffect(() => {
     setLoading(true)
     getProfitManagement({ planMonth: selectedMonth })
-      .then((res) => {
+      .then(async (res) => {
         const d = res.data
         setData(d)
 
-        const hasUsablePlan = d.plan?.some((item) =>
+        const isUsablePlan = (items = []) => items.some((item) =>
           num(item.sale_price) > 0 ||
           num(item.cogs) > 0 ||
           num(item.logistics_cost) > 0 ||
@@ -472,11 +733,27 @@ export default function ProfitManagementPage() {
           num(item.other_cost) > 0 ||
           num(item.planned_qty) > 0
         )
+        const hasUsablePlan = isUsablePlan(d.plan)
+        let seedPlan = isUsablePlan(d.previousPlan) ? d.previousPlan : []
+        let seedOffset = seedPlan.length > 0 ? 1 : 0
+
+        if (!hasUsablePlan && seedPlan.length === 0) {
+          for (let offset = 2; offset <= 12; offset += 1) {
+            const seedMonth = nextMonthText(selectedMonth, -offset)
+            const seedRes = await getProfitManagement({ planMonth: seedMonth })
+            const candidate = seedRes.data?.plan || []
+            if (isUsablePlan(candidate)) {
+              seedPlan = candidate
+              seedOffset = monthDiff(seedMonth, selectedMonth)
+              break
+            }
+          }
+        }
 
         const byChannel = { online: [], offline: [], export: [], consulting: [] }
         const qty = { online: {}, offline: {}, export: {}, consulting: {} }
         const currentPlanByName = new Map((d.plan || []).map((item) => [`${item.channel}::${item.product_name}`, item]))
-        const previousPlanByName = new Map((d.previousPlan || []).map((item) => [`${item.channel}::${item.product_name}`, item]))
+        const previousPlanByName = new Map((seedPlan || []).map((item) => [`${item.channel}::${item.product_name}`, item]))
 
         if (hasUsablePlan) {
           // 저장된 계획 불러오기. 온라인은 아래에서 제조 원가 기준으로 다시 채운다.
@@ -488,14 +765,17 @@ export default function ProfitManagementPage() {
             if (!qty[ch]) qty[ch] = {}
             qty[ch][key] = item.planned_qty
           })
-        } else if (d.previousPlan?.length > 0) {
-          d.previousPlan.forEach((item) => {
+        } else if (seedPlan.length > 0) {
+          seedPlan.forEach((item) => {
             const key = `f_${item.id}`
             const ch = item.channel
+            const growthRate = num(forecastGrowth?.[ch] || 100) / 100
+            const growthFactor = Math.pow(growthRate, seedOffset || 1)
+            const forecastQty = Math.ceil(num(item.planned_qty) * growthFactor)
             if (!byChannel[ch]) byChannel[ch] = []
-            byChannel[ch].push({ ...item, planned_qty: Math.ceil(num(item.planned_qty) * 1.2), _key: key })
+            byChannel[ch].push({ ...item, planned_qty: forecastQty, _key: key })
             if (!qty[ch]) qty[ch] = {}
-            qty[ch][key] = Math.ceil(num(item.planned_qty) * 1.2)
+            qty[ch][key] = forecastQty
           })
         }
 
@@ -523,11 +803,11 @@ export default function ProfitManagementPage() {
               other_cost: num(currentPlan?.other_cost) || num(p.platform_fee) + num(p.operating_admin_cost),
             })
             const previousPlan = previousPlanByName.get(`online::${p.product_name}`)
-            const monthGrowthFallback = selectedMonth > monthStartText() ? 1.2 : 1
+            const monthGrowthFallback = seedOffset > 0 ? Math.pow(num(forecastGrowth.online || 100) / 100, seedOffset) : 1
             qty.online[key] = currentPlan
               ? num(currentPlan.planned_qty)
               : previousPlan
-              ? Math.ceil(num(previousPlan.planned_qty) * 1.2)
+              ? Math.ceil(num(previousPlan.planned_qty) * monthGrowthFallback)
               : Math.ceil(num(p.target_qty) * monthGrowthFallback)
           })
         }
@@ -537,7 +817,7 @@ export default function ProfitManagementPage() {
       })
       .catch(() => setError('데이터를 불러오지 못했습니다.'))
       .finally(() => setLoading(false))
-  }, [selectedMonth])
+  }, [selectedMonth, forecastGrowth])
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -647,23 +927,38 @@ export default function ProfitManagementPage() {
   async function handleSave() {
     if (!data) return
     setSaving(true)
-    const items = []
-    CHANNELS.forEach((ch) => {
-      ;(productsByChannel[ch.id] || []).forEach((p) => {
-        items.push({
-          channel: ch.id,
-          product_name: p.product_name,
-          sale_price: p.sale_price,
-          cogs: p.cogs,
-          logistics_cost: p.logistics_cost,
-          marketing_cost: p.marketing_cost,
-          other_cost: p.other_cost,
-          planned_qty: planQty[ch.id]?.[p._key] || 0,
+    const buildPlanItems = (monthOffset = 0) => {
+      const items = []
+      CHANNELS.forEach((ch) => {
+        const growthRate = ['online', 'offline', 'export'].includes(ch.id)
+          ? num(forecastGrowth?.[ch.id] || 100) / 100
+          : 1
+        const growthFactor = Math.pow(growthRate, monthOffset)
+        ;(productsByChannel[ch.id] || []).forEach((p) => {
+          const baseQty = num(planQty[ch.id]?.[p._key] || 0)
+          const plannedQty = monthOffset === 0
+            ? baseQty
+            : baseQty > 0
+            ? Math.ceil(baseQty * growthFactor)
+            : 0
+          items.push({
+            channel: ch.id,
+            product_name: p.product_name,
+            sale_price: p.sale_price,
+            cogs: p.cogs,
+            logistics_cost: p.logistics_cost,
+            marketing_cost: p.marketing_cost,
+            other_cost: p.other_cost,
+            planned_qty: plannedQty,
+          })
         })
       })
-    })
+      return items
+    }
     try {
-      await saveProfitPlan(data.planMonth, items)
+      for (let offset = 0; offset < 12; offset += 1) {
+        await saveProfitPlan(nextMonthText(data.planMonth, offset), buildPlanItems(offset))
+      }
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch {
@@ -716,6 +1011,13 @@ export default function ProfitManagementPage() {
     { id: 'export', title: '해외', actualKey: 'export' },
   ]
   const bepPlanTotal = bepChannels.reduce((sum, ch) => sum + num(summary.channelSummary?.[ch.id]?.revenue), 0)
+  const planSummaryContrib = bepChannels.reduce((sum, ch) => sum + num(summary.channelSummary?.[ch.id]?.contrib), 0)
+  const planSummaryActualSales = bepChannels.reduce((sum, ch) => sum + num(actualSales[ch.actualKey]), 0)
+  const planSummaryBepRate = bepPlanTotal > 0 ? (planSummaryActualSales / bepPlanTotal) * 100 : 0
+  const planSummaryOperatingProfit = planSummaryContrib - summary.fixedCost
+  const planSummaryOperatingProfitRate = bepPlanTotal > 0 ? (planSummaryOperatingProfit / bepPlanTotal) * 100 : 0
+  const planSummaryNetProfit = planSummaryOperatingProfit - summary.monthlyInterestCost
+  const planSummaryNetProfitRate = bepPlanTotal > 0 ? (planSummaryNetProfit / bepPlanTotal) * 100 : 0
 
   function buildChannelBepRows(ch) {
     const planRevenue = num(summary.channelSummary?.[ch.id]?.revenue)
@@ -807,6 +1109,12 @@ export default function ProfitManagementPage() {
       </div>
 
       <div className="space-y-6">
+        <ForecastGrowthSettings
+          channels={CHANNELS}
+          forecastGrowth={forecastGrowth}
+          setForecastGrowth={setForecastGrowth}
+        />
+
         <section className="rounded-2xl border border-sky-200 bg-sky-50 p-5 shadow-sm">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div>
@@ -847,7 +1155,34 @@ export default function ProfitManagementPage() {
       </div>
 
       {/* 재무 기반 정보 카드 (DB 자동 pull) */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <Panel title="이번달 계획 요약">
+        <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-5">
+          <div className="rounded-xl bg-slate-50 p-4">
+            <p className="text-xs font-black text-slate-500">총 계획 매출</p>
+            <p className="mt-2 text-xl font-black text-slate-950">{wonFmt(bepPlanTotal)}</p>
+          </div>
+          <div className="rounded-xl bg-slate-50 p-4">
+            <p className="text-xs font-black text-slate-500">공헌이익</p>
+            <p className={`mt-2 text-xl font-black ${planSummaryContrib >= 0 ? 'text-sky-600' : 'text-rose-600'}`}>{wonFmt(planSummaryContrib)}</p>
+          </div>
+          <div className="rounded-xl bg-slate-50 p-4">
+            <p className="text-xs font-black text-slate-500">BEP 달성률</p>
+            <p className={`mt-2 text-xl font-black ${planSummaryBepRate >= 100 ? 'text-sky-600' : 'text-rose-600'}`}>{bepPlanTotal > 0 ? pctFmt(planSummaryBepRate) : '-'}</p>
+          </div>
+          <div className="rounded-xl bg-slate-50 p-4">
+            <p className="text-xs font-black text-slate-500">영업이익</p>
+            <p className={`mt-2 text-xl font-black ${planSummaryOperatingProfit >= 0 ? 'text-sky-600' : 'text-rose-600'}`}>{wonFmt(planSummaryOperatingProfit)}</p>
+            <p className="mt-1 text-xs font-bold text-slate-500">고정비 자동 차감 · {bepPlanTotal > 0 ? pctFmt(planSummaryOperatingProfitRate) : '-'}</p>
+          </div>
+          <div className="rounded-xl bg-slate-50 p-4">
+            <p className="text-xs font-black text-slate-500">순이익</p>
+            <p className={`mt-2 text-xl font-black ${planSummaryNetProfit >= 0 ? 'text-sky-600' : 'text-rose-600'}`}>{wonFmt(planSummaryNetProfit)}</p>
+            <p className="mt-1 text-xs font-bold text-slate-500">부채 이자 자동 차감 · {bepPlanTotal > 0 ? pctFmt(planSummaryNetProfitRate) : '-'}</p>
+          </div>
+        </div>
+      </Panel>
+
+      <div className="hidden">
         <Panel title="📌 이번 달 고정비">
           <div className="space-y-1.5 p-4 text-sm">
             {data?.fixedCosts?.length > 0 ? (
@@ -959,6 +1294,14 @@ export default function ProfitManagementPage() {
         productsByChannel={productsByChannel}
         planQty={planQty}
         actualSales={actualSales}
+      />
+
+      <YearForecastChart
+        channels={CHANNELS}
+        summary={summary}
+        actualSales={actualSales}
+        selectedMonth={selectedMonth}
+        forecastGrowth={forecastGrowth}
       />
 
       <SalesSourceAudit rows={data?.salesSources || []} />

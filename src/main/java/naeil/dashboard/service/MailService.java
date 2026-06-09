@@ -12,11 +12,13 @@ import jakarta.mail.Store;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeUtility;
 import java.io.IOException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
+import naeil.dashboard.common.config.DaouProperties;
 import naeil.dashboard.dto.MailItemResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -27,6 +29,13 @@ public class MailService {
     private static final String IMAP_HOST = "imap.daouoffice.com";
     private static final int IMAP_PORT = 993;
     private static final int PREVIEW_LENGTH = 100;
+    private static final int DEFAULT_TIMEOUT_MS = 10000;
+
+    private final DaouProperties daouProperties;
+
+    public MailService(DaouProperties daouProperties) {
+        this.daouProperties = daouProperties;
+    }
 
     public List<MailItemResponse> getMails(String loginId, String password, int page, int size) {
         return getMails(loginId, password, "inbox", page, size);
@@ -39,23 +48,23 @@ public class MailService {
     public List<MailItemResponse> getMails(String loginId, String password, String host, String folderType, int page, int size) {
         int safePage = Math.max(0, page);
         int safeSize = Math.min(Math.max(1, size), 50);
-        String resolvedHost = resolveHost(host);
+        MailEndpoint endpoint = resolveEndpoint(host);
 
         Properties props = new Properties();
         props.put("mail.store.protocol", "imaps");
-        props.put("mail.imaps.host", resolvedHost);
-        props.put("mail.imaps.port", String.valueOf(IMAP_PORT));
+        props.put("mail.imaps.host", endpoint.host());
+        props.put("mail.imaps.port", String.valueOf(endpoint.port()));
         props.put("mail.imaps.ssl.enable", "true");
-        props.put("mail.imaps.connectiontimeout", "10000");
-        props.put("mail.imaps.timeout", "10000");
-        props.put("mail.imaps.writetimeout", "10000");
+        props.put("mail.imaps.connectiontimeout", timeoutMillis(daouProperties.resolvedConnectTimeout()));
+        props.put("mail.imaps.timeout", timeoutMillis(daouProperties.resolvedReadTimeout()));
+        props.put("mail.imaps.writetimeout", timeoutMillis(daouProperties.resolvedReadTimeout()));
 
         Store store = null;
         Folder inbox = null;
         try {
             Session mailSession = Session.getInstance(props);
             store = mailSession.getStore("imaps");
-            store.connect(resolvedHost, IMAP_PORT, loginId, password);
+            store.connect(endpoint.host(), endpoint.port(), loginId, password);
 
             inbox = resolveFolder(store, folderType);
             if (!inbox.exists()) {
@@ -94,21 +103,21 @@ public class MailService {
     }
 
     public void validateConnection(String loginId, String password, String host) {
-        String resolvedHost = resolveHost(host);
+        MailEndpoint endpoint = resolveEndpoint(host);
         Properties props = new Properties();
         props.put("mail.store.protocol", "imaps");
-        props.put("mail.imaps.host", resolvedHost);
-        props.put("mail.imaps.port", String.valueOf(IMAP_PORT));
+        props.put("mail.imaps.host", endpoint.host());
+        props.put("mail.imaps.port", String.valueOf(endpoint.port()));
         props.put("mail.imaps.ssl.enable", "true");
-        props.put("mail.imaps.connectiontimeout", "10000");
-        props.put("mail.imaps.timeout", "10000");
-        props.put("mail.imaps.writetimeout", "10000");
+        props.put("mail.imaps.connectiontimeout", timeoutMillis(daouProperties.resolvedConnectTimeout()));
+        props.put("mail.imaps.timeout", timeoutMillis(daouProperties.resolvedReadTimeout()));
+        props.put("mail.imaps.writetimeout", timeoutMillis(daouProperties.resolvedReadTimeout()));
 
         Store store = null;
         try {
             Session mailSession = Session.getInstance(props);
             store = mailSession.getStore("imaps");
-            store.connect(resolvedHost, IMAP_PORT, loginId, password);
+            store.connect(endpoint.host(), endpoint.port(), loginId, password);
         } catch (AuthenticationFailedException e) {
             throw new MailConnectionException("다우오피스 메일 ID 또는 비밀번호가 맞지 않습니다.", e);
         } catch (MessagingException e) {
@@ -223,19 +232,45 @@ public class MailService {
         return value == null ? "" : value.replaceAll("\\s+", " ").trim();
     }
 
-    private String resolveHost(String host) {
+    private MailEndpoint resolveEndpoint(String host) {
+        String defaultHost = daouProperties.mail() != null ? daouProperties.mail().resolvedHost() : IMAP_HOST;
+        int defaultPort = daouProperties.mail() != null ? daouProperties.mail().resolvedPort() : IMAP_PORT;
         if (!StringUtils.hasText(host)) {
-            return IMAP_HOST;
+            return new MailEndpoint(defaultHost, defaultPort);
         }
-        return host.trim()
+        String cleaned = host.trim()
                 .replace("https://", "")
+                .replace("imaps://", "")
+                .replace("imap://", "")
                 .replace("http://", "")
                 .replaceAll("/+$", "");
+        int slashIndex = cleaned.indexOf('/');
+        if (slashIndex >= 0) {
+            cleaned = cleaned.substring(0, slashIndex);
+        }
+        int port = defaultPort;
+        int colonIndex = cleaned.lastIndexOf(':');
+        if (colonIndex > 0 && colonIndex < cleaned.length() - 1) {
+            String maybePort = cleaned.substring(colonIndex + 1);
+            if (maybePort.matches("\\d+")) {
+                port = Integer.parseInt(maybePort);
+                cleaned = cleaned.substring(0, colonIndex);
+            }
+        }
+        return new MailEndpoint(StringUtils.hasText(cleaned) ? cleaned : defaultHost, port);
+    }
+
+    private String timeoutMillis(Duration duration) {
+        Duration resolved = duration != null ? duration : Duration.ofMillis(DEFAULT_TIMEOUT_MS);
+        return String.valueOf(Math.max(1000, resolved.toMillis()));
     }
 
     private String toConnectionMessage(MessagingException e) {
-        String raw = e.getMessage() == null ? "" : e.getMessage();
+        String raw = collectMessages(e);
         String lower = raw.toLowerCase();
+        if (lower.contains("auth") || lower.contains("login") || lower.contains("credential") || lower.contains("password")) {
+            return "다우오피스 메일 ID 또는 비밀번호가 맞지 않습니다. 메일 주소 전체와 메일 비밀번호를 확인해주세요.";
+        }
         if (lower.contains("connect") || lower.contains("timeout") || lower.contains("unknownhost")) {
             return "다우오피스 IMAP 서버에 연결하지 못했습니다. 사내망/방화벽 또는 IMAP 사용 설정을 확인해주세요.";
         }
@@ -247,6 +282,21 @@ public class MailService {
         }
         return "다우오피스 메일 연결에 실패했습니다. " + raw;
     }
+
+    private String collectMessages(Throwable throwable) {
+        StringBuilder builder = new StringBuilder();
+        Throwable current = throwable;
+        while (current != null) {
+            if (current.getMessage() != null && !current.getMessage().isBlank()) {
+                if (!builder.isEmpty()) builder.append(" / ");
+                builder.append(current.getMessage());
+            }
+            current = current.getCause();
+        }
+        return builder.toString();
+    }
+
+    private record MailEndpoint(String host, int port) {}
 
     private void closeQuietly(Folder folder) {
         if (folder != null && folder.isOpen()) {

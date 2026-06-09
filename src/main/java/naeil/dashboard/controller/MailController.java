@@ -28,10 +28,56 @@ public class MailController {
     private final MailService mailService;
     private final IntegrationCredentialService credentialService;
 
+    @GetMapping("/status")
+    public ResponseEntity<Map<String, Object>> getMailStatus(
+            @RequestParam(defaultValue = "false") boolean validate
+    ) {
+        IntegrationCredentialService.DaouMailCredentials credentials =
+                credentialService.getDaouMailCredentials(DEFAULT_COMPANY_ID);
+        boolean hasCredentials = StringUtils.hasText(credentials.username()) && StringUtils.hasText(credentials.password());
+        if (!hasCredentials) {
+            return ResponseEntity.ok(Map.of(
+                    "connected", false,
+                    "host", credentials.host(),
+                    "username", maskUsername(credentials.username()),
+                    "message", "메일 계정 연결 필요"
+            ));
+        }
+
+        if (!validate) {
+            return ResponseEntity.ok(Map.of(
+                    "connected", true,
+                    "host", credentials.host(),
+                    "username", maskUsername(credentials.username()),
+                    "message", "메일 계정 정보가 저장되어 있습니다."
+            ));
+        }
+
+        try {
+            mailService.validateConnection(credentials.username(), credentials.password(), credentials.host());
+            return ResponseEntity.ok(Map.of(
+                    "connected", true,
+                    "host", credentials.host(),
+                    "username", maskUsername(credentials.username()),
+                    "message", "다우오피스 IMAP 연결 테스트 성공"
+            ));
+        } catch (MailConnectionException e) {
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
+                    "connected", false,
+                    "host", credentials.host(),
+                    "username", maskUsername(credentials.username()),
+                    "message", e.getMessage()
+            ));
+        }
+    }
+
     @PostMapping("/connect")
     public ResponseEntity<Map<String, String>> connectMail(@RequestBody MailConnectRequest request) {
         if (!StringUtils.hasText(request.loginId()) || !StringUtils.hasText(request.password())) {
             return ResponseEntity.badRequest().body(Map.of("message", "메일 ID와 비밀번호를 입력해주세요."));
+        }
+        if (!request.loginId().contains("@")) {
+            return ResponseEntity.badRequest().body(Map.of("message", "다우오피스 ID는 admin이 아니라 메일 주소 전체를 입력해주세요. 예: name@company.com"));
         }
         try {
             mailService.validateConnection(request.loginId(), request.password(), request.host());
@@ -70,5 +116,18 @@ public class MailController {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                     .body(Map.of("message", e.getMessage()));
         }
+    }
+
+    private String maskUsername(String username) {
+        if (!StringUtils.hasText(username)) {
+            return "";
+        }
+        int at = username.indexOf('@');
+        String head = at > 0 ? username.substring(0, at) : username;
+        String domain = at > 0 ? username.substring(at) : "";
+        if (head.length() <= 2) {
+            return head.charAt(0) + "*" + domain;
+        }
+        return head.substring(0, 2) + "*".repeat(Math.max(1, head.length() - 2)) + domain;
     }
 }

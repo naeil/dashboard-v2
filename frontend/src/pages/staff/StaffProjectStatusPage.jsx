@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { getUsers } from '../../api/authApi'
 import { createExecutiveRecord, deleteExecutiveRecord, getExecutiveWorkTasks, updateExecutiveRecord } from '../../api/executiveApi'
 import { isTaskDelayed, taskProgress } from '../executive/workTaskUtils'
 
@@ -34,6 +35,8 @@ const emptyTask = {
   today_work: '',
   next_action: '',
   blocker_text: '',
+  request_text: '',
+  review_comment: '',
 }
 
 const inputClass = 'h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-bold text-slate-950 outline-none focus:border-slate-900'
@@ -144,11 +147,32 @@ function rangePosition(task, days) {
   }
 }
 
+function mentionTargets(text = '') {
+  return Array.from(String(text).matchAll(/@([^\s,.:;()[\]{}]+)/g)).map((match) => normalizeMentionKey(match[1])).filter(Boolean)
+}
+
+function normalizeMentionKey(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/(대표님|팀장님|매니저님|님|씨|대표|팀장|매니저)$/g, '')
+}
+
+function isMentioned(task, names = []) {
+  const haystack = [task.request_text, task.review_comment, task.next_action, task.blocker_text].join('\n')
+  const mentions = mentionTargets(haystack)
+  const keys = names.map(normalizeMentionKey).filter(Boolean)
+  return keys.some((key) => mentions.some((mention) => mention === key || mention.startsWith(key)))
+}
+
 export default function StaffProjectStatusPage({ username, displayName, department }) {
   const [tasks, setTasks] = useState([])
+  const [users, setUsers] = useState([])
   const [view, setView] = useState('list')
   const [cursorDate, setCursorDate] = useState(toDate())
   const [projectFilter, setProjectFilter] = useState('ALL')
+  const [employeeFilter, setEmployeeFilter] = useState('ALL')
   const [showProjectCalendar, setShowProjectCalendar] = useState(true)
   const [showMyCalendar, setShowMyCalendar] = useState(true)
   const [showEditor, setShowEditor] = useState(false)
@@ -169,8 +193,9 @@ export default function StaffProjectStatusPage({ username, displayName, departme
   const load = async () => {
     setLoading(true)
     try {
-      const response = await getExecutiveWorkTasks()
-      setTasks(response.data || [])
+      const [taskResponse, userResponse] = await Promise.all([getExecutiveWorkTasks(), getUsers()])
+      setTasks(taskResponse.data || [])
+      setUsers(userResponse.data || [])
     } finally {
       setLoading(false)
     }
@@ -188,6 +213,17 @@ export default function StaffProjectStatusPage({ username, displayName, departme
   const projectNameOptions = useMemo(() => (
     Array.from(new Set(tasks.map((task) => task.project_name).filter(Boolean))).sort((a, b) => a.localeCompare(b))
   ), [tasks])
+
+  const employeeNames = useMemo(() => (
+    Array.from(new Set([
+      ...users.map((user) => user.display_name || user.displayName || user.username).filter(Boolean),
+      ...tasks.map((task) => task.assignee_name || '담당자 미지정').filter(Boolean),
+    ])).sort((a, b) => a.localeCompare(b))
+  ), [tasks, users])
+
+  const myMentionKeys = useMemo(() => (
+    [username, displayName].filter(Boolean).map((value) => String(value).trim())
+  ), [displayName, username])
 
   const projectSummaries = useMemo(() => (
     projectNameOptions.map((project) => {
@@ -229,8 +265,19 @@ export default function StaffProjectStatusPage({ username, displayName, departme
   }, [displayName, showMyCalendar, showProjectCalendar, tasks, username])
 
   const visibleTasks = useMemo(() => (
-    projectFilter === 'ALL' ? calendarTasks : calendarTasks.filter((task) => (task.project_name || '프로젝트 미지정') === projectFilter)
-  ), [calendarTasks, projectFilter])
+    calendarTasks.filter((task) => {
+      const projectMatches = projectFilter === 'ALL' || (task.project_name || '프로젝트 미지정') === projectFilter
+      const employeeMatches = employeeFilter === 'ALL' || (task.assignee_name || '담당자 미지정') === employeeFilter
+      return projectMatches && employeeMatches
+    })
+  ), [calendarTasks, employeeFilter, projectFilter])
+
+  const mentionNotifications = useMemo(() => (
+    tasks
+      .filter((task) => isMentioned(task, myMentionKeys))
+      .sort((a, b) => String(b.id || '').localeCompare(String(a.id || '')))
+      .slice(0, 8)
+  ), [myMentionKeys, tasks])
 
   const stats = useMemo(() => ({
     active: visibleTasks.filter((task) => task.status !== 'DONE').length,
@@ -244,17 +291,22 @@ export default function StaffProjectStatusPage({ username, displayName, departme
   const monthDays = useMemo(() => monthGrid(cursorDate), [cursorDate])
 
   const groupedList = useMemo(() => {
-    const map = new Map(statusOptions.map(([status]) => [status, []]))
+    const map = new Map()
     visibleTasks.forEach((task) => {
-      const key = task.status || 'WAITING'
+      const key = task.assignee_name || '담당자 미지정'
       if (!map.has(key)) map.set(key, [])
       map.get(key).push(task)
     })
     return Array.from(map.entries())
       .filter(([, rows]) => rows.length > 0)
-      .map(([status, rows]) => [
-        status,
-        rows.sort((a, b) => String(a.due_date || '').localeCompare(String(b.due_date || ''))),
+      .map(([assignee, rows]) => [
+        assignee,
+        rows.sort((a, b) => {
+          const statusA = statusOptions.findIndex(([value]) => value === (a.status || 'WAITING'))
+          const statusB = statusOptions.findIndex(([value]) => value === (b.status || 'WAITING'))
+          if (statusA !== statusB) return statusA - statusB
+          return String(a.due_date || '').localeCompare(String(b.due_date || ''))
+        }),
       ])
   }, [visibleTasks])
 
@@ -330,6 +382,8 @@ export default function StaffProjectStatusPage({ username, displayName, departme
       today_work: task.today_work || '',
       next_action: task.next_action || '',
       blocker_text: task.blocker_text || '',
+      request_text: task.request_text || '',
+      review_comment: task.review_comment || '',
     })
     setShowEditor(true)
   }
@@ -431,10 +485,33 @@ export default function StaffProjectStatusPage({ username, displayName, departme
           </section>
 
           <section className="mb-8">
-            <h2 className="mb-3 text-sm font-black text-slate-950">프로젝트</h2>
+            <h2 className="mb-3 text-sm font-black text-slate-950">직원</h2>
+            <select value={employeeFilter} onChange={(event) => setEmployeeFilter(event.target.value)} className="mb-3 h-10 w-full rounded border border-slate-300 px-3 text-sm font-bold text-slate-700">
+              <option value="ALL">전체 직원</option>
+              {employeeNames.map((employee) => <option key={employee} value={employee}>{employee}</option>)}
+            </select>
+            <h2 className="mb-3 text-sm font-black text-slate-500">프로젝트</h2>
             <select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)} className="h-10 w-full rounded border border-slate-300 px-3 text-sm font-bold text-slate-700">
               {projects.map((project) => <option key={project} value={project}>{project === 'ALL' ? '전체' : project}</option>)}
             </select>
+          </section>
+
+          <section className="mb-8 rounded-xl border border-sky-100 bg-sky-50 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-black text-sky-900">담당자 알림</h2>
+              <span className="rounded-full bg-white px-2 py-0.5 text-xs font-black text-sky-700">{mentionNotifications.length}건</span>
+            </div>
+            <div className="space-y-2">
+              {mentionNotifications.slice(0, 3).map((task) => (
+                <button key={task.id} type="button" onClick={() => openEdit(task)} className="w-full rounded-lg bg-white px-3 py-2 text-left text-xs font-bold text-slate-700 shadow-sm hover:bg-sky-100">
+                  <span className="block truncate font-black text-slate-950">@멘션 · {task.task_name}</span>
+                  <span className="mt-0.5 block truncate text-slate-500">{task.request_text || task.review_comment || task.next_action || task.blocker_text}</span>
+                </button>
+              ))}
+              {mentionNotifications.length === 0 && (
+                <p className="text-xs font-bold text-sky-700">나를 태그한 요청이 없습니다.</p>
+              )}
+            </div>
           </section>
 
           <section className="space-y-3 border-t border-slate-200 pt-6">
@@ -563,6 +640,15 @@ export default function StaffProjectStatusPage({ username, displayName, departme
               <input value={form.task_name} onChange={(event) => setField('task_name', event.target.value)} required className={inputClass} />
             </Field>
 
+            <Field label="담당자">
+              <input
+                value={form.assignee_name}
+                onChange={(event) => setField('assignee_name', event.target.value)}
+                placeholder="담당 직원 이름"
+                className={inputClass}
+              />
+            </Field>
+
             <div className="grid grid-cols-2 gap-3">
               <Field label="시작일">
                 <input type="date" value={form.start_date} onChange={(event) => setField('start_date', event.target.value)} className={inputClass} />
@@ -608,6 +694,24 @@ export default function StaffProjectStatusPage({ username, displayName, departme
             <Field label="막힌 이슈">
               <textarea value={form.blocker_text} onChange={(event) => setField('blocker_text', event.target.value)} rows="3" className={textareaClass} />
             </Field>
+            <Field label="요청 / 도움 요청">
+              <MentionTextarea
+                value={form.request_text}
+                onChange={(value) => setField('request_text', value)}
+                users={users}
+                rows="3"
+                placeholder="@이재연 자료 확인 요청"
+              />
+            </Field>
+            <Field label="관리자 피드백 / 개선 사항">
+              <MentionTextarea
+                value={form.review_comment}
+                onChange={(value) => setField('review_comment', value)}
+                users={users}
+                rows="3"
+                placeholder="@담당자 피드백을 입력하면 해당 직원 알림에 표시됩니다."
+              />
+            </Field>
 
             <div className="mt-6 flex gap-2">
               {editingId && (
@@ -632,6 +736,119 @@ function Field({ label, children }) {
       <span className="mb-1 block text-xs font-black text-slate-500">{label}</span>
       {children}
     </label>
+  )
+}
+
+function MentionTextarea({ value, onChange, users = [], rows = 3, placeholder }) {
+  const inputRef = useRef(null)
+  const [cursor, setCursor] = useState(0)
+
+  const mention = useMemo(() => {
+    const beforeCursor = String(value || '').slice(0, cursor)
+    const match = beforeCursor.match(/@([^\s@]*)$/)
+    if (!match) return null
+    return {
+      query: match[1].toLowerCase(),
+      start: cursor - match[0].length,
+      end: cursor,
+    }
+  }, [cursor, value])
+
+  const options = useMemo(() => {
+    if (!mention) return []
+    const seen = new Set()
+    return users
+      .map((user) => ({
+        name: user.display_name || user.displayName || user.username,
+        username: user.username,
+        department: user.department,
+        role: user.role,
+      }))
+      .filter((user) => {
+        if (!user.name || seen.has(user.name)) return false
+        seen.add(user.name)
+        const searchable = `${user.name} ${user.username || ''}`.toLowerCase()
+        return !mention.query || searchable.includes(mention.query)
+      })
+      .slice(0, 6)
+  }, [mention, users])
+
+  const rememberCursor = () => {
+    const nextCursor = inputRef.current?.selectionStart ?? 0
+    setCursor(nextCursor)
+  }
+
+  const insertMention = (user) => {
+    if (!mention) return
+    const label = user.name || user.username
+    const before = String(value || '').slice(0, mention.start)
+    const after = String(value || '').slice(mention.end)
+    const next = `${before}@${label} ${after}`
+    const nextCursor = before.length + label.length + 2
+    onChange(next)
+    window.setTimeout(() => {
+      inputRef.current?.focus()
+      inputRef.current?.setSelectionRange(nextCursor, nextCursor)
+      setCursor(nextCursor)
+    }, 0)
+  }
+
+  return (
+    <div className="relative">
+      <textarea
+        ref={inputRef}
+        value={value}
+        onChange={(event) => {
+          onChange(event.target.value)
+          setCursor(event.target.selectionStart)
+        }}
+        onClick={rememberCursor}
+        onKeyUp={rememberCursor}
+        onSelect={rememberCursor}
+        rows={rows}
+        placeholder={placeholder}
+        className={textareaClass}
+      />
+      {options.length > 0 && (
+        <div className="absolute left-2 right-2 top-full z-40 mt-1 overflow-hidden rounded-lg border border-sky-200 bg-white shadow-xl">
+          <p className="border-b border-slate-100 px-3 py-2 text-[11px] font-black text-slate-400">@담당자 선택</p>
+          {options.map((user) => (
+            <button
+              key={`${user.username || user.name}-${user.name}`}
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => insertMention(user)}
+              className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs font-bold text-slate-700 hover:bg-sky-50"
+            >
+              <span>
+                <span className="block font-black text-slate-950">@{user.name}</span>
+                <span className="mt-0.5 block text-slate-400">{[user.department, user.username].filter(Boolean).join(' / ') || '직원 계정'}</span>
+              </span>
+              <span className="rounded-full bg-sky-100 px-2 py-1 text-[10px] font-black text-sky-700">태그</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {users.slice(0, 5).map((user) => {
+          const name = user.display_name || user.displayName || user.username
+          if (!name) return null
+          return (
+            <button
+              key={`quick-${user.id || user.username || name}`}
+              type="button"
+              onClick={() => {
+                const separator = value && !String(value).endsWith(' ') ? ' ' : ''
+                onChange(`${value || ''}${separator}@${name} `)
+              }}
+              className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-black text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+            >
+              @{name}
+            </button>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
@@ -801,7 +1018,7 @@ function ListView({ grouped, onEdit, onDelete, onStatusChange, onCreate }) {
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
       <div className="grid grid-cols-[minmax(220px,1.5fr)_130px_120px_180px_120px_120px_minmax(180px,1fr)_112px] border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-black text-slate-500">
-        <span>프로젝트 이름</span>
+        <span>업무명</span>
         <span>상태</span>
         <span>소유자</span>
         <span>날짜</span>
@@ -810,10 +1027,10 @@ function ListView({ grouped, onEdit, onDelete, onStatusChange, onCreate }) {
         <span>선행 작업</span>
         <span>관리</span>
       </div>
-      {grouped.map(([status, tasks]) => (
-        <div key={status}>
+      {grouped.map(([assignee, tasks]) => (
+        <div key={assignee}>
           <div className="flex items-center gap-2 border-b border-slate-100 bg-white px-4 py-3">
-            <span className={`rounded-full px-2.5 py-1 text-xs font-black ${statusPillClass(status)}`}>{statusLabel(status)}</span>
+            <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-black text-sky-700">{assignee}</span>
             <span className="text-xs font-black text-slate-400">{tasks.length}</span>
           </div>
           {tasks.map((task) => (
@@ -844,7 +1061,12 @@ function ListView({ grouped, onEdit, onDelete, onStatusChange, onCreate }) {
                   <span className="block h-full rounded-full bg-blue-500" style={{ width: `${Math.min(100, Number(task.progress_rate || taskProgress(task) || 0))}%` }} />
                 </span>
               </button>
-              <button type="button" onClick={() => onEdit(task)} className="truncate text-left font-bold text-slate-600">{task.next_action || '-'}</button>
+              <button type="button" onClick={() => onEdit(task)} className="min-w-0 text-left font-bold text-slate-600">
+                <span className="block truncate">{task.next_action || '-'}</span>
+                {task.request_text && <span className="mt-1 block truncate text-[11px] font-black text-sky-600">요청: {task.request_text}</span>}
+                {task.review_comment && <span className="mt-1 block truncate text-[11px] font-black text-amber-600">피드백: {task.review_comment}</span>}
+                {task.blocker_text && <span className="mt-1 block truncate text-[11px] font-black text-rose-600">막힘: {task.blocker_text}</span>}
+              </button>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -867,11 +1089,11 @@ function ListView({ grouped, onEdit, onDelete, onStatusChange, onCreate }) {
           ))}
           <button type="button" onClick={() => onCreate()} className="flex h-10 w-full items-center gap-2 border-b border-slate-100 px-4 text-left text-sm font-bold text-slate-400 hover:bg-slate-50 hover:text-slate-700">
             <span className="material-symbols-outlined text-base">add</span>
-            새 프로젝트
+            새 업무
           </button>
         </div>
       ))}
-      {grouped.length === 0 && <p className="p-8 text-center text-sm font-bold text-slate-400">표시할 프로젝트가 없습니다.</p>}
+      {grouped.length === 0 && <p className="p-8 text-center text-sm font-bold text-slate-400">표시할 업무가 없습니다.</p>}
     </section>
   )
 }
