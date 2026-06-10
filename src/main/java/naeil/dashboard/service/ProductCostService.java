@@ -57,6 +57,20 @@ public class ProductCostService {
         int channelCount = 0;
 
         try (Workbook wb = new XSSFWorkbook(file.getInputStream())) {
+            FormulaEvaluator evaluator = wb.getCreationHelper().createFormulaEvaluator();
+
+            // 공급가표 형식 (오프라인 거래처 전용)
+            Sheet supplySheet = wb.getSheet("공급가표");
+            if (supplySheet != null) {
+                int cnt = parseSupplyPriceSheet(companyId, supplySheet, evaluator);
+                channelCount += cnt;
+                result.put("공급가표", cnt + "개 처리");
+                result.put("skuMaster", "0개 처리");
+                result.put("totalChannelRows", channelCount);
+                result.put("message", "공급가표 업로드 완료");
+                return result;
+            }
+
             // 1. 물류비 시트 → product_sku_master + 이름→SKU 매핑 추출
             Sheet skuSheet = wb.getSheet("물류비");
             Map<String, String> nameToSku = new HashMap<>(); // 제품명 → sku_code
@@ -665,6 +679,127 @@ public class ProductCostService {
             if (hasProductName && hasProductCode) return r;
         }
         return 4;
+    }
+
+    /**
+     * "공급가표" 시트 파싱 — 오프라인 거래처 전용 형식
+     * 컬럼: A=채널, B=제품명, C=규격, D=입수, E=MOQ, F=오프라인판매가(수식),
+     *        G=개당소비자가, H=거래처마진(수식), I=거래처마진율, J=공급가(수식),
+     *        K=제조원가(수식), L=개당제조원가
+     */
+    @Transactional
+    public int parseSupplyPriceSheet(Long companyId, Sheet sheet, FormulaEvaluator evaluator) {
+        int count = 0;
+        // 헤더 행 찾기 (채널 + 제품명 모두 있는 행)
+        int headerRowIdx = -1;
+        int colChannel = -1, colName = -1, colQty = -1;
+        int colConsumerPrice = -1, colFeeRate = -1, colSupplyPrice = -1, colCostPerUnit = -1;
+
+        for (int r = 0; r <= Math.min(sheet.getLastRowNum(), 5); r++) {
+            Row row = sheet.getRow(r);
+            if (row == null) continue;
+            boolean hasChannel = false, hasName = false;
+            for (int c = 0; c < row.getLastCellNum(); c++) {
+                String h = evalCellString(row.getCell(c), evaluator).trim();
+                if (h.equals("채널"))           { colChannel = c; hasChannel = true; }
+                if (h.equals("제품명"))          { colName = c;    hasName = true; }
+                if (h.contains("입수"))          colQty = c;
+                if (h.contains("개당") && h.contains("소비자가")) colConsumerPrice = c;
+                if (h.contains("거래처마진율") || h.equals("거래처\n마진율")) colFeeRate = c;
+                if (h.equals("공급가"))          colSupplyPrice = c;
+                if (h.contains("개당제조원가") || (h.contains("개당") && h.contains("제조원가"))) colCostPerUnit = c;
+            }
+            if (hasChannel && hasName) { headerRowIdx = r; break; }
+        }
+
+        if (headerRowIdx < 0 || colChannel < 0 || colName < 0) {
+            log.warn("공급가표 시트 헤더를 찾지 못했습니다.");
+            return 0;
+        }
+
+        for (int r = headerRowIdx + 1; r <= sheet.getLastRowNum(); r++) {
+            Row row = sheet.getRow(r);
+            if (row == null) continue;
+
+            String channelName = evalCellString(row.getCell(colChannel), evaluator).trim();
+            String productName = evalCellString(row.getCell(colName), evaluator).trim();
+            if (channelName.isEmpty() || productName.isEmpty()) continue;
+
+            // 오프라인 채널명 정규화
+            String normalizedChannel = "오프라인(" + channelName + ")";
+
+            int qty = colQty >= 0 ? Math.max(1, (int) evalCellDouble(row.getCell(colQty), evaluator)) : 1;
+            BigDecimal costPerUnit  = colCostPerUnit  >= 0 ? bd(evalCellDouble(row.getCell(colCostPerUnit),  evaluator)) : BigDecimal.ZERO;
+            BigDecimal consumerPrice= colConsumerPrice >= 0 ? bd(evalCellDouble(row.getCell(colConsumerPrice), evaluator)) : BigDecimal.ZERO;
+            BigDecimal supplyPrice  = colSupplyPrice   >= 0 ? bd(evalCellDouble(row.getCell(colSupplyPrice),  evaluator)) : BigDecimal.ZERO;
+            double feeRate          = colFeeRate >= 0 ? evalCellDouble(row.getCell(colFeeRate), evaluator) : 0.0;
+            // 거래처마진율이 0~1 범위인지 확인 (0.39 형태)
+            if (feeRate > 1.0) feeRate = feeRate / 100.0;
+
+            // product_code = 채널명_제품명 해시로 고유성 보장
+            String productCode = (channelName + "_" + productName).replaceAll("[^a-zA-Z0-9가-힣]", "_");
+
+            jdbcTemplate.update("""
+                INSERT INTO product_cost_channel
+                    (company_id, channel_name, product_code, product_name, sku_code,
+                     qty_per_unit, production_cost, list_price, consumer_price,
+                     channel_fee_rate, marketing_rate, ad_rate, opex_rate,
+                     consumer_ship_fee, storage_fee_unit)
+                VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0)
+                ON CONFLICT (company_id, channel_name, product_code) DO UPDATE SET
+                    product_name    = EXCLUDED.product_name,
+                    qty_per_unit    = EXCLUDED.qty_per_unit,
+                    production_cost = EXCLUDED.production_cost,
+                    list_price      = EXCLUDED.list_price,
+                    consumer_price  = EXCLUDED.consumer_price,
+                    channel_fee_rate= EXCLUDED.channel_fee_rate,
+                    updated_at      = NOW()
+                """,
+                companyId, normalizedChannel, productCode, productName,
+                qty, costPerUnit, supplyPrice, consumerPrice, feeRate);
+            count++;
+        }
+        log.info("공급가표 파싱 완료: {}개", count);
+        return count;
+    }
+
+    /** 수식 포함 셀 문자열 읽기 */
+    private String evalCellString(Cell cell, FormulaEvaluator evaluator) {
+        if (cell == null) return "";
+        try {
+            CellValue cv = evaluator.evaluate(cell);
+            if (cv == null) return cellString(cell);
+            return switch (cv.getCellType()) {
+                case STRING  -> cv.getStringValue();
+                case NUMERIC -> {
+                    double d = cv.getNumberValue();
+                    yield d == Math.floor(d) ? String.valueOf((long) d) : String.valueOf(d);
+                }
+                case BOOLEAN -> String.valueOf(cv.getBooleanValue());
+                default      -> "";
+            };
+        } catch (Exception e) {
+            return cellString(cell);
+        }
+    }
+
+    /** 수식 포함 셀 숫자 읽기 */
+    private double evalCellDouble(Cell cell, FormulaEvaluator evaluator) {
+        if (cell == null) return 0.0;
+        try {
+            CellValue cv = evaluator.evaluate(cell);
+            if (cv == null) return cellDouble(cell);
+            return switch (cv.getCellType()) {
+                case NUMERIC -> cv.getNumberValue();
+                case STRING  -> {
+                    try { yield Double.parseDouble(cv.getStringValue()); }
+                    catch (NumberFormatException ex) { yield 0.0; }
+                }
+                default -> 0.0;
+            };
+        } catch (Exception e) {
+            return cellDouble(cell);
+        }
     }
 
     private String channelColumnKey(String header) {
