@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getStaffAdminAttendance } from '../../api/staffApi'
+import { getStaffAdminAttendance, updateStaffAttendanceLocation } from '../../api/staffApi'
 
 const monthText = (date = new Date()) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
@@ -35,6 +35,8 @@ export default function AttendanceAdminPage() {
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
   const [error, setError] = useState('')
+  const [editing, setEditing] = useState(null)
+  const [locationForm, setLocationForm] = useState({ location: '', note: '' })
 
   const load = () => {
     setLoading(true)
@@ -61,9 +63,30 @@ export default function AttendanceAdminPage() {
       row.clock_out_ip_location,
       row.clock_in_device,
       row.clock_out_device,
+      row.clock_in_verified_location,
+      row.clock_out_verified_location,
+      row.clock_in_ip_isp,
+      row.clock_out_ip_isp,
       row.work_date,
     ].some((value) => String(value || '').toLowerCase().includes(keyword)))
   }, [rows, query])
+
+  const openLocationEditor = (row, direction) => {
+    const verified = direction === 'IN' ? row.clock_in_verified_location : row.clock_out_verified_location
+    setEditing({ row, direction })
+    setLocationForm({ location: verified || '', note: row.location_review_note || '' })
+  }
+
+  const saveLocation = async () => {
+    if (!editing) return
+    await updateStaffAttendanceLocation(editing.row.id, {
+      direction: editing.direction,
+      location: locationForm.location,
+      note: locationForm.note,
+    })
+    setEditing(null)
+    await load()
+  }
 
   return (
     <main className="space-y-6">
@@ -73,7 +96,7 @@ export default function AttendanceAdminPage() {
             <p className="text-xs font-black uppercase tracking-[0.2em] text-sky-600">System Audit</p>
             <h1 className="mt-2 text-2xl font-black text-slate-950">직원 출퇴근 기록</h1>
             <p className="mt-2 text-sm font-bold text-slate-500">
-              대표 관리자 전용 화면입니다. 출근/퇴근 시간, 접속 IP, IP 기반 위치를 확인합니다.
+              대표 관리자 전용 화면입니다. 서버가 받은 실제 IP, 위치 조회 출처, ISP, 좌표, 관리자가 확인한 실제 위치를 함께 관리합니다.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -104,7 +127,7 @@ export default function AttendanceAdminPage() {
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-lg font-black text-slate-950">월별 출퇴근 로그</h2>
-            <p className="mt-1 text-xs font-bold text-slate-500">IP 위치는 공인 IP 기준으로 조회되며, 사내망 IP는 사내/로컬 네트워크로 표시됩니다.</p>
+            <p className="mt-1 text-xs font-bold text-slate-500">IP 위치는 통신사/ISP 기준 추정값입니다. 실제 근무지는 확인 위치로 보정해 기록하세요.</p>
           </div>
           <label className="relative block w-full max-w-md">
             <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-base text-slate-400">search</span>
@@ -148,7 +171,17 @@ export default function AttendanceAdminPage() {
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm font-bold text-slate-700">
                       <p>{row.clock_in_ip || '-'}</p>
-                      <p className="mt-0.5 text-xs text-slate-400">{row.clock_in_ip_location || '-'}</p>
+                      <LocationBlock
+                        location={row.clock_in_verified_location || row.clock_in_ip_location}
+                        rawLocation={row.clock_in_ip_location}
+                        verified={row.clock_in_verified_location}
+                        isp={row.clock_in_ip_isp}
+                        latitude={row.clock_in_ip_latitude}
+                        longitude={row.clock_in_ip_longitude}
+                        accuracy={row.clock_in_ip_accuracy}
+                        source={row.clock_in_ip_location_source}
+                        onEdit={() => openLocationEditor(row, 'IN')}
+                      />
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm font-bold text-slate-700">{timeText(row.clock_out_at)}</td>
                     <td className="whitespace-nowrap px-4 py-3">
@@ -156,7 +189,17 @@ export default function AttendanceAdminPage() {
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm font-bold text-slate-700">
                       <p>{row.clock_out_ip || '-'}</p>
-                      <p className="mt-0.5 text-xs text-slate-400">{row.clock_out_ip_location || '-'}</p>
+                      <LocationBlock
+                        location={row.clock_out_verified_location || row.clock_out_ip_location}
+                        rawLocation={row.clock_out_ip_location}
+                        verified={row.clock_out_verified_location}
+                        isp={row.clock_out_ip_isp}
+                        latitude={row.clock_out_ip_latitude}
+                        longitude={row.clock_out_ip_longitude}
+                        accuracy={row.clock_out_ip_accuracy}
+                        source={row.clock_out_ip_location_source}
+                        onEdit={() => openLocationEditor(row, 'OUT')}
+                      />
                     </td>
                   </tr>
                 )
@@ -172,6 +215,71 @@ export default function AttendanceAdminPage() {
           </table>
         </div>
       </section>
+
+      {editing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-black text-slate-950">실제 위치 확인</h2>
+                <p className="mt-1 text-sm font-bold text-slate-500">
+                  {editing.row.display_name || editing.row.username} · {editing.direction === 'IN' ? '출근' : '퇴근'} 위치를 보정합니다.
+                </p>
+              </div>
+              <button type="button" onClick={() => setEditing(null)} className="text-slate-400 hover:text-slate-700">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <label className="mt-5 block">
+              <span className="mb-2 block text-xs font-black text-slate-500">확인된 실제 위치</span>
+              <input
+                value={locationForm.location}
+                onChange={(event) => setLocationForm((prev) => ({ ...prev, location: event.target.value }))}
+                placeholder="예: 서울 강남구 역삼동 사무실 / 부산 해운대구 출장지"
+                className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-bold text-slate-900 outline-none focus:border-sky-400"
+              />
+            </label>
+            <label className="mt-4 block">
+              <span className="mb-2 block text-xs font-black text-slate-500">메모</span>
+              <textarea
+                value={locationForm.note}
+                onChange={(event) => setLocationForm((prev) => ({ ...prev, note: event.target.value }))}
+                rows="3"
+                placeholder="확인 근거나 예외 사항을 입력"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-400"
+              />
+            </label>
+            <div className="mt-6 flex justify-end gap-2">
+              <button type="button" onClick={() => setEditing(null)} className="h-10 rounded-lg border border-slate-200 px-4 text-sm font-black text-slate-600 hover:bg-slate-50">취소</button>
+              <button type="button" onClick={saveLocation} className="h-10 rounded-lg bg-sky-600 px-5 text-sm font-black text-white hover:bg-sky-500">저장</button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
+  )
+}
+
+function LocationBlock({ location, rawLocation, verified, isp, latitude, longitude, accuracy, source, onEdit }) {
+  return (
+    <div className="mt-0.5 min-w-[260px] text-xs">
+      <p className={`font-black ${verified ? 'text-emerald-700' : 'text-slate-500'}`}>
+        {location || '-'}
+      </p>
+      {verified && rawLocation && (
+        <p className="mt-0.5 text-slate-400">IP 추정: {rawLocation}</p>
+      )}
+      <p className="mt-0.5 text-slate-400">
+        {[isp, source, accuracy].filter(Boolean).join(' · ') || '조회 정보 없음'}
+      </p>
+      {(latitude || longitude) && (
+        <p className="mt-0.5 text-slate-400">
+          좌표 {latitude || '-'}, {longitude || '-'}
+        </p>
+      )}
+      <button type="button" onClick={onEdit} className="mt-1 text-[11px] font-black text-sky-600 hover:underline">
+        실제 위치 입력
+      </button>
+    </div>
   )
 }

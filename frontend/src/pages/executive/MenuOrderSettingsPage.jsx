@@ -50,6 +50,7 @@ const groupLabels = {
 export default function MenuOrderSettingsPage() {
   const [sections, setSections] = useState(toEditableSections)
   const [savedAt, setSavedAt] = useState('')
+  const [dragging, setDragging] = useState(null)
 
   const defaultCount = useMemo(
     () => defaultMenuSections.reduce((sum, section) => sum + section.items.length, 0),
@@ -65,6 +66,45 @@ export default function MenuOrderSettingsPage() {
       if (section.id !== sectionId) return section
       return { ...section, items: moveItem(section.items, index, direction) }
     }))
+  }
+
+  const dropSection = (targetSectionId) => {
+    if (dragging?.type !== 'section' || dragging.sectionId === targetSectionId) return
+    setSections((prev) => {
+      const fromIndex = prev.findIndex((section) => section.id === dragging.sectionId)
+      const toIndex = prev.findIndex((section) => section.id === targetSectionId)
+      if (fromIndex < 0 || toIndex < 0) return prev
+      const next = [...prev]
+      const [moved] = next.splice(fromIndex, 1)
+      next.splice(toIndex, 0, moved)
+      return next
+    })
+    setDragging(null)
+  }
+
+  const dropMenu = (targetSectionId, targetIndex = null) => {
+    if (dragging?.type !== 'menu') return
+    setSections((prev) => {
+      const movedItem = prev
+        .find((section) => section.id === dragging.sectionId)
+        ?.items.find((item) => item.id === dragging.itemId)
+      if (!movedItem) return prev
+
+      return prev.map((section) => {
+        const withoutDragged = section.items.filter((item) => item.id !== dragging.itemId)
+        if (section.id !== targetSectionId) {
+          return { ...section, items: withoutDragged }
+        }
+
+        const insertIndex = targetIndex == null
+          ? withoutDragged.length
+          : Math.max(0, Math.min(targetIndex, withoutDragged.length))
+        const nextItems = [...withoutDragged]
+        nextItems.splice(insertIndex, 0, movedItem)
+        return { ...section, items: nextItems }
+      })
+    })
+    setDragging(null)
   }
 
   const handleSave = () => {
@@ -88,6 +128,7 @@ export default function MenuOrderSettingsPage() {
       })),
     })))
     setSavedAt('기본 순서로 복원됨')
+    setDragging(null)
   }
 
   return (
@@ -127,17 +168,32 @@ export default function MenuOrderSettingsPage() {
         <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-black text-slate-950">카테고리 순서</h2>
           <p className="mt-1 text-xs font-bold text-slate-500">
-            섹션 순서를 바꾸면 사이드바 전체 배치가 바뀝니다.
+            카테고리를 마우스로 끌어 순서를 바꿀 수 있습니다.
           </p>
           <div className="mt-4 space-y-2">
             {sections.map((section, index) => (
-              <div key={section.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div
+                key={section.id}
+                draggable
+                onDragStart={() => setDragging({ type: 'section', sectionId: section.id })}
+                onDragEnd={() => setDragging(null)}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => dropSection(section.id)}
+                className={`cursor-grab rounded-xl border p-3 active:cursor-grabbing ${
+                  dragging?.type === 'section' && dragging.sectionId === section.id
+                    ? 'border-sky-300 bg-sky-50 opacity-70'
+                    : 'border-slate-200 bg-slate-50'
+                }`}
+              >
                 <div className="flex items-center justify-between gap-3">
-                  <div>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="material-symbols-outlined text-base text-slate-400">drag_indicator</span>
+                    <div className="min-w-0">
                     <p className="text-sm font-black text-slate-900">{section.title}</p>
                     <p className="mt-0.5 text-[11px] font-bold text-slate-500">
                       {groupLabels[section.group] || section.group} · {section.items.length}개 메뉴
                     </p>
+                    </div>
                   </div>
                   <div className="flex shrink-0 gap-1">
                     <button
@@ -171,7 +227,7 @@ export default function MenuOrderSettingsPage() {
               <div>
                 <h2 className="text-lg font-black text-slate-950">메뉴 순서</h2>
                 <p className="mt-1 text-xs font-bold text-slate-500">
-                  각 카테고리 안에서 자주 쓰는 메뉴를 위로 올릴 수 있습니다.
+                  메뉴를 마우스로 끌어 같은 카테고리 안에서 정렬하거나 다른 카테고리로 이동할 수 있습니다.
                 </p>
               </div>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
@@ -181,7 +237,16 @@ export default function MenuOrderSettingsPage() {
           </div>
 
           {sections.map((section) => (
-            <section key={section.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <section
+              key={section.id}
+              onDragOver={(event) => {
+                if (dragging?.type === 'menu') event.preventDefault()
+              }}
+              onDrop={() => dropMenu(section.id)}
+              className={`rounded-2xl border bg-white p-5 shadow-sm ${
+                dragging?.type === 'menu' ? 'border-sky-200 ring-1 ring-sky-100' : 'border-slate-200'
+              }`}
+            >
               <div className="mb-4 flex items-center justify-between">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">{groupLabels[section.group] || section.group}</p>
@@ -193,7 +258,25 @@ export default function MenuOrderSettingsPage() {
               </div>
               <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200">
                 {section.items.map((item, index) => (
-                  <div key={item.id} className="flex items-center gap-3 bg-white px-4 py-3">
+                  <div
+                    key={item.id}
+                    draggable
+                    onDragStart={() => setDragging({ type: 'menu', sectionId: section.id, itemId: item.id })}
+                    onDragEnd={() => setDragging(null)}
+                    onDragOver={(event) => {
+                      if (dragging?.type === 'menu') event.preventDefault()
+                    }}
+                    onDrop={(event) => {
+                      event.stopPropagation()
+                      dropMenu(section.id, index)
+                    }}
+                    className={`flex cursor-grab items-center gap-3 px-4 py-3 active:cursor-grabbing ${
+                      dragging?.type === 'menu' && dragging.itemId === item.id
+                        ? 'bg-sky-50 opacity-70'
+                        : 'bg-white'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-base text-slate-300">drag_indicator</span>
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
                       <span className="material-symbols-outlined text-lg">{item.icon}</span>
                     </span>
@@ -223,6 +306,11 @@ export default function MenuOrderSettingsPage() {
                     </div>
                   </div>
                 ))}
+                {section.items.length === 0 && (
+                  <div className="bg-slate-50 px-4 py-8 text-center text-sm font-black text-slate-400">
+                    메뉴를 이 카테고리로 끌어오세요.
+                  </div>
+                )}
               </div>
             </section>
           ))}

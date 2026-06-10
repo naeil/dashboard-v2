@@ -131,8 +131,18 @@ public class StaffController {
                 requireUser(request),
                 String.valueOf(payload.get("action")),
                 clientIp(request),
+                ipHeaders(request),
                 request.getHeader("User-Agent")
         ));
+    }
+
+    @PutMapping("/attendance/admin/{id}/location")
+    public ResponseEntity<Map<String, Object>> updateAttendanceLocation(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> payload,
+            HttpServletRequest request
+    ) {
+        return ResponseEntity.ok(staffAttendanceService.updateVerifiedLocation(id, requireUser(request), payload));
     }
 
     private AuthUser requireUser(HttpServletRequest request) {
@@ -154,5 +164,27 @@ public class StaffController {
             }
         }
         return request.getRemoteAddr();
+    }
+
+    private String ipHeaders(HttpServletRequest request) {
+        String[] headerNames = {
+                "CF-Connecting-IP",
+                "X-Forwarded-For",
+                "X-Real-IP",
+                "Forwarded",
+                "Proxy-Client-IP",
+                "WL-Proxy-Client-IP"
+        };
+        StringBuilder builder = new StringBuilder();
+        for (String headerName : headerNames) {
+            String value = request.getHeader(headerName);
+            if (value != null && !value.isBlank()) {
+                if (!builder.isEmpty()) builder.append(" | ");
+                builder.append(headerName).append("=").append(value.trim());
+            }
+        }
+        if (!builder.isEmpty()) builder.append(" | ");
+        builder.append("RemoteAddr=").append(request.getRemoteAddr());
+        return builder.toString();
     }
 }

@@ -37,3 +37,6 @@ export const getStaffAdminAttendance = (params = {}) =>
 
 export const clockStaffAttendance = (action) =>
   api.post('/staff/attendance/clock', { action }, { params: companyParams })
+
+export const updateStaffAttendanceLocation = (id, payload) =>
+  api.put(`/staff/attendance/admin/${id}/location`, payload, { params: companyParams })

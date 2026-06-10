@@ -117,19 +117,25 @@ export function getStoredMenuOrder() {
 
 export function getOrderedMenuSections(order = getStoredMenuOrder()) {
   const sectionById = new Map(defaultMenuSections.map((section) => [section.id, section]))
+  const itemById = new Map(defaultMenuSections.flatMap((section) => section.items.map((item) => [item.id, item])))
   const orderedSectionIds = Array.isArray(order?.sections) ? order.sections : []
   const sectionIds = [
     ...orderedSectionIds.filter((id) => sectionById.has(id)),
     ...defaultMenuSections.map((section) => section.id).filter((id) => !orderedSectionIds.includes(id)),
   ]
+  const savedItems = order?.items && typeof order.items === 'object' ? order.items : {}
+  const assignedItemIds = new Set(
+    Object.values(savedItems)
+      .flat()
+      .filter((id) => itemById.has(id)),
+  )
 
   return sectionIds.map((sectionId) => {
     const section = sectionById.get(sectionId)
-    const itemById = new Map(section.items.map((item) => [item.id, item]))
     const orderedItemIds = Array.isArray(order?.items?.[sectionId]) ? order.items[sectionId] : []
     const itemIds = [
       ...orderedItemIds.filter((id) => itemById.has(id)),
-      ...section.items.map((item) => item.id).filter((id) => !orderedItemIds.includes(id)),
+      ...section.items.map((item) => item.id).filter((id) => !assignedItemIds.has(id) && !orderedItemIds.includes(id)),
     ]
     return { ...section, items: itemIds.map((itemId) => itemById.get(itemId)) }
   })

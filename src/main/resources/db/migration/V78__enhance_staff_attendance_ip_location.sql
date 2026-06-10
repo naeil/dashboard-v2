@@ -1,0 +1,18 @@
+ALTER TABLE staff_attendance_record
+    ADD COLUMN IF NOT EXISTS clock_in_ip_source VARCHAR(40),
+    ADD COLUMN IF NOT EXISTS clock_out_ip_source VARCHAR(40),
+    ADD COLUMN IF NOT EXISTS clock_in_ip_headers TEXT,
+    ADD COLUMN IF NOT EXISTS clock_out_ip_headers TEXT,
+    ADD COLUMN IF NOT EXISTS clock_in_ip_isp VARCHAR(200),
+    ADD COLUMN IF NOT EXISTS clock_out_ip_isp VARCHAR(200),
+    ADD COLUMN IF NOT EXISTS clock_in_ip_latitude DECIMAL(10, 6),
+    ADD COLUMN IF NOT EXISTS clock_in_ip_longitude DECIMAL(10, 6),
+    ADD COLUMN IF NOT EXISTS clock_out_ip_latitude DECIMAL(10, 6),
+    ADD COLUMN IF NOT EXISTS clock_out_ip_longitude DECIMAL(10, 6),
+    ADD COLUMN IF NOT EXISTS clock_in_ip_accuracy VARCHAR(40),
+    ADD COLUMN IF NOT EXISTS clock_out_ip_accuracy VARCHAR(40),
+    ADD COLUMN IF NOT EXISTS clock_in_ip_location_source VARCHAR(40),
+    ADD COLUMN IF NOT EXISTS clock_out_ip_location_source VARCHAR(40),
+    ADD COLUMN IF NOT EXISTS clock_in_verified_location VARCHAR(300),
+    ADD COLUMN IF NOT EXISTS clock_out_verified_location VARCHAR(300),
+    ADD COLUMN IF NOT EXISTS location_review_note TEXT;
