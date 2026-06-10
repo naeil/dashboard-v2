@@ -23,14 +23,14 @@ import org.springframework.web.bind.annotation.RestController;
  * 프로모션 마진 API
    *
    * [서식 저장 흐름]
-   *  POST /api/promotion-margin/forms          → 서식 임시저장(draft)
-   *  POST /api/promotion-margin/forms/{id}/submit → 서식 제출 + 프로모션 내역 자동 연동
+   *  POST /api/promotion-margin/forms              → 서식 임시저장(draft)
+   *  POST /api/promotion-margin/forms/{id}/submit  → 서식 제출 + 프로모션 내역 자동 연동
    *
-   * [프로모션 내역 조회]
-   *  GET  /api/promotion-margin/history         → 전체 채널 내역
-   *  GET  /api/promotion-margin/history?channel=online   → 온라인 채널
-   *  GET  /api/promotion-margin/history?channel=offline  → 오프라인 채널
-   *  GET  /api/promotion-margin/history?channel=export   → 해외 채널
+   * [프로모션 내역 조회 - 채널별]
+   *  GET  /api/promotion-margin/history                      → 전체
+   *  GET  /api/promotion-margin/history?channel=online       → 온라인
+   *  GET  /api/promotion-margin/history?channel=offline      → 오프라인
+   *  GET  /api/promotion-margin/history?channel=export       → 해외
    *
    * [실적 갱신]
    *  PUT  /api/promotion-margin/history/{id}/actuals  → 실시간 매출/영업이익 갱신
@@ -41,7 +41,6 @@ import org.springframework.web.bind.annotation.RestController;
   public class PromotionMarginController {
 
     private final PromotionMarginService promotionMarginService;
-        private final AuthService authService;
 
     // ─────────────────────────────────────────────────────────────────────────
     // 서식 저장 (draft)
@@ -56,10 +55,10 @@ import org.springframework.web.bind.annotation.RestController;
                   @RequestBody PromotionMarginFormDTO.Request request,
                   HttpServletRequest httpRequest
               ) {
-                  String username = getCurrentUsername(httpRequest);
+                  String username = getUsername(httpRequest);
                   Long formId = promotionMarginService.saveForm(request, username);
                   return ResponseEntity.ok(Map.of(
-                                "formId", formId,
+                                "formId",  formId,
                                 "message", "서식이 임시저장되었습니다."
                             ));
         }
@@ -74,7 +73,7 @@ import org.springframework.web.bind.annotation.RestController;
                   @RequestParam(defaultValue = "1") Long companyId,
                   HttpServletRequest httpRequest
               ) {
-                  String username = getCurrentUsername(httpRequest);
+                  String username = getUsername(httpRequest);
                   Long historyId = promotionMarginService.submitForm(formId, companyId, username);
                   return ResponseEntity.ok(Map.of(
                                 "formId",    formId,
@@ -99,9 +98,9 @@ import org.springframework.web.bind.annotation.RestController;
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * 채널별 프로모션 신청 내역 목록
-     * - channel 파라미터 없으면 전체 채널 반환
-       * - 각 항목에 목표 매출, 실시간 매출, 실시간 영업이익 포함
+     * 채널별 프로모션 신청 내역
+     * - channel 파라미터 없으면 전체 채널 반환 (online/offline/export 각각 집계)
+       * - 각 항목에 목표 매출, 실시간 매출, 실시간 영업이익, 달성률 포함
        */
       @GetMapping("/history")
       public ResponseEntity<List<PromotionHistoryDTO.ChannelSummary>> getHistory(
@@ -117,9 +116,8 @@ import org.springframework.web.bind.annotation.RestController;
 
     /**
      * 실시간 매출 / 영업이익 갱신
-           * - 매출 데이터 수집 후 이 엔드포인트로 실적 업데이트
-           * - DB GENERATED 컬럼(actual_operating_profit, revenue_achievement_rate) 자동 재계산
-     */
+           * DB GENERATED 컬럼(actual_operating_profit, revenue_achievement_rate) 자동 재계산
+           */
           @PutMapping("/history/{id}/actuals")
           public ResponseEntity<Map<String, Object>> updateActuals(
               @PathVariable Long id,
@@ -134,14 +132,10 @@ import org.springframework.web.bind.annotation.RestController;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Helper
+    // Helper - 기존 컨트롤러 패턴과 동일하게 session attribute 에서 username 추출
     // ─────────────────────────────────────────────────────────────────────────
-    private String getCurrentUsername(HttpServletRequest request) {
-              try {
-                            AuthUser user = authService.getAuthUserFromRequest(request);
-                            return user != null ? user.getUsername() : "unknown";
-              } catch (Exception e) {
-                            return "unknown";
-              }
+    private String getUsername(HttpServletRequest request) {
+              AuthUser user = (AuthUser) request.getAttribute(AuthService.AUTHENTICATED_USER_ATTR);
+              return user != null ? user.getUsername() : "unknown";
     }
 }
