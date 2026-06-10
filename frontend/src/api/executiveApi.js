@@ -76,3 +76,16 @@ export const updateExecutiveRecord = (resource, id, payload) =>
 
 export const deleteExecutiveRecord = (resource, id) =>
   api.delete(`/executive/${resource}/${id}`)
+
+// ── 직원 성과 AI 분석 API ─────────────────────────────────────────────────
+export const getEmployeeDetail = (username) =>
+  api.get('/employee-analysis/detail', { params: { ...companyParams, username } })
+
+export const analyzeEmployee = (username, displayName) =>
+  api.post('/employee-analysis/analyze', { username, displayName }, { params: companyParams })
+
+export const getEmployeeAnalysisHistory = (username) =>
+  api.get('/employee-analysis/history', { params: { ...companyParams, username } })
+
+export const saveEmployeeFeedback = (analysisId, feedback) =>
+  api.put(`/employee-analysis/${analysisId}/feedback`, { feedback })
