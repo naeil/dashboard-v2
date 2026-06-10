@@ -28,6 +28,7 @@ import PartnerManagementPage from './pages/executive/PartnerManagementPage'
 import PayrollPage from './pages/executive/PayrollPage'
 import ProfitManagementPage from './pages/executive/ProfitManagementPage'
 import ProductCostPage from './pages/executive/ProductCostPage'
+import PromotionMarginPage from './pages/executive/PromotionMarginPage'
 import BlogAutoPublishPage from './pages/executive/BlogAutoPublishPage'
 import PaymentApprovalPage from './pages/executive/PaymentApprovalPage'
 import PaymentRequestPage from './pages/executive/PaymentRequestPage'
@@ -82,6 +83,7 @@ const pages = {
   'export-pipeline': ExportPipelinePage,
   'marketing-status': MarketingStatusPage,
   'marketing-projects': MarketingProjectBoardPage,
+  'promotion-margin': PromotionMarginPage,
   'marketing-agent': MarketingAgentPage,
   'ad-performance': AdPerformancePage,
   partners: PartnerManagementPage,

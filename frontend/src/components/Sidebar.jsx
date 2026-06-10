@@ -74,6 +74,7 @@ export const defaultMenuSections = [
     departments: ['marketing'],
     items: [
       { id: 'marketing-projects', icon: 'view_kanban',  label: '마케팅 프로젝트',    roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'promotion-margin',   icon: 'sell',         label: '프로모션 마진',      roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'ad-performance',     icon: 'campaign',     label: '광고 성과',          roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'marketing-agent',    icon: 'auto_awesome', label: '마케팅 에이전트',    roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'blog-auto-publish',  icon: 'rss_feed',     label: '블로그 자동 배포 AI', roles: ['EXECUTIVE', 'MANAGER'] },
