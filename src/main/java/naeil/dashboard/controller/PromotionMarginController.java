@@ -136,6 +136,6 @@ import org.springframework.web.bind.annotation.RestController;
     // ─────────────────────────────────────────────────────────────────────────
     private String getUsername(HttpServletRequest request) {
               AuthUser user = (AuthUser) request.getAttribute(AuthService.AUTHENTICATED_USER_ATTR);
-              return user != null ? user.getUsername() : "unknown";
+              return user != null ? user.username() : "unknown";
     }
 }
