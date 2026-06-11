@@ -62,6 +62,7 @@ export const defaultMenuSections = [
       { id: 'inventory', icon: 'warehouse', label: '재고 현황', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'product-movement', icon: 'inventory', label: '제품 출입고', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'partners', icon: 'groups', label: '거래처 관리', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'partner-payment', icon: 'account_balance', label: '입출금 관리', roles: ['EXECUTIVE', 'MANAGER'] },
     ],
   },
   {
