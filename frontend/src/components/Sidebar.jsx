@@ -75,6 +75,7 @@ export const defaultMenuSections = [
     items: [
       { id: 'marketing-projects', icon: 'view_kanban',  label: '마케팅 프로젝트',    roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'promotion-margin',   icon: 'sell',         label: '프로모션 마진',      roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'promotion-history',  icon: 'receipt_long', label: '프로모션 내역',      roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'ad-performance',     icon: 'campaign',     label: '광고 성과',          roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'marketing-agent',    icon: 'auto_awesome', label: '마케팅 에이전트',    roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'blog-auto-publish',  icon: 'rss_feed',     label: '블로그 자동 배포 AI', roles: ['EXECUTIVE', 'MANAGER'] },
@@ -215,16 +216,26 @@ export default function Sidebar({
   allowedMenuSections = null,
 }) {
   const [collapsed, setCollapsed] = useState(getInitialCollapsed)
-  const [, setMenuOrderVersion] = useState(0)
+  const [, setMenuVersion] = useState(0)
   const personalBaseLabel = displayName || username || '실무진'
 
+  // 메뉴 오버라이드 (이름수정/숨기기/비공개/삭제)
+  function getMenuOverrides() {
+    try {
+      const saved = localStorage.getItem('menu_config_overrides')
+      return saved ? JSON.parse(saved) : {}
+    } catch { return {} }
+  }
+
   useEffect(() => {
-    const refreshMenuOrder = () => setMenuOrderVersion((version) => version + 1)
-    window.addEventListener('storage', refreshMenuOrder)
-    window.addEventListener('sidebar:menu-order-updated', refreshMenuOrder)
+    const refresh = () => setMenuVersion((v) => v + 1)
+    window.addEventListener('storage', refresh)
+    window.addEventListener('sidebar:menu-order-updated', refresh)
+    window.addEventListener('sidebar:menu-config-updated', refresh)
     return () => {
-      window.removeEventListener('storage', refreshMenuOrder)
-      window.removeEventListener('sidebar:menu-order-updated', refreshMenuOrder)
+      window.removeEventListener('storage', refresh)
+      window.removeEventListener('sidebar:menu-order-updated', refresh)
+      window.removeEventListener('sidebar:menu-config-updated', refresh)
     }
   }, [])
 
@@ -241,11 +252,30 @@ export default function Sidebar({
     && allowedMenuSections.length > 0
     && allowedMenuSections.some((v) => v.includes('-'))
 
-  // 렌더링할 섹션 필터링
+  const overrides = getMenuOverrides()
+
+  // 렌더링할 섹션 필터링 (오버라이드 적용)
   const visibleSections = getOrderedMenuSections()
     .map((section) => {
+      const sOv = overrides[section.id] || {}
+      // 삭제되거나 숨겨진 섹션 제외 (비공개는 EXECUTIVE만)
+      if (sOv.deleted) return null
+      if (sOv.hidden) return null
+      if (sOv.private && role !== 'EXECUTIVE') return null
+
       if (!matchesDepartment(section.departments, department, role)) return null
-      let items = section.items.filter((item) => item.roles.includes(role))
+
+      let items = section.items
+        .map((item) => {
+          const iOv = overrides[item.id] || {}
+          if (iOv.deleted) return null
+          if (iOv.hidden) return null
+          if (iOv.private && role !== 'EXECUTIVE') return null
+          // 커스텀 라벨 적용
+          return iOv.label ? { ...item, label: iOv.label } : item
+        })
+        .filter(Boolean)
+        .filter((item) => item.roles.includes(role))
 
       // 항목 ID 단위 권한 — 공통(all)·시스템 섹션은 항상 전체 표시
       if (hasItemLevelPermissions && section.group !== 'system' && !section.departments.includes('all')) {
@@ -253,7 +283,9 @@ export default function Sidebar({
       }
 
       if (items.length === 0) return null
-      return { ...section, items }
+      // 섹션 커스텀 라벨 적용
+      const sectionWithOverride = sOv.label ? { ...section, title: sOv.label } : section
+      return { ...sectionWithOverride, items }
     })
     .filter(Boolean)
 
