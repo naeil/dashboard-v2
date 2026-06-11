@@ -25,6 +25,7 @@ import MarketingStatusPage from './pages/executive/MarketingStatusPage'
 import MenuOrderSettingsPage from './pages/executive/MenuOrderSettingsPage'
 import OperatingExpensesPage from './pages/executive/OperatingExpensesPage'
 import PartnerManagementPage from './pages/executive/PartnerManagementPage'
+import PartnerPaymentLedgerPage from './pages/executive/PartnerPaymentLedgerPage'
 import PayrollPage from './pages/executive/PayrollPage'
 import ProfitManagementPage from './pages/executive/ProfitManagementPage'
 import ProductCostPage from './pages/executive/ProductCostPage'
@@ -89,6 +90,7 @@ const pages = {
   'marketing-agent': MarketingAgentPage,
   'ad-performance': AdPerformancePage,
   partners: PartnerManagementPage,
+    'partner-payment': PartnerPaymentLedgerPage,
   payroll: PayrollPage,
   'profit-management': ProfitManagementPage,
   'product-cost': ProductCostPage,
