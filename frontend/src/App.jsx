@@ -235,8 +235,15 @@ export default function App() {
         onLogout={handleLogout}
         allowedMenuSections={session.allowedMenuSections}
       />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <ExecutiveHeader session={session} onLogout={handleLogout} onNavigate={setPage} userRole={userRole} />
+      <div className={`flex flex-1 flex-col overflow-hidden transition-all duration-300 ${isSidebarExpanded ? 'ml-72' : 'ml-20'}`}>
+        <ExecutiveHeader
+          username={session.username}
+          displayName={session.displayName}
+          session={session}
+          onLogout={handleLogout}
+          onNavigate={setPage}
+          userRole={userRole}
+        />
         <main className="flex-1 overflow-y-auto">
           <PageComponent
             onNavigate={setPage}
