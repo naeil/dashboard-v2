@@ -1,143 +1,135 @@
 import { useEffect, useState } from 'react'
 
 const departmentAliases = {
-    salesSupport: ['영업지원', '영업 지원', '운영', '물류', '생산', 'CS'],
-    marketing: ['마케팅', '마케팅팀', '온라인MD', '온라인 MD', 'MD', '콘텐츠', '광고'],
-    accounting: ['회계', '회계팀', '재무', '재무팀', '경리', '정산'],
-    sales: ['영업', '영업팀', '해외영업', '수출', '컨설팅', 'B2B'],
+  salesSupport: ['영업지원', '운영', '물류', '생산', 'CS'],
+  marketing: ['마케팅', '마케팅팀', '온라인MD', 'MD', '콘텐츠', '광고'],
+  accounting: ['회계', '재무', '경리', '정산'],
+  sales: ['영업', '해외영업', '수출', '컨설팅', 'B2B'],
 }
 
 export const SIDEBAR_MENU_ORDER_KEY = 'sidebar_menu_order_v1'
 
-// group: 'executive' | 'staff' | 'system'
 export const defaultMenuSections = [
-    // ─── 경영진 그룹 ───────────────────────────────────────────────
   {
-        id: 'strategy-finance',
-        title: '전략 · 재무',
-        group: 'executive',
-        departments: ['executive'],
-        items: [
-          { id: 'ceo-dashboard', icon: 'monitoring', label: 'CEO 전략 대시보드', roles: ['EXECUTIVE'] },
-          { id: 'cash-flow', icon: 'account_balance_wallet', label: '현금 흐름', roles: ['EXECUTIVE'] },
-          { id: 'profit-management', icon: 'trending_up', label: 'BEP / 손익 시뮬레이션', roles: ['EXECUTIVE'] },
-          { id: 'debts', icon: 'credit_score', label: '대출 / 부채', roles: ['EXECUTIVE'] },
-          { id: 'operating-expenses', icon: 'receipt_long', label: '운영 비용', roles: ['EXECUTIVE'] },
-              ],
+    id: 'strategy-finance',
+    title: '전략 · 재무',
+    group: 'executive',
+    departments: ['executive'],
+    items: [
+      { id: 'ceo-dashboard', icon: 'monitoring', label: 'CEO 전략 대시보드', roles: ['EXECUTIVE'] },
+      { id: 'cash-flow', icon: 'account_balance_wallet', label: '현금 흐름', roles: ['EXECUTIVE'] },
+      { id: 'profit-management', icon: 'trending_up', label: 'BEP / 손익 시뮬레이션', roles: ['EXECUTIVE'] },
+      { id: 'debts', icon: 'credit_score', label: '대출 / 부채', roles: ['EXECUTIVE'] },
+      { id: 'operating-expenses', icon: 'receipt_long', label: '운영 비용', roles: ['EXECUTIVE'] },
+    ],
   },
   {
-        id: 'operations-management',
-        title: '운영 · 팀관리',
-        group: 'executive',
-        departments: ['manager'],
-        items: [
-          { id: 'work-management', icon: 'assignment', label: '업무 진행 관리', roles: ['EXECUTIVE', 'MANAGER'] },
-          { id: 'payment-approval', icon: 'approval', label: '입출금 결재 관리', roles: ['EXECUTIVE', 'MANAGER'] },
-          { id: 'employee-performance', icon: 'analytics', label: '직원 성과 분석', roles: ['EXECUTIVE', 'MANAGER'] },
-          { id: 'channel-credentials', icon: 'encrypted', label: '채널 계정 관리', roles: ['EXECUTIVE', 'MANAGER'] },
-          { id: 'product-cost', icon: 'calculate', label: '제품 원가 관리', roles: ['EXECUTIVE', 'MANAGER'] },
-              ],
-  },
-    // ─── 실무진 그룹 ───────────────────────────────────────────────
-  {
-        id: 'common',
-        title: '공통',
-        group: 'staff',
-        departments: ['all'],
-        items: [
-          { id: 'platform', icon: 'apps', label: '업무 홈', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], emphasis: true },
-          { id: 'staff-dashboard', icon: 'dashboard', label: '직원 대시보드', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-          { id: 'staff-work-report', icon: 'assignment_add', label: '업무 보고', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], personal: true, personalSuffix: '업무 보고' },
-          { id: 'staff-project-status', icon: 'view_timeline', label: '프로젝트 현황', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], personal: true, personalSuffix: '프로젝트 현황' },
-          { id: 'brand-health', icon: 'storefront', label: '브랜드 사업 현황', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-          { id: 'channel-sales', icon: 'leaderboard', label: '실시간 매출', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-          { id: 'work-input', icon: 'edit_note', label: '내 업무 입력', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], personal: true },
-          { id: 'payment-request', icon: 'request_page', label: '지출결의 / 기안서', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-              ],
+    id: 'operations-management',
+    title: '운영 · 팀관리',
+    group: 'executive',
+    departments: ['manager'],
+    items: [
+      { id: 'work-management', icon: 'assignment', label: '업무 진행 관리', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'payment-approval', icon: 'approval', label: '입출금 결재 관리', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'employee-performance', icon: 'analytics', label: '직원 성과 분석', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'channel-credentials', icon: 'encrypted', label: '채널 계정 관리', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'product-cost', icon: 'calculate', label: '제품 원가 관리', roles: ['EXECUTIVE', 'MANAGER'] },
+    ],
   },
   {
-        id: 'sales-support',
-        title: '영업 지원',
-        group: 'staff',
-        departments: ['salesSupport'],
-        items: [
-          { id: 'channel-operations', icon: 'storefront', label: '채널 운영', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-          { id: 'inventory', icon: 'warehouse', label: '재고 현황', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-          { id: 'product-movement', icon: 'inventory', label: '제품 출입고', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-          { id: 'partners', icon: 'groups', label: '거래처 관리', roles: ['EXECUTIVE', 'MANAGER'] },
-              ],
+    id: 'common',
+    title: '공통',
+    group: 'staff',
+    departments: ['all'],
+    items: [
+      { id: 'platform', icon: 'apps', label: '업무 홈', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], emphasis: true },
+      { id: 'staff-dashboard', icon: 'dashboard', label: '직원 대시보드', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'staff-work-report', icon: 'assignment_add', label: '업무 보고', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], personal: true, personalSuffix: '업무 보고' },
+      { id: 'staff-project-status', icon: 'view_timeline', label: '프로젝트 현황', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], personal: true, personalSuffix: '프로젝트 현황' },
+      { id: 'brand-health', icon: 'storefront', label: '브랜드 사업 현황', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'channel-sales', icon: 'leaderboard', label: '실시간 매출', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'work-input', icon: 'edit_note', label: '내 업무 입력', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], personal: true },
+      { id: 'payment-request', icon: 'request_page', label: '지출결의 / 기안서', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+    ],
   },
   {
-<<<<<<< HEAD
+    id: 'sales-support',
+    title: '영업 지원',
+    group: 'staff',
+    departments: ['salesSupport'],
+    items: [
+      { id: 'channel-operations', icon: 'storefront', label: '채널 운영', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'inventory', icon: 'warehouse', label: '재고 현황', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'product-movement', icon: 'inventory', label: '제품 출입고', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'partners', icon: 'groups', label: '거래처 관리', roles: ['EXECUTIVE', 'MANAGER'] },
+    ],
+  },
+  {
     id: 'marketing',
     title: '마케팅팀',
     group: 'staff',
     departments: ['marketing'],
     items: [
-      { id: 'marketing-projects', icon: 'view_kanban',  label: '마케팅 프로젝트',    roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-      { id: 'promotion-margin',   icon: 'sell',         label: '프로모션 마진',      roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-      { id: 'promotion-history',  icon: 'receipt_long', label: '프로모션 내역',      roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-      { id: 'ad-performance',     icon: 'campaign',     label: '광고 성과',          roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-      { id: 'marketing-agent',    icon: 'auto_awesome', label: '마케팅 에이전트',    roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-      { id: 'blog-auto-publish',  icon: 'rss_feed',     label: '블로그 자동 배포 AI', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'marketing-projects', icon: 'view_kanban', label: '마케팅 프로젝트', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'promotion-margin', icon: 'sell', label: '프로모션 마진', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'promotion-history', icon: 'receipt_long', label: '프로모션 내역', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'ad-performance', icon: 'campaign', label: '광고 성과', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'marketing-agent', icon: 'auto_awesome', label: '마케팅 에이전트', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'blog-auto-publish', icon: 'rss_feed', label: '블로그 자동 배포 AI', roles: ['EXECUTIVE', 'MANAGER'] },
     ],
-=======
-        id: 'marketing',
-        title: '마케팅팀',
-        group: 'staff',
-        departments: ['marketing'],
-        items: [
-          { id: 'marketing-projects', icon: 'view_kanban', label: '마케팅 프로젝트', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-          { id: 'promotion-margin', icon: 'sell', label: '프로모션 마진', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-          { id: 'promotion-history', icon: 'receipt_long', label: '프로모션 내역', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-          { id: 'ad-performance', icon: 'campaign', label: '광고 성과', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-          { id: 'marketing-agent', icon: 'auto_awesome', label: '마케팅 에이전트', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-          { id: 'blog-auto-publish', icon: 'rss_feed', label: '블로그 자동 배포 AI', roles: ['EXECUTIVE', 'MANAGER'] },
-              ],
->>>>>>> b5c97179018675e12f088f23e25b40a6f5652ce0
   },
   {
-        id: 'accounting-sales',
-        title: '회계 · 영업팀',
-        group: 'staff',
-        departments: ['accounting', 'sales'],
-        items: [
-          { id: 'consulting-revenue', icon: 'business_center', label: '컨설팅 매출', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-          { id: 'export-pipeline', icon: 'public', label: '수출 파이프라인', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-          { id: 'payroll', icon: 'payments', label: '임금 지급 내역', roles: ['EXECUTIVE', 'MANAGER'] },
-              ],
+    id: 'accounting-sales',
+    title: '회계 · 영업팀',
+    group: 'staff',
+    departments: ['accounting', 'sales'],
+    items: [
+      { id: 'consulting-revenue', icon: 'business_center', label: '컨설팅 매출', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'export-pipeline', icon: 'public', label: '수출 파이프라인', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'payroll', icon: 'payments', label: '임금 지급 내역', roles: ['EXECUTIVE', 'MANAGER'] },
+    ],
   },
-    // ─── 시스템 ────────────────────────────────────────────────────
   {
-        id: 'system',
-        title: '시스템',
-        group: 'system',
-        departments: ['all'],
-        items: [
-          { id: 'account', icon: 'account_circle', label: '내 계정', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-          { id: 'employees', icon: 'manage_accounts', label: '직원 관리', roles: ['EXECUTIVE'] },
-          { id: 'attendance-admin', icon: 'badge', label: '출퇴근 기록', roles: ['EXECUTIVE'] },
-          { id: 'menu-order-settings', icon: 'swap_vert', label: '카테고리 이동', roles: ['EXECUTIVE'] },
-          { id: 'settings', icon: 'settings', label: '설정', roles: ['EXECUTIVE'] },
-              ],
+    id: 'system',
+    title: '시스템',
+    group: 'system',
+    departments: ['all'],
+    items: [
+      { id: 'account', icon: 'account_circle', label: '내 계정', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'employees', icon: 'manage_accounts', label: '직원 관리', roles: ['EXECUTIVE'] },
+      { id: 'attendance-admin', icon: 'badge', label: '출퇴근 기록', roles: ['EXECUTIVE'] },
+      { id: 'menu-order-settings', icon: 'swap_vert', label: '카테고리 이동', roles: ['EXECUTIVE'] },
+      { id: 'settings', icon: 'settings', label: '설정', roles: ['EXECUTIVE'] },
+    ],
   },
+]
+
+export function getOrderedMenuSections() {
+  let order = null
+  try {
+    order = JSON.parse(localStorage.getItem(SIDEBAR_MENU_ORDER_KEY) || 'null')
+  } catch {
+    order = null
+  }
+
+  const sectionById = new Map(defaultMenuSections.map((section) => [section.id, section]))
+  const itemById = new Map(defaultMenuSections.flatMap((section) => section.items.map((item) => [item.id, item])))
+  const orderedSectionIds = Array.isArray(order?.sections) ? order.sections.filter((id) => sectionById.has(id)) : []
+  const sectionIds = [
+    ...orderedSectionIds,
+    ...defaultMenuSections.map((section) => section.id).filter((id) => !orderedSectionIds.includes(id)),
   ]
-<<<<<<< HEAD
   const savedItems = order?.items && typeof order.items === 'object' ? order.items : {}
-  const assignedItemIds = new Set(
-    Object.values(savedItems)
-      .flat()
-      .filter((id) => itemById.has(id)),
-  )
+  const assignedItemIds = new Set(Object.values(savedItems).flat().filter((id) => itemById.has(id)))
 
   return sectionIds.map((sectionId) => {
     const section = sectionById.get(sectionId)
-    const orderedItemIds = Array.isArray(order?.items?.[sectionId]) ? order.items[sectionId] : []
+    const orderedItemIds = Array.isArray(savedItems[sectionId]) ? savedItems[sectionId] : []
     const itemIds = [
       ...orderedItemIds.filter((id) => itemById.has(id)),
       ...section.items.map((item) => item.id).filter((id) => !assignedItemIds.has(id) && !orderedItemIds.includes(id)),
     ]
-    return { ...section, items: itemIds.map((itemId) => itemById.get(itemId)) }
+    return { ...section, items: itemIds.map((itemId) => itemById.get(itemId)).filter(Boolean) }
   })
 }
 
@@ -164,7 +156,6 @@ function matchesDepartment(sectionDepartments, department, role) {
   })
 }
 
-// allowedMenuSections 가 항목 ID 배열일 때 해당 항목만 표시, null 이면 전체 표시
 function isItemAllowed(itemId, allowedMenuSections) {
   if (!allowedMenuSections || allowedMenuSections.length === 0) return true
   return allowedMenuSections.includes(itemId)
@@ -178,27 +169,12 @@ function MenuLabel({ isExpanded, children }) {
   )
 }
 
-// 그룹 레이블 (경영진 / 실무진 구분선)
-function GroupDivider({ label, isExpanded }) {
-  if (!isExpanded) return <div className="my-3 border-t border-slate-200" />
-  return (
-    <div className="mb-2 mt-5 flex items-center gap-2 px-2">
-      <div className="h-px flex-1 bg-slate-200" />
-      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{label}</span>
-      <div className="h-px flex-1 bg-slate-200" />
-    </div>
-  )
-}
-
-// 기본 collapsed 상태: 모두 펼침 (사용자가 직접 접을 수 있음)
-const DEFAULT_COLLAPSED = {}
-
 function getInitialCollapsed() {
   try {
     const saved = localStorage.getItem('sidebar_collapsed_sections')
     if (saved) return JSON.parse(saved)
   } catch {}
-  return DEFAULT_COLLAPSED
+  return {}
 }
 
 export default function Sidebar({
@@ -217,12 +193,13 @@ export default function Sidebar({
   const [, setMenuVersion] = useState(0)
   const personalBaseLabel = displayName || username || '실무진'
 
-  // 메뉴 오버라이드 (이름수정/숨기기/비공개/삭제)
   function getMenuOverrides() {
     try {
       const saved = localStorage.getItem('menu_config_overrides')
       return saved ? JSON.parse(saved) : {}
-    } catch { return {} }
+    } catch {
+      return {}
+    }
   }
 
   useEffect(() => {
@@ -245,54 +222,40 @@ export default function Sidebar({
     })
   }
 
-  // allowedMenuSections 가 항목 ID 배열인지 (새 형식) 판별
   const hasItemLevelPermissions = Array.isArray(allowedMenuSections)
     && allowedMenuSections.length > 0
     && allowedMenuSections.some((v) => v.includes('-'))
-
   const overrides = getMenuOverrides()
 
-  // 렌더링할 섹션 필터링 (오버라이드 적용)
   const visibleSections = getOrderedMenuSections()
     .map((section) => {
       const sOv = overrides[section.id] || {}
-      // 삭제되거나 숨겨진 섹션 제외 (비공개는 EXECUTIVE만)
-      if (sOv.deleted) return null
-      if (sOv.hidden) return null
+      if (sOv.deleted || sOv.hidden) return null
       if (sOv.private && role !== 'EXECUTIVE') return null
-
       if (!matchesDepartment(section.departments, department, role)) return null
 
       let items = section.items
         .map((item) => {
           const iOv = overrides[item.id] || {}
-          if (iOv.deleted) return null
-          if (iOv.hidden) return null
+          if (iOv.deleted || iOv.hidden) return null
           if (iOv.private && role !== 'EXECUTIVE') return null
-          // 커스텀 라벨 적용
           return iOv.label ? { ...item, label: iOv.label } : item
         })
         .filter(Boolean)
         .filter((item) => item.roles.includes(role))
 
-      // 항목 ID 단위 권한 — 공통(all)·시스템 섹션은 항상 전체 표시
       if (hasItemLevelPermissions && section.group !== 'system' && !section.departments.includes('all')) {
         items = items.filter((item) => isItemAllowed(item.id, allowedMenuSections))
       }
-
       if (items.length === 0) return null
-      // 섹션 커스텀 라벨 적용
       const sectionWithOverride = sOv.label ? { ...section, title: sOv.label } : section
       return { ...sectionWithOverride, items }
     })
     .filter(Boolean)
 
-  // 그룹별로 묶기
   const executiveSections = visibleSections.filter((s) => s.group === 'executive')
   const staffSections = visibleSections.filter((s) => s.group === 'staff')
   const systemSections = visibleSections.filter((s) => s.group === 'system')
-
-  // 경영진 그룹이 실제로 보이는지 (EXECUTIVE만 볼 수 있음)
   const showExecutiveGroup = executiveSections.length > 0
   const showStaffGroup = staffSections.length > 0
 
@@ -301,18 +264,9 @@ export default function Sidebar({
     return (
       <div key={section.title}>
         {isExpanded ? (
-          <button
-            type="button"
-            onClick={() => toggleSection(section.title)}
-            className="mb-1 flex w-full items-center justify-between rounded px-4 py-1 transition-colors hover:bg-slate-50"
-          >
+          <button type="button" onClick={() => toggleSection(section.title)} className="mb-1 flex w-full items-center justify-between rounded px-4 py-1 transition-colors hover:bg-slate-50">
             <span className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">{section.title}</span>
-            <span
-              className="material-symbols-outlined text-sm text-slate-300 transition-transform duration-200"
-              style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', fontSize: '16px' }}
-            >
-              expand_more
-            </span>
+            <span className="material-symbols-outlined text-sm text-slate-300 transition-transform duration-200" style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', fontSize: '16px' }}>expand_more</span>
           </button>
         ) : null}
 
@@ -343,7 +297,6 @@ export default function Sidebar({
 
   return (
     <aside className={`fixed left-0 top-0 z-50 flex h-full flex-col border-r border-slate-200 bg-white text-slate-600 shadow-sm transition-all duration-300 ${isExpanded ? 'w-72' : 'w-20'}`}>
-      {/* 헤더 */}
       <div className={`flex items-center p-5 ${isExpanded ? 'justify-between' : 'justify-center'}`}>
         <div className={`min-w-0 ${isExpanded ? 'block' : 'hidden'}`}>
           <p className="text-xs font-black uppercase tracking-[0.22em] text-sky-600">Naeil Group</p>
@@ -354,9 +307,7 @@ export default function Sidebar({
         </button>
       </div>
 
-      {/* 네비게이션 */}
       <nav className="flex-1 overflow-y-auto px-3 py-2">
-        {/* 경영진 그룹 */}
         {showExecutiveGroup && (
           <div className="space-y-3">
             {isExpanded && (
@@ -370,7 +321,6 @@ export default function Sidebar({
           </div>
         )}
 
-        {/* 실무진 그룹 */}
         {showStaffGroup && (
           <div className="mt-4 space-y-3">
             {isExpanded && showExecutiveGroup && (
@@ -385,7 +335,6 @@ export default function Sidebar({
           </div>
         )}
 
-        {/* 시스템 */}
         {systemSections.length > 0 && (
           <div className="mt-4 space-y-3">
             {isExpanded && <div className="my-2 border-t border-slate-200" />}
@@ -395,7 +344,6 @@ export default function Sidebar({
         )}
       </nav>
 
-      {/* 유저 정보 */}
       <div className="border-t border-slate-200 p-4">
         <div className={`flex rounded-lg bg-slate-50 p-3 ${isExpanded ? 'items-center justify-between gap-3' : 'justify-center'}`}>
           <div className="flex min-w-0 items-center gap-3">
@@ -419,5 +367,3 @@ export default function Sidebar({
     </aside>
   )
 }
-=======
->>>>>>> b5c97179018675e12f088f23e25b40a6f5652ce0
