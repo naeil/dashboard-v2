@@ -5,23 +5,25 @@ import path from 'path'
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, process.cwd(), '')
     const proxyTarget = env.VITE_API_PROXY_TARGET || 'http://localhost:8080'
+    const buildForSpring = mode === 'spring-static'
 
-                              return {
-                                    plugins: [react()],
-                                    // 빌드 결과물을 Spring Boot static 폴더로 직접 출력
-                                    build: {
-                                            outDir: path.resolve(__dirname, '../src/main/resources/static'),
-                                            emptyOutDir: true,
-                                    },
-                                    server: {
-                                            port: 5173,
-                                            allowedHosts: ['.trycloudflare.com', '192.168.0.86'],
-                                            proxy: {
-                                                      '/api': {
-                                                                  target: proxyTarget,
-                                                                  changeOrigin: true,
-                                                      },
-                                            },
-                                    },
-                              }
+    return {
+        plugins: [react()],
+        build: {
+            outDir: buildForSpring
+                ? path.resolve(__dirname, '../src/main/resources/static')
+                : 'dist',
+            emptyOutDir: true,
+        },
+        server: {
+            port: 5173,
+            allowedHosts: ['.trycloudflare.com', '192.168.0.86'],
+            proxy: {
+                '/api': {
+                    target: proxyTarget,
+                    changeOrigin: true,
+                },
+            },
+        },
+    }
 })

@@ -51,6 +51,7 @@
     .inventory-scroll::-webkit-scrollbar-thumb:hover {
         background: #c5c6cd;
     }
+}
 
     .app-light {
         color: #0f172a;
@@ -486,4 +487,3 @@
             min-height: 40px;
         }
     }
-}
