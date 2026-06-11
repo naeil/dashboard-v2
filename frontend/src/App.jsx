@@ -30,8 +30,8 @@ import PayrollPage from './pages/executive/PayrollPage'
 import ProfitManagementPage from './pages/executive/ProfitManagementPage'
 import ProductCostPage from './pages/executive/ProductCostPage'
 import PromotionHistoryPage from './pages/executive/PromotionHistoryPage'
-import SupportProgramPage from './pages/executive/SupportProgramPage'
 import PromotionMarginPage from './pages/executive/PromotionMarginPage'
+import SupportProgramPage from './pages/executive/SupportProgramPage'
 import BlogAutoPublishPage from './pages/executive/BlogAutoPublishPage'
 import PaymentApprovalPage from './pages/executive/PaymentApprovalPage'
 import PaymentRequestPage from './pages/executive/PaymentRequestPage'
@@ -91,12 +91,12 @@ const pages = {
   'marketing-agent': MarketingAgentPage,
   'ad-performance': AdPerformancePage,
   partners: PartnerManagementPage,
-    'partner-payment': PartnerPaymentLedgerPage,
+  'partner-payment': PartnerPaymentLedgerPage,
   payroll: PayrollPage,
   'profit-management': ProfitManagementPage,
   'product-cost': ProductCostPage,
   'blog-auto-publish': BlogAutoPublishPage,
-    'support-programs': SupportProgramPage,
+  'support-programs': SupportProgramPage,
   'brand-health': BrandHealthPage,
   settings: Settings,
 }
