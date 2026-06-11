@@ -21,6 +21,7 @@ export const defaultMenuSections = [
       { id: 'profit-management', icon: 'trending_up', label: 'BEP / 손익 시뮬레이션', roles: ['EXECUTIVE'] },
       { id: 'debts', icon: 'credit_score', label: '대출 / 부채', roles: ['EXECUTIVE'] },
       { id: 'operating-expenses', icon: 'receipt_long', label: '운영 비용', roles: ['EXECUTIVE'] },
+      { id: 'support-programs', icon: 'volunteer_activism', label: '지원사업 현황', roles: ['EXECUTIVE'] },
     ],
   },
   {
