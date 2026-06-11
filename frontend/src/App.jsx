@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import ExecutiveHeader from './components/ExecutiveHeader'
 import Sidebar from './components/Sidebar'
 import AccountSecurityPage from './pages/executive/AccountSecurityPage'
@@ -30,6 +30,7 @@ import ProfitManagementPage from './pages/executive/ProfitManagementPage'
 import ProductCostPage from './pages/executive/ProductCostPage'
 import PromotionHistoryPage from './pages/executive/PromotionHistoryPage'
 import PromotionMarginPage from './pages/executive/PromotionMarginPage'
+import PromotionHistoryPage from './pages/executive/PromotionHistoryPage'
 import BlogAutoPublishPage from './pages/executive/BlogAutoPublishPage'
 import PaymentApprovalPage from './pages/executive/PaymentApprovalPage'
 import PaymentRequestPage from './pages/executive/PaymentRequestPage'
@@ -50,6 +51,7 @@ import StaffWorkReportPage from './pages/staff/StaffWorkReportPage'
 import { getAuthToken, getSession, logout } from './api/authApi'
 
 const pages = {
+<<<<<<< HEAD
   platform: PlatformOverviewPage,
   'staff-dashboard': StaffDashboardPage,
   'staff-work-report': StaffWorkReportPage,
@@ -94,6 +96,52 @@ const pages = {
   'product-cost': ProductCostPage,
   'blog-auto-publish': BlogAutoPublishPage,
   'brand-health': BrandHealthPage,
+=======
+    platform: PlatformOverviewPage,
+    'staff-dashboard': StaffDashboardPage,
+    'staff-work-report': StaffWorkReportPage,
+    'staff-project-status': StaffProjectStatusPage,
+    account: AccountSecurityPage,
+    'attendance-admin': AttendanceAdminPage,
+    'ceo-dashboard': CEOStrategicDashboard,
+    summary: ExecutiveSummary,
+    'cash-flow': CashFlowPage,
+    'channel-credentials': ChannelCredentialPage,
+    'customer-db': CustomerDatabasePage,
+    'channel-operations': ChannelOperationsPage,
+    'product-profit': ProductProfitPage,
+    'product-forecast': ProductForecastPage,
+    'channel-sales': ChannelSalesPage,
+    'consulting-revenue': ConsultingRevenuePage,
+    receivables: ReceivablesPage,
+    'resource-library': ResourceLibraryPage,
+    'operating-expenses': OperatingExpensesPage,
+    debts: DebtPage,
+    employees: EmployeeManagementPage,
+    'menu-order-settings': MenuOrderSettingsPage,
+    'employee-performance': EmployeePerformancePage,
+    'payment-request': PaymentRequestPage,
+    'payment-approval': PaymentApprovalPage,
+    'work-input': WorkInputPage,
+    'work-management': WorkManagementPage,
+    inventory: InventoryRiskPage,
+    'issue-briefing': IssueBriefingPage,
+    'product-movement': ProductMovementPage,
+    production: ProductionManagementPage,
+    'export-pipeline': ExportPipelinePage,
+    'marketing-status': MarketingStatusPage,
+    'marketing-projects': MarketingProjectBoardPage,
+    'promotion-margin': PromotionMarginPage,
+    'promotion-history': PromotionHistoryPage,
+    'marketing-agent': MarketingAgentPage,
+    'ad-performance': AdPerformancePage,
+    partners: PartnerManagementPage,
+    payroll: PayrollPage,
+    'profit-management': ProfitManagementPage,
+    'product-cost': ProductCostPage,
+    'blog-auto-publish': BlogAutoPublishPage,
+    'brand-health': BrandHealthPage,
+>>>>>>> b5c97179018675e12f088f23e25b40a6f5652ce0
 }
 
 const executivePages = new Set(['summary', 'employee-performance', 'cash-flow', 'receivables', 'operating-expenses', 'debts'])
@@ -104,236 +152,174 @@ const mobileTabs = [
   { id: 'staff-work-report', label: '업무보고', icon: 'assignment_add' },
   { id: 'staff-project-status', label: '프로젝트', icon: 'view_timeline' },
   { id: 'account', label: '계정', icon: 'account_circle' },
-]
+  ]
 
 function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(() => {
-    if (typeof window === 'undefined') return false
-    return window.matchMedia('(max-width: 767px)').matches
-  })
+    const [isMobile, setIsMobile] = useState(() => {
+          if (typeof window === 'undefined') return false
+          return window.matchMedia('(max-width: 767px)').matches
+    })
 
   useEffect(() => {
-    if (typeof window === 'undefined') return undefined
-    const media = window.matchMedia('(max-width: 767px)')
-    const update = () => setIsMobile(media.matches)
-    update()
-    media.addEventListener?.('change', update)
-    return () => media.removeEventListener?.('change', update)
+        if (typeof window === 'undefined') return undefined
+        const media = window.matchMedia('(max-width: 767px)')
+        const update = () => setIsMobile(media.matches)
+        update()
+        media.addEventListener?.('change', update)
+        return () => media.removeEventListener?.('change', update)
   }, [])
 
   return isMobile
 }
 
-function MobileShell({ page, setPage, pages, session, userRole, onLogout }) {
-  const activePage = mobilePageIds.has(page) ? page : 'platform'
-  const PageComponent = pages[activePage] || PlatformOverviewPage
-
-  const pageProps = {
-    onNavigate: (nextPage) => setPage(mobilePageIds.has(nextPage) ? nextPage : 'platform'),
-    username: session.username,
-    displayName: session.displayName,
-    department: session.department,
-    positionName: session.positionName,
-    role: userRole,
-    mobile: true,
-  }
-
-  return (
-    <div className="app-light min-h-screen bg-slate-50 text-slate-950">
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-sky-600">Naeil Group</p>
-            <h1 className="mt-0.5 truncate text-base font-black text-slate-950">Mobile Dashboard</h1>
-            <p className="mt-0.5 truncate text-[11px] font-bold text-slate-500">
-              {session.displayName || session.username} · {session.department || userRole}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onLogout}
-            className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600"
-          >
-            로그아웃
-          </button>
-        </div>
-      </header>
-
-      <main className="min-h-[calc(100vh-64px)] px-3 pb-24 pt-3">
-        <div className="mobile-page-scope">
-          <PageComponent {...pageProps} />
-        </div>
-      </main>
-
-      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_20px_rgba(15,23,42,0.08)] backdrop-blur">
-        <div className="grid h-16 grid-cols-5">
-          {mobileTabs.map((tab) => {
-            const active = activePage === tab.id
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setPage(tab.id)}
-                className={`flex flex-col items-center justify-center gap-0.5 rounded-lg text-[11px] font-black transition-colors ${active ? 'text-sky-700' : 'text-slate-400'}`}
-              >
-                <span className={`material-symbols-outlined text-[22px] ${active ? 'filled' : ''}`}>{tab.icon}</span>
-                <span>{tab.label}</span>
-              </button>
-            )
+function MobileLayout({ activePage, setPage, session, userRole }) {
+    const PageComponent = pages[activePage]
+    return (
+          <div className="flex flex-col h-screen bg-slate-50 text-slate-900">
+                <main className="flex-1 overflow-y-auto pb-16">
+                  {PageComponent ? (
+                      <PageComponent
+                                    onNavigate={setPage}
+                                    username={session?.username}
+                                    displayName={session?.displayName}
+                                    department={session?.department}
+                                    positionName={session?.positionName}
+                                    role={userRole}
+                                  />
+                    ) : (
+                      <PlatformOverviewPage
+                                    onNavigate={setPage}
+                                    username={session?.username}
+                                    displayName={session?.displayName}
+                                    department={session?.department}
+                                    positionName={session?.positionName}
+                                    role={userRole}
+                                  />
+                    )}
+                </main>main>
+                <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 px-2">
+                        <div className="grid h-16 grid-cols-5">
+                          {mobileTabs.map((tab) => {
+                        const active = activePage === tab.id
+                                      return (
+                                                      <button
+                                                                        key={tab.id}
+                                                                        type="button"
+                                                                        onClick={() => setPage(tab.id)}
+                                                                        className={`flex flex-col items-center justify-center gap-0.5 rounded-lg text-[11px] font-medium transition-colors ${active ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600'}`}
+                                                                      >
+                                                                      <span className={`material-symbols-outlined text-[22px] ${active ? 'filled' : ''}`}>{tab.icon}</span>span>
+                                                                      <span>{tab.label}</span>span>
+                                                      </button>button>
+                                                    )
           })}
-        </div>
-      </nav>
-    </div>
-  )
+                        </div>div>
+                </nav>nav>
+          </div>div>
+        )
 }
 
 export default function App() {
-  const [isSidebarExpanded, setIsSidebarExpanded] = useState(true)
-  const [page, setPage] = useState('platform')
-  const [authLoading, setAuthLoading] = useState(true)
-  const [session, setSession] = useState(null)
-  const isMobile = useIsMobile()
-
-  useEffect(() => {
-    const checkSession = async () => {
-      const token = getAuthToken()
-      if (!token) {
-        setSession(null)
-        setAuthLoading(false)
-        return
-      }
-
-      try {
-        const response = await getSession()
-        setSession(response.authenticated ? response : null)
-      } catch {
-        setSession(null)
-      } finally {
-        setAuthLoading(false)
-      }
+    const [isSidebarExpanded, setIsSidebarExpanded] = useState(true)
+        const [page, setPage] = useState('platform')
+            const [authLoading, setAuthLoading] = useState(true)
+                const [session, setSession] = useState(null)
+                    const isMobile = useIsMobile()
+                      
+                        useEffect(() => {
+                              getSession()
+                                      .then((data) => setSession(data))
+                                      .catch(() => setSession(null))
+                                      .finally(() => setAuthLoading(false))
+                        }, [])
+                          
+                            useEffect(() => {
+                                  const token = getAuthToken()
+                                        if (!token && !authLoading) setSession(null)
+                            }, [authLoading])
+                              
+                                useEffect(() => {
+                                      const openDatePicker = (e) => {
+                                              const input = e.target?.closest?.('[data-date-trigger]')?.querySelector?.('input[type="date"]')
+                                                      if (input) {
+                                                                try { input.showPicker?.() } catch {}
+                                                      }
+                                      }
+                                            document.addEventListener('pointerenter', openDatePicker, true)
+                                                  document.addEventListener('pointerdown', openDatePicker, true)
+                                                        return () => {
+                                                                document.removeEventListener('pointerenter', openDatePicker, true)
+                                                                        document.removeEventListener('pointerdown', openDatePicker, true)
+                                                        }
+                                }, [])
+                                  
+                                    const handleLogout = async () => {
+                                          await logout()
+                                                setSession(null)
+                                    }
+                                      
+                                        if (authLoading) {
+                                              return (
+                                                      <main className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-900">
+                                                              <div className="text-center">
+                                                                        <p className="text-xs font-black uppercase tracking-[0.24em] text-sky-600">Naeil Platform</p>p>
+                                                                        <p className="mt-4 text-2xl font-black">접속 상태를 확인하는 중입니다.</p>p>
+                                                              </div>div>
+                                                      </main>main>
+                                                    )
+                                        }
+  
+    if (!session) {
+          return <LoginPage onLogin={setSession} />
     }
-
-    const handleUnauthorized = () => {
-      setSession(null)
-      setAuthLoading(false)
-    }
-
-    checkSession()
-    window.addEventListener('auth:unauthorized', handleUnauthorized)
-
-    return () => {
-      window.removeEventListener('auth:unauthorized', handleUnauthorized)
-    }
-  }, [])
-
-  useEffect(() => {
-    const openDatePicker = (event) => {
-      const target = event.target
-      if (!(target instanceof HTMLInputElement) || target.type !== 'date' || target.disabled || target.readOnly) {
-        return
-      }
-
-      target.focus({ preventScroll: true })
-      if (event.type === 'pointerdown' && typeof target.showPicker === 'function') {
-        try {
-          target.showPicker()
-        } catch {
-          // Browser security rules can block programmatic picker opening.
+  
+    const userRole = session.role ?? 'EMPLOYEE'
+      
+        if (isMobile && mobilePageIds.has(page)) {
+              return <MobileLayout activePage={page} setPage={setPage} session={session} userRole={userRole} />
         }
-      }
-    }
-
-    document.addEventListener('pointerenter', openDatePicker, true)
-    document.addEventListener('pointerdown', openDatePicker, true)
-
-    return () => {
-      document.removeEventListener('pointerenter', openDatePicker, true)
-      document.removeEventListener('pointerdown', openDatePicker, true)
-    }
-  }, [])
-
-  const handleLogout = async () => {
-    await logout()
-    setSession(null)
-  }
-
-  if (authLoading) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-900">
-        <div className="text-center">
-          <p className="text-xs font-black uppercase tracking-[0.24em] text-sky-600">Naeil Platform</p>
-          <p className="mt-4 text-2xl font-black">접속 상태를 확인하는 중입니다.</p>
-        </div>
-      </main>
-    )
-  }
-
-  if (!session?.authenticated) {
-    return <LoginPage onLogin={setSession} />
-  }
-
-  const PageComponent = pages[page]
-  const userRole = session.role || 'EXECUTIVE'
-  const shellTone = executivePages.has(page) ? 'executive-hybrid' : 'ops-light'
-
-  if (isMobile) {
-    return (
-      <MobileShell
-        page={page}
-        setPage={setPage}
-        pages={pages}
-        session={session}
-        userRole={userRole}
-        onLogout={handleLogout}
-      />
-    )
-  }
-
-  return (
-    <div className={`app-light min-h-screen bg-slate-50 ${shellTone}`}>
-      <Sidebar
-        isExpanded={isSidebarExpanded}
-        onToggle={() => setIsSidebarExpanded(!isSidebarExpanded)}
-        activePage={page}
-        onNavigate={setPage}
-        username={session.username}
-        displayName={session.displayName}
-        department={session.department}
-        role={userRole}
-        onLogout={handleLogout}
-        allowedMenuSections={(() => {
-          try { return session.allowedMenuSections ? JSON.parse(session.allowedMenuSections) : null }
-          catch { return null }
-        })()}
-      />
-      <div className={`transition-all duration-300 ${isSidebarExpanded ? 'ml-72' : 'ml-20'}`}>
-        <ExecutiveHeader username={session.username} displayName={session.displayName} />
-        {page === 'settings' ? (
-          <Settings isExpanded={false} />
-        ) : (
-          <main className="min-h-[calc(100vh-80px)] bg-slate-50 p-8">
-            {PageComponent ? (
-              <PageComponent
-                onNavigate={setPage}
-                username={session.username}
-                displayName={session.displayName}
-                department={session.department}
-                positionName={session.positionName}
-                role={userRole}
-              />
-            ) : (
-              <PlatformOverviewPage
-                onNavigate={setPage}
-                username={session.username}
-                displayName={session.displayName}
-                department={session.department}
-                positionName={session.positionName}
-                role={userRole}
-              />
-            )}
-          </main>
-        )}
-      </div>
-    </div>
-  )
-}
+  
+    const PageComponent = pages[page]
+      
+        return (
+              <div className="flex h-screen bg-slate-50 text-slate-900 dark:bg-gray-950 dark:text-gray-100 overflow-hidden">
+                    <Sidebar
+                              activePage={page}
+                              onNavigate={setPage}
+                              isExpanded={isSidebarExpanded}
+                              onToggle={() => setIsSidebarExpanded((v) => !v)}
+                              session={session}
+                              userRole={userRole}
+                            />
+                    <div className="flex flex-col flex-1 overflow-hidden">
+                            <ExecutiveHeader
+                                        session={session}
+                                        onLogout={handleLogout}
+                                        onNavigate={setPage}
+                                        userRole={userRole}
+                                      />
+                            <main className="flex-1 overflow-y-auto">
+                              {PageComponent ? (
+                            <PageComponent
+                                            onNavigate={setPage}
+                                            username={session.username}
+                                            displayName={session.displayName}
+                                            department={session.department}
+                                            positionName={session.positionName}
+                                            role={userRole}
+                                          />
+                          ) : (
+                            <PlatformOverviewPage
+                                            onNavigate={setPage}
+                                            username={session.username}
+                                            displayName={session.displayName}
+                                            department={session.department}
+                                            positionName={session.positionName}
+                                            role={userRole}
+                                          />
+                          )}
+                            </main>main>
+                    </div>div>
+              </div>div>
+            )
+}</div>

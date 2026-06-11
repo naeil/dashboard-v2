@@ -1,318 +1,215 @@
 package naeil.dashboard.service;
 
-import jakarta.mail.BodyPart;
-import jakarta.mail.Flags;
-import jakarta.mail.Folder;
-import jakarta.mail.AuthenticationFailedException;
-import jakarta.mail.Message;
-import jakarta.mail.MessagingException;
-import jakarta.mail.Multipart;
-import jakarta.mail.Session;
-import jakarta.mail.Store;
-import jakarta.mail.internet.InternetAddress;
-import jakarta.mail.internet.MimeUtility;
-import java.io.IOException;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Properties;
+import java.util.Map;
+
 import naeil.dashboard.common.config.DaouProperties;
 import naeil.dashboard.dto.MailItemResponse;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
+/**
+ * 다우오피스 메일 서비스 (REST API 방식)
+ *
+ * 기존 IMAP(포트 993) 방식에서 다우오피스 REST API 방식으로 전환.
+ * IMAP은 방화벽/외부 서버(Render 등)에서 포트가 차단되어 연결 불가.
+ * HTTPS REST API(443)를 사용하면 방화벽 우회 가능.
+ *
+ * ── 필요 환경변수 ──────────────────────────────────────────────────────────
+ * [공통 - 개발/배포 모두 설정 필요]
+ *   DAOU_BASE_URL      = https://api.daouoffice.com  (기본값, 생략 가능)
+ *   DAOU_CLIENT_ID     = 다우오피스 OAuth2 Client ID
+ *   DAOU_CLIENT_SECRET = 다우오피스 OAuth2 Client Secret
+ *
+ * [로컬 개발: src/main/resources/.env 또는 application-local.properties]
+ *   daou.client-id=YOUR_CLIENT_ID
+ *   daou.client-secret=YOUR_CLIENT_SECRET
+ *
+ * [Render 배포: Dashboard > naeil-dashboard > Environment > Add Variable]
+ *   Key: DAOU_CLIENT_ID    Value: YOUR_CLIENT_ID
+ *   Key: DAOU_CLIENT_SECRET Value: YOUR_CLIENT_SECRET
+ * ──────────────────────────────────────────────────────────────────────────
+ */
 @Service
 public class MailService {
 
-    private static final String IMAP_HOST = "imap.daouoffice.com";
-    private static final int IMAP_PORT = 993;
     private static final int PREVIEW_LENGTH = 100;
-    private static final int DEFAULT_TIMEOUT_MS = 10000;
+    private static final String MAIL_LIST_PATH = "/mail/v3/mailboxes/{mailbox}/mails";
 
+    private final RestTemplate restTemplate;
     private final DaouProperties daouProperties;
+    private final DaouAuthService daouAuthService;
 
-    public MailService(DaouProperties daouProperties) {
+    public MailService(RestTemplate restTemplate,
+                       DaouProperties daouProperties,
+                       DaouAuthService daouAuthService) {
+        this.restTemplate = restTemplate;
         this.daouProperties = daouProperties;
+        this.daouAuthService = daouAuthService;
     }
+
+    // ── 메일 목록 조회 ─────────────────────────────────────────────────────
 
     public List<MailItemResponse> getMails(String loginId, String password, int page, int size) {
         return getMails(loginId, password, "inbox", page, size);
     }
 
-    public List<MailItemResponse> getMails(String loginId, String password, String folderType, int page, int size) {
-        return getMails(loginId, password, IMAP_HOST, folderType, page, size);
+    public List<MailItemResponse> getMails(String loginId, String password,
+                                           String folderType, int page, int size) {
+        return getMails(loginId, password,
+                daouProperties.resolvedBaseUrl(), folderType, page, size);
     }
 
-    public List<MailItemResponse> getMails(String loginId, String password, String host, String folderType, int page, int size) {
+    /**
+     * 다우오피스 REST API로 메일 목록 조회.
+     * loginId/password 는 하위 호환 파라미터 (인증은 OAuth2 Access Token 사용).
+     */
+    public List<MailItemResponse> getMails(String loginId, String password,
+                                           String baseUrlOrHost, String folderType,
+                                           int page, int size) {
         int safePage = Math.max(0, page);
         int safeSize = Math.min(Math.max(1, size), 50);
-        MailEndpoint endpoint = resolveEndpoint(host);
 
-        Properties props = new Properties();
-        props.put("mail.store.protocol", "imaps");
-        props.put("mail.imaps.host", endpoint.host());
-        props.put("mail.imaps.port", String.valueOf(endpoint.port()));
-        props.put("mail.imaps.ssl.enable", "true");
-        props.put("mail.imaps.connectiontimeout", timeoutMillis(daouProperties.resolvedConnectTimeout()));
-        props.put("mail.imaps.timeout", timeoutMillis(daouProperties.resolvedReadTimeout()));
-        props.put("mail.imaps.writetimeout", timeoutMillis(daouProperties.resolvedReadTimeout()));
+        String mailbox     = resolveMailbox(folderType);
+        String accessToken = obtainAccessToken(loginId, password);
 
-        Store store = null;
-        Folder inbox = null;
+        String url = UriComponentsBuilder
+                .fromHttpUrl(daouProperties.resolvedBaseUrl() + MAIL_LIST_PATH)
+                .queryParam("page", safePage + 1)
+                .queryParam("pageSize", safeSize)
+                .buildAndExpand(mailbox)
+                .toUriString();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(accessToken);
+
         try {
-            Session mailSession = Session.getInstance(props);
-            store = mailSession.getStore("imaps");
-            store.connect(endpoint.host(), endpoint.port(), loginId, password);
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                    url, HttpMethod.GET,
+                    new HttpEntity<>(headers),
+                    new ParameterizedTypeReference<Map<String, Object>>() {}
+            );
+            Map<String, Object> body = response.getBody();
+            return body == null ? List.of() : parseMails(body);
 
-            inbox = resolveFolder(store, folderType);
-            if (!inbox.exists()) {
-                return List.of();
-            }
-            inbox.open(Folder.READ_ONLY);
-
-            int total = inbox.getMessageCount();
-            int end = total - (safePage * safeSize);
-            if (end <= 0) {
-                return List.of();
-            }
-            int start = Math.max(1, end - safeSize + 1);
-
-            Message[] messages = inbox.getMessages(start, end);
-            List<MailItemResponse> result = new ArrayList<>(messages.length);
-            for (Message message : messages) {
-                result.add(toResponse(message));
-            }
-            Collections.reverse(result);
-            return result;
-        } catch (AuthenticationFailedException e) {
-            throw new MailConnectionException("다우오피스 메일 ID 또는 비밀번호가 맞지 않습니다.", e);
-        } catch (MessagingException e) {
-            throw new MailConnectionException(toConnectionMessage(e), e);
-        } catch (IOException e) {
-            throw new MailConnectionException("메일 본문을 읽는 중 오류가 발생했습니다.", e);
-        } finally {
-            closeQuietly(inbox);
-            closeQuietly(store);
+        } catch (HttpClientErrorException.Unauthorized e) {
+            daouAuthService.clearCachedAccessToken();
+            throw new MailConnectionException(
+                    "다우오피스 인증이 만료되었습니다. 잠시 후 다시 시도해주세요. (401)", e);
+        } catch (HttpClientErrorException e) {
+            throw new MailConnectionException(
+                    "다우오피스 메일 API 오류 [" + e.getStatusCode().value()
+                    + "]: " + e.getResponseBodyAsString(), e);
+        } catch (ResourceAccessException e) {
+            throw new MailConnectionException(
+                    "다우오피스 API 서버 연결 실패. 네트워크/방화벽 또는 API URL 설정을 확인해주세요."
+                    + " (" + e.getMessage() + ")", e);
+        } catch (RestClientException e) {
+            throw new MailConnectionException(
+                    "다우오피스 메일 API 호출 오류: " + e.getMessage(), e);
         }
     }
+
+    // ── 연결 검증 ─────────────────────────────────────────────────────────
 
     public void validateConnection(String loginId, String password) {
-        validateConnection(loginId, password, IMAP_HOST);
+        validateConnection(loginId, password, daouProperties.resolvedBaseUrl());
     }
 
-    public void validateConnection(String loginId, String password, String host) {
-        MailEndpoint endpoint = resolveEndpoint(host);
-        Properties props = new Properties();
-        props.put("mail.store.protocol", "imaps");
-        props.put("mail.imaps.host", endpoint.host());
-        props.put("mail.imaps.port", String.valueOf(endpoint.port()));
-        props.put("mail.imaps.ssl.enable", "true");
-        props.put("mail.imaps.connectiontimeout", timeoutMillis(daouProperties.resolvedConnectTimeout()));
-        props.put("mail.imaps.timeout", timeoutMillis(daouProperties.resolvedReadTimeout()));
-        props.put("mail.imaps.writetimeout", timeoutMillis(daouProperties.resolvedReadTimeout()));
+    /**
+     * Access Token 발급 성공 여부로 연결 유효성 검증.
+     * IMAP 포트 직접 연결 대신 HTTPS REST API를 사용하므로 방화벽 영향 없음.
+     */
+    public void validateConnection(String loginId, String password, String hostOrBaseUrl) {
+        obtainAccessToken(loginId, password);
+    }
 
-        Store store = null;
+    // ── 내부 헬퍼 ─────────────────────────────────────────────────────────
+
+    /**
+     * OAuth2 Access Token을 발급합니다.
+     * 실패 시 환경변수 설정 방법을 안내하는 구체적인 에러 메시지 반환.
+     */
+    private String obtainAccessToken(String loginId, String password) {
         try {
-            Session mailSession = Session.getInstance(props);
-            store = mailSession.getStore("imaps");
-            store.connect(endpoint.host(), endpoint.port(), loginId, password);
-        } catch (AuthenticationFailedException e) {
-            throw new MailConnectionException("다우오피스 메일 ID 또는 비밀번호가 맞지 않습니다.", e);
-        } catch (MessagingException e) {
-            throw new MailConnectionException(toConnectionMessage(e), e);
-        } finally {
-            closeQuietly(store);
+            return daouAuthService.issueAccessToken();
+        } catch (Exception e) {
+            String loginHint = (loginId != null && !loginId.isBlank())
+                    ? " (로그인 계정: " + loginId + ")" : "";
+            throw new MailConnectionException(
+                    "다우오피스 API 인증 실패" + loginHint
+                    + ". 환경변수 DAOU_CLIENT_ID / DAOU_CLIENT_SECRET 를 확인해주세요."
+                    + " [로컬: .env 또는 application.properties, Render: Environment 탭]"
+                    + " 원인: " + e.getMessage(), e);
         }
     }
 
-    private Folder resolveFolder(Store store, String folderType) throws MessagingException {
-        if (!"sent".equalsIgnoreCase(folderType)) {
-            return store.getFolder("INBOX");
-        }
-
-        String[] sentCandidates = {
-                "Sent",
-                "Sent Messages",
-                "Sent Items",
-                "보낸편지함",
-                "보낸 메일함",
-                "보낸메일함"
+    private String resolveMailbox(String folderType) {
+        if (folderType == null) return "inbox";
+        return switch (folderType.toLowerCase()) {
+            case "sent", "sent messages", "보낸편지함", "보낸 메일함" -> "sent";
+            case "trash", "deleted", "휴지통"                        -> "trash";
+            case "spam", "junk", "스팸"                              -> "spam";
+            default                                                  -> "inbox";
         };
-        for (String folderName : sentCandidates) {
-            Folder folder = store.getFolder(folderName);
-            if (folder.exists()) {
-                return folder;
-            }
-        }
-        return store.getFolder("Sent");
     }
 
-    private MailItemResponse toResponse(Message message) throws MessagingException, IOException {
-        String preview = normalize(extractText(message));
-        return new MailItemResponse(
-                decode(message.getSubject()),
-                formatFrom(message),
-                message.getReceivedDate() != null ? message.getReceivedDate().toInstant() : Instant.EPOCH,
-                message.isSet(Flags.Flag.SEEN),
-                preview.length() > PREVIEW_LENGTH ? preview.substring(0, PREVIEW_LENGTH) : preview
-        );
+    @SuppressWarnings("unchecked")
+    private List<MailItemResponse> parseMails(Map<String, Object> body) {
+        Object rawMails = body.get("mails");
+        if (!(rawMails instanceof List<?> list)) return List.of();
+
+        List<MailItemResponse> result = new ArrayList<>();
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?> rawMap)) continue;
+            Map<String, Object> mail = (Map<String, Object>) rawMap;
+
+            String subject = asStr(mail.get("subject"),  "(제목 없음)");
+            String from    = asStr(mail.get("from"),     "");
+            boolean isRead = Boolean.TRUE.equals(mail.get("isRead"));
+            String content = asStr(mail.get("content"),  asStr(mail.get("body"), ""));
+            String preview = content.length() > PREVIEW_LENGTH
+                             ? content.substring(0, PREVIEW_LENGTH) + "…"
+                             : content;
+            Instant date   = parseInstant(mail.get("receivedDate"));
+
+            result.add(new MailItemResponse(subject, from, date, isRead, preview));
+        }
+
+        result.sort((a, b) -> {
+            if (a.receivedDate() == null && b.receivedDate() == null) return 0;
+            if (a.receivedDate() == null) return 1;
+            if (b.receivedDate() == null) return -1;
+            return b.receivedDate().compareTo(a.receivedDate());
+        });
+        return Collections.unmodifiableList(result);
     }
 
-    private String formatFrom(Message message) throws MessagingException {
-        if (message.getFrom() == null || message.getFrom().length == 0) {
-            return "";
-        }
-        if (message.getFrom()[0] instanceof InternetAddress address) {
-            String personal = decode(address.getPersonal());
-            return personal == null || personal.isBlank() ? address.getAddress() : personal + " <" + address.getAddress() + ">";
-        }
-        return decode(message.getFrom()[0].toString());
+    private String asStr(Object v, String def) {
+        if (v == null) return def;
+        String s = v.toString().trim();
+        return s.isEmpty() ? def : s;
     }
 
-    private String extractText(Object part) throws MessagingException, IOException {
-        if (part instanceof Message message) {
-            return extractTextFromPart(message);
-        }
-        if (part instanceof BodyPart bodyPart) {
-            return extractTextFromPart(bodyPart);
-        }
-        return "";
-    }
-
-    private String extractTextFromPart(jakarta.mail.Part part) throws MessagingException, IOException {
-        if (part.isMimeType("text/plain")) {
-            Object content = part.getContent();
-            return content != null ? content.toString() : "";
-        }
-        if (part.isMimeType("text/html")) {
-            Object content = part.getContent();
-            return content != null ? stripHtml(content.toString()) : "";
-        }
-        if (part.isMimeType("multipart/*")) {
-            Multipart multipart = (Multipart) part.getContent();
-            String htmlFallback = "";
-            for (int i = 0; i < multipart.getCount(); i++) {
-                BodyPart bodyPart = multipart.getBodyPart(i);
-                String text = extractText(bodyPart);
-                if (bodyPart.isMimeType("text/plain") && !text.isBlank()) {
-                    return text;
-                }
-                if (htmlFallback.isBlank() && !text.isBlank()) {
-                    htmlFallback = text;
-                }
-            }
-            return htmlFallback;
-        }
-        return "";
-    }
-
-    private String decode(String value) {
-        if (value == null) {
-            return "";
-        }
+    private Instant parseInstant(Object v) {
+        if (v == null) return null;
         try {
-            return MimeUtility.decodeText(value);
+            if (v instanceof Number n) return Instant.ofEpochMilli(n.longValue());
+            return Instant.parse(v.toString());
         } catch (Exception ignored) {
-            return value;
+            return null;
         }
     }
-
-    private String stripHtml(String value) {
-        return value.replaceAll("(?is)<(script|style).*?>.*?</\\1>", " ")
-                .replaceAll("(?s)<[^>]*>", " ")
-                .replace("&nbsp;", " ")
-                .replace("&amp;", "&")
-                .replace("&lt;", "<")
-                .replace("&gt;", ">");
-    }
-
-    private String normalize(String value) {
-        return value == null ? "" : value.replaceAll("\\s+", " ").trim();
-    }
-
-    private MailEndpoint resolveEndpoint(String host) {
-        String defaultHost = daouProperties.mail() != null ? daouProperties.mail().resolvedHost() : IMAP_HOST;
-        int defaultPort = daouProperties.mail() != null ? daouProperties.mail().resolvedPort() : IMAP_PORT;
-        if (!StringUtils.hasText(host)) {
-            return new MailEndpoint(defaultHost, defaultPort);
         }
-        String cleaned = host.trim()
-                .replace("https://", "")
-                .replace("imaps://", "")
-                .replace("imap://", "")
-                .replace("http://", "")
-                .replaceAll("/+$", "");
-        int slashIndex = cleaned.indexOf('/');
-        if (slashIndex >= 0) {
-            cleaned = cleaned.substring(0, slashIndex);
-        }
-        int port = defaultPort;
-        int colonIndex = cleaned.lastIndexOf(':');
-        if (colonIndex > 0 && colonIndex < cleaned.length() - 1) {
-            String maybePort = cleaned.substring(colonIndex + 1);
-            if (maybePort.matches("\\d+")) {
-                port = Integer.parseInt(maybePort);
-                cleaned = cleaned.substring(0, colonIndex);
-            }
-        }
-        return new MailEndpoint(StringUtils.hasText(cleaned) ? cleaned : defaultHost, port);
-    }
-
-    private String timeoutMillis(Duration duration) {
-        Duration resolved = duration != null ? duration : Duration.ofMillis(DEFAULT_TIMEOUT_MS);
-        return String.valueOf(Math.max(1000, resolved.toMillis()));
-    }
-
-    private String toConnectionMessage(MessagingException e) {
-        String raw = collectMessages(e);
-        String lower = raw.toLowerCase();
-        if (lower.contains("auth") || lower.contains("login") || lower.contains("credential") || lower.contains("password")) {
-            return "다우오피스 메일 ID 또는 비밀번호가 맞지 않습니다. 메일 주소 전체와 메일 비밀번호를 확인해주세요.";
-        }
-        if (lower.contains("connect") || lower.contains("timeout") || lower.contains("unknownhost")) {
-            return "다우오피스 IMAP 서버에 연결하지 못했습니다. 사내망/방화벽 또는 IMAP 사용 설정을 확인해주세요.";
-        }
-        if (lower.contains("ssl") || lower.contains("handshake")) {
-            return "다우오피스 IMAP SSL 연결에 실패했습니다.";
-        }
-        if (lower.contains("folder")) {
-            return "메일함을 찾지 못했습니다.";
-        }
-        return "다우오피스 메일 연결에 실패했습니다. " + raw;
-    }
-
-    private String collectMessages(Throwable throwable) {
-        StringBuilder builder = new StringBuilder();
-        Throwable current = throwable;
-        while (current != null) {
-            if (current.getMessage() != null && !current.getMessage().isBlank()) {
-                if (!builder.isEmpty()) builder.append(" / ");
-                builder.append(current.getMessage());
-            }
-            current = current.getCause();
-        }
-        return builder.toString();
-    }
-
-    private record MailEndpoint(String host, int port) {}
-
-    private void closeQuietly(Folder folder) {
-        if (folder != null && folder.isOpen()) {
-            try {
-                folder.close(false);
-            } catch (MessagingException ignored) {
-            }
-        }
-    }
-
-    private void closeQuietly(Store store) {
-        if (store != null && store.isConnected()) {
-            try {
-                store.close();
-            } catch (MessagingException ignored) {
-            }
-        }
-    }
-}

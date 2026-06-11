@@ -59,7 +59,7 @@ public class MailController {
                     "connected", true,
                     "host", credentials.host(),
                     "username", maskUsername(credentials.username()),
-                    "message", "다우오피스 IMAP 연결 테스트 성공"
+                    "message", "다우오피스 메일 API 연결 성공 (REST API)"
             ));
         } catch (MailConnectionException e) {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
