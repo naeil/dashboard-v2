@@ -97,7 +97,7 @@ public class EmployeeAnalysisController {
     // ── 헬퍼 ───────────────────────────────────────────────────────────────
 
     private AuthUser getUser(HttpServletRequest request) {
-        try { return authService.resolveUser(request); }
+        try { return authService.authenticate(request.getHeader("Authorization")).orElse(null); }
         catch (Exception e) { return null; }
     }
 
