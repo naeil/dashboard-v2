@@ -7,7 +7,7 @@ plugins {
 group = 'naeil'
 version = '0.0.1-SNAPSHOT'
 
-java {
+java {h
     sourceCompatibility = JavaVersion.VERSION_21
     targetCompatibility = JavaVersion.VERSION_21
 }
@@ -50,7 +50,7 @@ dependencies {
     annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
 
     // Spring Mail (IMAP) 의존성 제거 - REST API 방식으로 전환됨
-    // implementation 'org.springframework.boot:spring-boot-starter-mail'
+ implementation 'org.springframework.boot:spring-boot-starter-mail'
 
     // Security context only
     implementation 'org.springframework.security:spring-security-core'
