@@ -39,6 +39,8 @@ public class AuthService {
     public static final String FEATURE_RESET_PASSWORD = "employee.reset_password";
     public static final String FEATURE_MANAGE_MENU_PERMISSIONS = "employee.manage_permissions";
     public static final String FEATURE_DELETE_USERS = "employee.deactivate";
+    private static final String MENU_ORGANIZATION = "organization";
+    private static final String MENU_EMPLOYEES_LEGACY = "employees";
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final int HASH_ITERATIONS = 120_000;
@@ -342,11 +344,14 @@ public class AuthService {
         if (UserRole.from(actor.role()) == UserRole.EXECUTIVE) {
             return true;
         }
-        Set<String> permissions = parseFeaturePermissions(actor.allowedMenuSections());
-        return permissions.contains(FEATURE_CREATE_INVITE)
-                || permissions.contains(FEATURE_RESET_PASSWORD)
-                || permissions.contains(FEATURE_MANAGE_MENU_PERMISSIONS)
-                || permissions.contains(FEATURE_DELETE_USERS);
+        Set<String> features = parseFeaturePermissions(actor.allowedMenuSections());
+        Set<String> menus = parseMenuPermissions(actor.allowedMenuSections());
+        return menus.contains(MENU_ORGANIZATION)
+                || menus.contains(MENU_EMPLOYEES_LEGACY)
+                || features.contains(FEATURE_CREATE_INVITE)
+                || features.contains(FEATURE_RESET_PASSWORD)
+                || features.contains(FEATURE_MANAGE_MENU_PERMISSIONS)
+                || features.contains(FEATURE_DELETE_USERS);
     }
 
     private Optional<Long> findCompanyIdByCode(String companyCode) {
@@ -552,17 +557,75 @@ public class AuthService {
             return Set.of();
         }
         try {
-            List<String> entries = objectMapper.readValue(value, new TypeReference<>() {});
+            Object parsed = objectMapper.readValue(value, new TypeReference<Object>() {});
             Set<String> features = new HashSet<>();
-            for (String entry : entries) {
-                if (entry != null && entry.startsWith("feature:")) {
-                    features.add(entry.substring("feature:".length()));
+            if (parsed instanceof List<?> entries) {
+                for (Object entry : entries) {
+                    String text = text(entry);
+                    if (text != null && text.startsWith("feature:")) {
+                        features.add(normalizeFeaturePermission(text.substring("feature:".length())));
+                    }
+                }
+            } else if (parsed instanceof Map<?, ?> map) {
+                Object featureEntries = map.get("features");
+                if (featureEntries instanceof List<?> entries) {
+                    for (Object entry : entries) {
+                        String text = text(entry);
+                        if (text != null) {
+                            features.add(normalizeFeaturePermission(text));
+                        }
+                    }
                 }
             }
             return features;
         } catch (Exception ignored) {
             return Set.of();
         }
+    }
+
+    private Set<String> parseMenuPermissions(String value) {
+        if (value == null || value.isBlank()) {
+            return Set.of();
+        }
+        try {
+            Object parsed = objectMapper.readValue(value, new TypeReference<Object>() {});
+            Set<String> menus = new HashSet<>();
+            if (parsed instanceof List<?> entries) {
+                for (Object entry : entries) {
+                    String text = text(entry);
+                    if (text != null && !text.startsWith("feature:")) {
+                        menus.add(text);
+                    }
+                }
+            } else if (parsed instanceof Map<?, ?> map) {
+                Object menuEntries = map.get("menus");
+                if (menuEntries instanceof List<?> entries) {
+                    for (Object entry : entries) {
+                        String text = text(entry);
+                        if (text != null) {
+                            menus.add(text);
+                        }
+                    }
+                }
+            }
+            return menus;
+        } catch (Exception ignored) {
+            return Set.of();
+        }
+    }
+
+    private String normalizeFeaturePermission(String value) {
+        if (value == null) {
+            return "";
+        }
+        String normalized = value.startsWith("feature:") ? value.substring("feature:".length()) : value;
+        return switch (normalized) {
+            case "create_invite" -> FEATURE_CREATE_INVITE;
+            case "reset_password" -> FEATURE_RESET_PASSWORD;
+            case "manage_menu_permissions" -> FEATURE_MANAGE_MENU_PERMISSIONS;
+            case "delete_users" -> FEATURE_DELETE_USERS;
+            default -> normalized;
+        };
     }
 
     private String createInviteCode() {
