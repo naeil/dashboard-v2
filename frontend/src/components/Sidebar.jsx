@@ -263,7 +263,7 @@ export default function Sidebar({
           return itemOverride.label ? { ...item, label: itemOverride.label } : item
         })
         .filter(Boolean)
-        .filter((item) => item.roles.includes(role))
+        .filter((item) => item.roles.includes(role) || (hasItemLevelPermissions && isItemAllowed(item.id, allowedMenuIds)))
 
       if (hasItemLevelPermissions) {
         items = items.filter((item) => isItemAllowed(item.id, allowedMenuIds))
