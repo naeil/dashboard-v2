@@ -28,6 +28,7 @@ import OrganizationManagementPage from './pages/executive/OrganizationManagement
 import PartnerManagementPage from './pages/executive/PartnerManagementPage'
 import PartnerPaymentLedgerPage from './pages/executive/PartnerPaymentLedgerPage'
 import PayrollPage from './pages/executive/PayrollPage'
+import QuotationPage from './pages/executive/QuotationPage'
 import PlatformAdminPage from './pages/executive/PlatformAdminPage'
 import ProfitManagementPage from './pages/executive/ProfitManagementPage'
 import ProductCostPage from './pages/executive/ProductCostPage'
@@ -98,6 +99,7 @@ const pages = {
   partners: PartnerManagementPage,
   'partner-payment': PartnerPaymentLedgerPage,
   payroll: PayrollPage,
+  'quotation': QuotationPage,
   'profit-management': ProfitManagementPage,
   'product-cost': ProductCostPage,
   'blog-auto-publish': BlogAutoPublishPage,
