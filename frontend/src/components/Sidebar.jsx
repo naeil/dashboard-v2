@@ -108,6 +108,7 @@ export const defaultMenuSections = [
       { id: 'consulting-revenue', icon: 'business_center', label: '컨설팅 매출', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'export-pipeline', icon: 'public', label: '수출 파이프라인', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'payroll', icon: 'payments', label: '임금 지급 내역', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'quotation', icon: 'receipt', label: '견적서 출력', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
     ],
   },
   {
