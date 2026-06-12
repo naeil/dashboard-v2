@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { getMenuConfig } from '../api/settingsApi'
 import { getAllowedMenus, parseAccessPermissions } from '../utils/accessPermissions'
 
 const departmentAliases = {
@@ -232,6 +233,22 @@ export default function Sidebar({
       window.removeEventListener('sidebar:menu-order-updated', refresh)
       window.removeEventListener('sidebar:menu-config-updated', refresh)
     }
+  }, [])
+
+  useEffect(() => {
+    getMenuConfig()
+      .then((response) => {
+        const overrides = response.data?.overrides
+        const order = response.data?.order
+        if (overrides && typeof overrides === 'object') {
+          localStorage.setItem('menu_config_overrides', JSON.stringify(overrides))
+        }
+        if (order && typeof order === 'object') {
+          localStorage.setItem(SIDEBAR_MENU_ORDER_KEY, JSON.stringify(order))
+        }
+        setMenuVersion((value) => value + 1)
+      })
+      .catch(() => {})
   }, [])
 
   function toggleSection(title) {

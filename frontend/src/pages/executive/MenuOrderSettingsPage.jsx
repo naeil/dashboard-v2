@@ -1,23 +1,19 @@
-import { useEffect, useState } from 'react'
-import { defaultMenuSections } from '../../components/Sidebar'
+import { useEffect, useMemo, useState } from 'react'
+import { SIDEBAR_MENU_ORDER_KEY, defaultMenuSections } from '../../components/Sidebar'
 import { getMenuConfig, saveMenuConfig } from '../../api/settingsApi'
-
-// ── 상태 배지 ─────────────────────────────────────────────────────
 
 function StatusBadge({ label, color }) {
   const colors = {
-    hidden:  'bg-slate-100 text-slate-500',
+    hidden: 'bg-slate-100 text-slate-500',
     private: 'bg-violet-100 text-violet-600',
     deleted: 'bg-red-100 text-red-500',
   }
   return (
-    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${colors[color] || 'bg-slate-100 text-slate-500'}`}>
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${colors[color] || colors.hidden}`}>
       {label}
     </span>
   )
 }
-
-// ── 인라인 이름 편집 ──────────────────────────────────────────────
 
 function EditableLabel({ value, originalLabel, onChange }) {
   const [editing, setEditing] = useState(false)
@@ -35,9 +31,13 @@ function EditableLabel({ value, originalLabel, onChange }) {
         autoFocus
         className="w-full rounded border border-sky-300 px-2 py-0.5 text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-sky-400"
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
-        onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false) }}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') commit()
+          if (event.key === 'Escape') setEditing(false)
+        }}
       />
     )
   }
@@ -45,9 +45,13 @@ function EditableLabel({ value, originalLabel, onChange }) {
   return (
     <button
       type="button"
-      onClick={() => { setDraft(value || originalLabel); setEditing(true) }}
+      onClick={(event) => {
+        event.stopPropagation()
+        setDraft(value || originalLabel)
+        setEditing(true)
+      }}
       className="group flex items-center gap-1 text-left"
-      title="클릭해서 이름 수정"
+      title="이름 수정"
     >
       <span className={`text-sm font-bold ${value && value !== originalLabel ? 'text-sky-600' : 'text-slate-800'}`}>
         {value || originalLabel}
@@ -60,21 +64,98 @@ function EditableLabel({ value, originalLabel, onChange }) {
   )
 }
 
-// ── 메인 ─────────────────────────────────────────────────────────
+function getDefaultOrder() {
+  return {
+    sections: defaultMenuSections.map((section) => section.id),
+    items: Object.fromEntries(defaultMenuSections.map((section) => [section.id, section.items.map((item) => item.id)])),
+  }
+}
+
+function normalizeOrder(value) {
+  const defaults = getDefaultOrder()
+  const validSectionIds = new Set(defaults.sections)
+  const validItemIds = new Set(defaultMenuSections.flatMap((section) => section.items.map((item) => item.id)))
+  const requestedSections = Array.isArray(value?.sections) ? value.sections : []
+  const sections = [
+    ...requestedSections.filter((id) => validSectionIds.has(id)),
+    ...defaults.sections.filter((id) => !requestedSections.includes(id)),
+  ]
+  const rawItems = value?.items && typeof value.items === 'object' ? value.items : {}
+  const assigned = new Set()
+  const items = {}
+
+  sections.forEach((sectionId) => {
+    const defaultIds = defaults.items[sectionId] || []
+    const hasSavedItems = Object.prototype.hasOwnProperty.call(rawItems, sectionId)
+    const savedIds = Array.isArray(rawItems[sectionId])
+      ? rawItems[sectionId].filter((id) => validItemIds.has(id) && !assigned.has(id))
+      : []
+    savedIds.forEach((id) => assigned.add(id))
+    items[sectionId] = hasSavedItems ? savedIds : defaultIds.filter((id) => !assigned.has(id))
+    items[sectionId].forEach((id) => assigned.add(id))
+  })
+
+  defaultMenuSections.forEach((section) => {
+    section.items.forEach((item) => {
+      if (!assigned.has(item.id)) {
+        items[section.id] = [...(items[section.id] || []), item.id]
+        assigned.add(item.id)
+      }
+    })
+  })
+
+  return { sections, items }
+}
+
+function buildOrderedSections(order) {
+  const normalized = normalizeOrder(order)
+  const sectionById = new Map(defaultMenuSections.map((section) => [section.id, section]))
+  const itemById = new Map(defaultMenuSections.flatMap((section) => section.items.map((item) => [item.id, item])))
+  return normalized.sections
+    .map((sectionId) => {
+      const section = sectionById.get(sectionId)
+      if (!section) return null
+      return {
+        ...section,
+        items: (normalized.items[sectionId] || []).map((itemId) => itemById.get(itemId)).filter(Boolean),
+      }
+    })
+    .filter(Boolean)
+}
+
+function findItem(itemId) {
+  if (!itemId) return null
+  return defaultMenuSections.flatMap((section) => section.items).find((item) => item.id === itemId) || null
+}
+
+function cleanOverrides(overrides) {
+  return Object.fromEntries(
+    Object.entries(overrides).filter(([, value]) =>
+      value.label || value.hidden || value.private || value.deleted
+    )
+  )
+}
 
 export default function MenuOrderSettingsPage() {
-  // overrides: { [id]: { label, hidden, private, deleted } }
   const [overrides, setOverrides] = useState({})
+  const [order, setOrder] = useState(() => getDefaultOrder())
+  const [selectedItemId, setSelectedItemId] = useState('')
   const [loading, setLoading] = useState(true)
   const [savedAt, setSavedAt] = useState('')
   const [showDeleted, setShowDeleted] = useState(false)
 
   useEffect(() => {
     getMenuConfig()
-      .then((res) => setOverrides(res.data?.overrides || {}))
+      .then((response) => {
+        setOverrides(response.data?.overrides || {})
+        setOrder(normalizeOrder(response.data?.order))
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
+
+  const sections = useMemo(() => buildOrderedSections(order), [order])
+  const selectedItem = findItem(selectedItemId)
 
   function getOv(id) {
     return overrides[id] || {}
@@ -103,25 +184,46 @@ export default function MenuOrderSettingsPage() {
     setOv(id, { label: label || null })
   }
 
+  function moveSelectedItem(targetSectionId) {
+    if (!selectedItemId) return
+    setOrder((prev) => {
+      const next = normalizeOrder(prev)
+      const sourceSectionId = Object.keys(next.items).find((sectionId) => next.items[sectionId].includes(selectedItemId))
+      if (!sourceSectionId || sourceSectionId === targetSectionId) return next
+
+      return {
+        ...next,
+        items: Object.fromEntries(
+          Object.entries(next.items).map(([sectionId, itemIds]) => {
+            const withoutSelected = itemIds.filter((id) => id !== selectedItemId)
+            if (sectionId === targetSectionId) return [sectionId, [...withoutSelected, selectedItemId]]
+            return [sectionId, withoutSelected]
+          })
+        ),
+      }
+    })
+  }
+
   async function handleSave() {
-    // 빈 오버라이드 정리
-    const clean = Object.fromEntries(
-      Object.entries(overrides).filter(([, v]) =>
-        v.label || v.hidden || v.private || v.deleted
-      )
-    )
-    await saveMenuConfig({ overrides: clean })
-    // 사이드바에 변경 알림
+    const clean = cleanOverrides(overrides)
+    const cleanOrder = normalizeOrder(order)
+    await saveMenuConfig({ overrides: clean, order: cleanOrder })
     localStorage.setItem('menu_config_overrides', JSON.stringify(clean))
+    localStorage.setItem(SIDEBAR_MENU_ORDER_KEY, JSON.stringify(cleanOrder))
     window.dispatchEvent(new Event('sidebar:menu-config-updated'))
+    window.dispatchEvent(new Event('sidebar:menu-order-updated'))
     const now = new Date()
     setSavedAt(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} 저장됨`)
   }
 
   function handleReset() {
     setOverrides({})
+    setOrder(getDefaultOrder())
+    setSelectedItemId('')
     localStorage.removeItem('menu_config_overrides')
+    localStorage.removeItem(SIDEBAR_MENU_ORDER_KEY)
     window.dispatchEvent(new Event('sidebar:menu-config-updated'))
+    window.dispatchEvent(new Event('sidebar:menu-order-updated'))
     setSavedAt('기본값으로 복원됨')
   }
 
@@ -133,25 +235,22 @@ export default function MenuOrderSettingsPage() {
     )
   }
 
-  const allSections = defaultMenuSections
-
   return (
     <div className="space-y-5">
-      {/* 헤더 */}
       <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.24em] text-sky-600">Admin Menu Control</p>
             <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950">카테고리 관리</h1>
-            <p className="mt-1 text-sm text-slate-500 font-bold">
-              이름 수정 · 숨기기 · 비공개 · 삭제. 저장하면 전체 직원에게 즉시 반영됩니다.
+            <p className="mt-1 text-sm font-bold text-slate-500">
+              이름 수정, 이동, 숨기기, 비공개, 삭제를 저장하면 전체 직원에게 반영됩니다.
             </p>
           </div>
           <div className="flex items-center gap-2">
             {savedAt && <span className="text-xs font-black text-emerald-600">{savedAt}</span>}
             <button
               type="button"
-              onClick={() => setShowDeleted((v) => !v)}
+              onClick={() => setShowDeleted((value) => !value)}
               className={`inline-flex h-10 items-center gap-1.5 rounded-lg border px-4 text-xs font-black transition-colors ${showDeleted ? 'border-red-200 bg-red-50 text-red-600' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
             >
               <span className="material-symbols-outlined text-base">delete</span>
@@ -176,41 +275,64 @@ export default function MenuOrderSettingsPage() {
           </div>
         </div>
 
-        {/* 범례 */}
         <div className="mt-4 flex flex-wrap gap-4 border-t border-slate-100 pt-4 text-xs font-bold text-slate-500">
+          <span className="flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-base text-sky-500">ads_click</span>
+            메뉴 클릭 → 이동할 카테고리의 여기로 이동
+          </span>
           <span className="flex items-center gap-1.5">
             <span className="material-symbols-outlined text-base text-slate-400">edit</span>
             이름 클릭 → 수정
           </span>
           <span className="flex items-center gap-1.5">
             <span className="material-symbols-outlined text-base text-slate-400">visibility_off</span>
-            숨기기 — 사이드바에서 안 보임
+            숨기기 → 사이드바에서 안 보임
           </span>
           <span className="flex items-center gap-1.5">
             <span className="material-symbols-outlined text-base text-violet-400">lock</span>
-            비공개 — 대표/임원만 보임
+            비공개 → 대표/임원만 보임
           </span>
           <span className="flex items-center gap-1.5">
             <span className="material-symbols-outlined text-base text-red-400">delete</span>
-            삭제 — 완전히 제거 (복원 가능)
+            삭제 → 제거, 복원 가능
           </span>
         </div>
       </header>
 
-      {/* 섹션별 카드 */}
-      {allSections.map((section) => {
-        const sOv = getOv(section.id)
-        const isSectionDeleted = !!sOv.deleted
+      <section className={`rounded-2xl border p-4 shadow-sm ${selectedItem ? 'border-sky-200 bg-sky-50' : 'border-slate-200 bg-white'}`}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-sky-600">Move Target</p>
+            <p className="mt-1 text-sm font-black text-slate-900">
+              {selectedItem ? `"${getOv(selectedItem.id).label || selectedItem.label}" 선택됨` : '이동할 메뉴를 먼저 클릭하세요.'}
+            </p>
+          </div>
+          {selectedItem && (
+            <button
+              type="button"
+              onClick={() => setSelectedItemId('')}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50"
+            >
+              <span className="material-symbols-outlined text-base">close</span>
+              선택 해제
+            </button>
+          )}
+        </div>
+      </section>
+
+      {sections.map((section) => {
+        const sectionOverride = getOv(section.id)
+        const isSectionDeleted = !!sectionOverride.deleted
         if (isSectionDeleted && !showDeleted) return null
 
         return (
-          <div key={section.id}
-            className={`rounded-2xl border bg-white shadow-sm overflow-hidden transition-opacity ${isSectionDeleted ? 'opacity-50 border-red-200' : 'border-slate-200'}`}
+          <div
+            key={section.id}
+            className={`overflow-hidden rounded-2xl border bg-white shadow-sm transition-opacity ${isSectionDeleted ? 'border-red-200 opacity-50' : 'border-slate-200'}`}
           >
-            {/* 섹션 헤더 */}
-            <div className={`flex items-center justify-between gap-3 px-5 py-3.5 ${isSectionDeleted ? 'bg-red-50' : 'bg-slate-50'} border-b border-slate-200`}>
-              <div className="flex items-center gap-3 min-w-0">
-                <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
+            <div className={`flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3.5 ${isSectionDeleted ? 'bg-red-50' : 'bg-slate-50'}`}>
+              <div className="flex min-w-0 items-center gap-3">
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-widest ${
                   section.group === 'executive' ? 'bg-sky-100 text-sky-600' :
                   section.group === 'staff' ? 'bg-emerald-100 text-emerald-600' :
                   'bg-slate-100 text-slate-500'
@@ -218,75 +340,84 @@ export default function MenuOrderSettingsPage() {
                   {section.group === 'executive' ? '경영진' : section.group === 'staff' ? '실무진' : '시스템'}
                 </span>
                 <EditableLabel
-                  value={sOv.label}
+                  value={sectionOverride.label}
                   originalLabel={section.title}
-                  onChange={(v) => setLabel(section.id, v)}
+                  onChange={(value) => setLabel(section.id, value)}
                 />
-                {sOv.hidden  && <StatusBadge label="숨김"   color="hidden" />}
-                {sOv.private && <StatusBadge label="비공개" color="private" />}
-                {sOv.deleted && <StatusBadge label="삭제됨" color="deleted" />}
+                {sectionOverride.hidden && <StatusBadge label="숨김" color="hidden" />}
+                {sectionOverride.private && <StatusBadge label="비공개" color="private" />}
+                {sectionOverride.deleted && <StatusBadge label="삭제됨" color="deleted" />}
               </div>
 
-              {/* 섹션 액션 버튼 */}
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex shrink-0 items-center gap-1">
+                {selectedItemId && !section.items.some((item) => item.id === selectedItemId) && (
+                  <button
+                    type="button"
+                    onClick={() => moveSelectedItem(section.id)}
+                    className="mr-2 inline-flex h-8 items-center gap-1 rounded-lg border border-sky-200 bg-white px-3 text-xs font-black text-sky-600 hover:bg-sky-50"
+                  >
+                    <span className="material-symbols-outlined text-sm">move_down</span>
+                    여기로 이동
+                  </button>
+                )}
                 <button type="button" onClick={() => toggleHidden(section.id)}
-                  title={sOv.hidden ? '표시' : '숨기기'}
-                  className={`rounded-lg p-2 transition-colors ${sOv.hidden ? 'bg-slate-200 text-slate-700' : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'}`}>
-                  <span className="material-symbols-outlined text-base">{sOv.hidden ? 'visibility' : 'visibility_off'}</span>
+                  title={sectionOverride.hidden ? '표시' : '숨기기'}
+                  className={`rounded-lg p-2 transition-colors ${sectionOverride.hidden ? 'bg-slate-200 text-slate-700' : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'}`}>
+                  <span className="material-symbols-outlined text-base">{sectionOverride.hidden ? 'visibility' : 'visibility_off'}</span>
                 </button>
                 <button type="button" onClick={() => togglePrivate(section.id)}
-                  title={sOv.private ? '공개' : '비공개'}
-                  className={`rounded-lg p-2 transition-colors ${sOv.private ? 'bg-violet-100 text-violet-600' : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'}`}>
-                  <span className="material-symbols-outlined text-base">{sOv.private ? 'lock' : 'lock_open'}</span>
+                  title={sectionOverride.private ? '공개' : '비공개'}
+                  className={`rounded-lg p-2 transition-colors ${sectionOverride.private ? 'bg-violet-100 text-violet-600' : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'}`}>
+                  <span className="material-symbols-outlined text-base">{sectionOverride.private ? 'lock' : 'lock_open'}</span>
                 </button>
                 <button type="button" onClick={() => toggleDeleted(section.id)}
-                  title={sOv.deleted ? '복원' : '삭제'}
-                  className={`rounded-lg p-2 transition-colors ${sOv.deleted ? 'bg-red-100 text-red-600' : 'text-slate-400 hover:bg-red-50 hover:text-red-500'}`}>
-                  <span className="material-symbols-outlined text-base">{sOv.deleted ? 'restore' : 'delete'}</span>
+                  title={sectionOverride.deleted ? '복원' : '삭제'}
+                  className={`rounded-lg p-2 transition-colors ${sectionOverride.deleted ? 'bg-red-100 text-red-600' : 'text-slate-400 hover:bg-red-50 hover:text-red-500'}`}>
+                  <span className="material-symbols-outlined text-base">{sectionOverride.deleted ? 'restore' : 'delete'}</span>
                 </button>
               </div>
             </div>
 
-            {/* 메뉴 아이템 목록 */}
             <div className="divide-y divide-slate-100">
               {section.items.map((item) => {
-                const iOv = getOv(item.id)
-                const isItemDeleted = !!iOv.deleted
+                const itemOverride = getOv(item.id)
+                const isItemDeleted = !!itemOverride.deleted
                 if (isItemDeleted && !showDeleted) return null
 
                 return (
-                  <div key={item.id}
-                    className={`flex items-center justify-between gap-3 px-5 py-3 transition-colors ${isItemDeleted ? 'bg-red-50 opacity-60' : 'hover:bg-slate-50'}`}
+                  <div
+                    key={item.id}
+                    onClick={() => setSelectedItemId(item.id)}
+                    className={`flex cursor-pointer items-center justify-between gap-3 px-5 py-3 transition-colors ${selectedItemId === item.id ? 'bg-sky-50 ring-1 ring-inset ring-sky-200' : isItemDeleted ? 'bg-red-50 opacity-60' : 'hover:bg-slate-50'}`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="material-symbols-outlined text-base text-slate-400 shrink-0">{item.icon}</span>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="material-symbols-outlined shrink-0 text-base text-slate-400">{item.icon}</span>
                       <EditableLabel
-                        value={iOv.label}
+                        value={itemOverride.label}
                         originalLabel={item.label}
-                        onChange={(v) => setLabel(item.id, v)}
+                        onChange={(value) => setLabel(item.id, value)}
                       />
-                      {iOv.hidden  && <StatusBadge label="숨김"   color="hidden" />}
-                      {iOv.private && <StatusBadge label="비공개" color="private" />}
-                      {iOv.deleted && <StatusBadge label="삭제됨" color="deleted" />}
-                      <span className="text-[10px] text-slate-300 font-mono">{item.id}</span>
+                      {itemOverride.hidden && <StatusBadge label="숨김" color="hidden" />}
+                      {itemOverride.private && <StatusBadge label="비공개" color="private" />}
+                      {itemOverride.deleted && <StatusBadge label="삭제됨" color="deleted" />}
+                      <span className="font-mono text-[10px] text-slate-300">{item.id}</span>
                     </div>
 
-                    {/* 아이템 액션 버튼 */}
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex shrink-0 items-center gap-1" onClick={(event) => event.stopPropagation()}>
                       <button type="button" onClick={() => toggleHidden(item.id)}
-                        title={iOv.hidden ? '표시' : '숨기기'}
-                        className={`rounded-lg p-1.5 transition-colors ${iOv.hidden ? 'bg-slate-200 text-slate-700' : 'text-slate-300 hover:bg-slate-100 hover:text-slate-600'}`}>
-                        <span className="material-symbols-outlined text-sm">{iOv.hidden ? 'visibility' : 'visibility_off'}</span>
+                        title={itemOverride.hidden ? '표시' : '숨기기'}
+                        className={`rounded-lg p-1.5 transition-colors ${itemOverride.hidden ? 'bg-slate-200 text-slate-700' : 'text-slate-300 hover:bg-slate-100 hover:text-slate-600'}`}>
+                        <span className="material-symbols-outlined text-sm">{itemOverride.hidden ? 'visibility' : 'visibility_off'}</span>
                       </button>
                       <button type="button" onClick={() => togglePrivate(item.id)}
-                        title={iOv.private ? '공개' : '비공개'}
-                        className={`rounded-lg p-1.5 transition-colors ${iOv.private ? 'bg-violet-100 text-violet-600' : 'text-slate-300 hover:bg-slate-100 hover:text-slate-600'}`}>
-                        <span className="material-symbols-outlined text-sm">{iOv.private ? 'lock' : 'lock_open'}</span>
+                        title={itemOverride.private ? '공개' : '비공개'}
+                        className={`rounded-lg p-1.5 transition-colors ${itemOverride.private ? 'bg-violet-100 text-violet-600' : 'text-slate-300 hover:bg-slate-100 hover:text-slate-600'}`}>
+                        <span className="material-symbols-outlined text-sm">{itemOverride.private ? 'lock' : 'lock_open'}</span>
                       </button>
                       <button type="button" onClick={() => toggleDeleted(item.id)}
-                        title={iOv.deleted ? '복원' : '삭제'}
-                        className={`rounded-lg p-1.5 transition-colors ${iOv.deleted ? 'bg-red-100 text-red-500' : 'text-slate-300 hover:bg-red-50 hover:text-red-400'}`}>
-                        <span className="material-symbols-outlined text-sm">{iOv.deleted ? 'restore' : 'delete'}</span>
+                        title={itemOverride.deleted ? '복원' : '삭제'}
+                        className={`rounded-lg p-1.5 transition-colors ${itemOverride.deleted ? 'bg-red-100 text-red-500' : 'text-slate-300 hover:bg-red-50 hover:text-red-400'}`}>
+                        <span className="material-symbols-outlined text-sm">{itemOverride.deleted ? 'restore' : 'delete'}</span>
                       </button>
                     </div>
                   </div>

@@ -837,6 +837,7 @@ public class ExecutiveDashboardService {
                 WHERE company_id = ?
                   AND (
                     LOWER(assignee_name) = LOWER(?)
+                    OR LOWER(assignee_name) = LOWER(?)
                     OR COALESCE(request_text, '') ILIKE ?
                     OR COALESCE(request_text, '') ILIKE ?
                     OR COALESCE(review_comment, '') ILIKE ?
@@ -861,6 +862,7 @@ public class ExecutiveDashboardService {
                 """,
                 companyId,
                 user.username(),
+                user.displayName() == null || user.displayName().isBlank() ? user.username() : user.displayName(),
                 "%" + usernameMention + "%",
                 "%" + displayMention + "%",
                 "%" + usernameMention + "%",
@@ -2138,7 +2140,10 @@ public class ExecutiveDashboardService {
         Map<String, Object> scopedPayload = new HashMap<>(payload);
         if (UserRole.from(user.role()) == UserRole.EMPLOYEE) {
             if ("work-tasks".equals(resource)) {
-                scopedPayload.put("assignee_name", user.username());
+                String assigneeName = user.displayName() == null || user.displayName().isBlank()
+                        ? user.username()
+                        : user.displayName();
+                scopedPayload.put("assignee_name", assigneeName);
             } else if ("payment-requests".equals(resource)) {
                 scopedPayload.put("requester_name", user.username());
             }
@@ -2227,6 +2232,7 @@ public class ExecutiveDashboardService {
                     WHERE id = ?
                       AND (
                         LOWER(assignee_name) = LOWER(?)
+                        OR LOWER(assignee_name) = LOWER(?)
                         OR COALESCE(request_text, '') ILIKE ?
                         OR COALESCE(request_text, '') ILIKE ?
                         OR COALESCE(review_comment, '') ILIKE ?
@@ -2240,6 +2246,7 @@ public class ExecutiveDashboardService {
                     Integer.class,
                     id,
                     user.username(),
+                    displayName,
                     "%@" + user.username() + "%",
                     "%@" + displayName + "%",
                     "%@" + user.username() + "%",

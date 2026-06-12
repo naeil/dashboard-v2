@@ -135,7 +135,7 @@ function useIsMobile() {
 function MobileLayout({ activePage, setPage, session, userRole }) {
   const PageComponent = pages[activePage] || PlatformOverviewPage
   return (
-    <div className="flex h-screen flex-col bg-slate-50 text-slate-900">
+    <div className="app-light flex h-screen flex-col bg-slate-50 text-slate-900">
       <main className="flex-1 overflow-y-auto pb-16">
         <PageComponent
           onNavigate={setPage}
@@ -240,7 +240,7 @@ export default function App() {
 
   const PageComponent = pages[page] || PlatformOverviewPage
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900 dark:bg-gray-950 dark:text-gray-100">
+    <div className="app-light flex h-screen overflow-hidden bg-slate-50 text-slate-900">
       <Sidebar
         activePage={page}
         onNavigate={setPage}

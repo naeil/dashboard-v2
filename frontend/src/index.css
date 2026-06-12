@@ -54,15 +54,12 @@
 
     .app-light {
         color: #0f172a;
-        background:
-            radial-gradient(circle at top right, rgba(14, 165, 233, 0.10), transparent 28%),
-            linear-gradient(180deg, #f8fafc 0%, #eef4f8 100%);
+        background: #f8fafc;
+        color-scheme: light;
     }
 
     .app-light main {
-        background:
-            radial-gradient(circle at top right, rgba(14, 165, 233, 0.10), transparent 28%),
-            linear-gradient(180deg, #f8fafc 0%, #eef4f8 100%) !important;
+        background: #f8fafc !important;
     }
 
     .app-light .bg-slate-950,
@@ -70,7 +67,18 @@
     .app-light .bg-slate-950\/40,
     .app-light .bg-slate-950\/70,
     .app-light .bg-slate-900,
-    .app-light .bg-slate-900\/70 {
+    .app-light .bg-slate-900\/70,
+    .app-light .bg-gray-950,
+    .app-light .bg-gray-900,
+    .app-light .bg-zinc-950,
+    .app-light .bg-zinc-900,
+    .app-light .bg-neutral-950,
+    .app-light .bg-neutral-900,
+    .app-light .bg-black,
+    .app-light .bg-black\/60,
+    .app-light .bg-surface,
+    .app-light .bg-surface-container,
+    .app-light .bg-surface-container-high {
         background-color: #ffffff !important;
     }
 
@@ -83,17 +91,38 @@
     }
 
     .app-light .bg-slate-800,
-    .app-light .bg-slate-700 {
+    .app-light .bg-slate-700,
+    .app-light .bg-gray-800,
+    .app-light .bg-gray-700,
+    .app-light .bg-zinc-800,
+    .app-light .bg-zinc-700,
+    .app-light .bg-neutral-800,
+    .app-light .bg-neutral-700 {
         background-color: #e2e8f0 !important;
     }
 
     .app-light .border-white\/10,
     .app-light .border-slate-700,
-    .app-light .border-slate-800 {
+    .app-light .border-slate-800,
+    .app-light .border-gray-700,
+    .app-light .border-gray-800,
+    .app-light .border-zinc-700,
+    .app-light .border-zinc-800,
+    .app-light .border-neutral-700,
+    .app-light .border-neutral-800 {
         border-color: #e2e8f0 !important;
     }
 
     .app-light .text-white,
+    .app-light .text-gray-50,
+    .app-light .text-gray-100,
+    .app-light .text-gray-200,
+    .app-light .text-zinc-50,
+    .app-light .text-zinc-100,
+    .app-light .text-zinc-200,
+    .app-light .text-neutral-50,
+    .app-light .text-neutral-100,
+    .app-light .text-neutral-200,
     .app-light .text-slate-100,
     .app-light .text-slate-200,
     .app-light .text-slate-300 {
@@ -113,6 +142,43 @@
         border-color: #cbd5e1 !important;
         color: #0f172a !important;
         box-shadow: none;
+    }
+
+    .app-light table,
+    .app-light tbody,
+    .app-light tr,
+    .app-light td,
+    .app-light th,
+    .app-light section,
+    .app-light article,
+    .app-light form {
+        color: #0f172a;
+    }
+
+    .app-light thead,
+    .app-light th {
+        background-color: #f1f5f9 !important;
+        color: #0f172a !important;
+        border-color: #e2e8f0 !important;
+    }
+
+    .app-light tbody tr {
+        background-color: #ffffff;
+    }
+
+    .app-light tbody tr:hover {
+        background-color: #f8fafc !important;
+    }
+
+    .app-light [class*="shadow-slate-950"],
+    .app-light [class*="shadow-black"] {
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08) !important;
+    }
+
+    .app-light .tonal-gradient {
+        background: #ffffff !important;
+        color: #0f172a !important;
+        border: 1px solid #e2e8f0;
     }
 
     .app-light input:focus,

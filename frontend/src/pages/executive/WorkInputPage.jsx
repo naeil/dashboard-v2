@@ -193,9 +193,13 @@ export default function WorkInputPage({ username = 'admin', displayName, departm
   }, [])
 
   const ownerName = displayName || username
+  const ownerKeys = useMemo(
+    () => [username, displayName].filter(Boolean).map((value) => String(value).trim().replace(/\s+/g, '').toLowerCase()),
+    [displayName, username],
+  )
   const myTasks = useMemo(
-    () => tasks.filter((task) => (task.assignee_name || '').toLowerCase() === (ownerName || '').toLowerCase()),
-    [ownerName, tasks],
+    () => tasks.filter((task) => ownerKeys.includes(String(task.assignee_name || '').trim().replace(/\s+/g, '').toLowerCase())),
+    [ownerKeys, tasks],
   )
   const selectedTask = useMemo(() => tasks.find((task) => task.id === selectedId), [selectedId, tasks])
   const projectNames = useMemo(() => Array.from(new Set(myTasks.map((task) => task.project_name || '미지정 프로젝트'))), [myTasks])

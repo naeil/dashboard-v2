@@ -166,6 +166,15 @@ function isMentioned(task, names = []) {
   return keys.some((key) => mentions.some((mention) => mention === key || mention.startsWith(key)))
 }
 
+function normalizeOwnerKey(value) {
+  return String(value || '').trim().replace(/\s+/g, '').toLowerCase()
+}
+
+function isOwnerMatch(value, keys = []) {
+  const normalized = normalizeOwnerKey(value)
+  return Boolean(normalized) && keys.includes(normalized)
+}
+
 export default function StaffProjectStatusPage({ username, displayName, department }) {
   const [tasks, setTasks] = useState([])
   const [users, setUsers] = useState([])
@@ -253,10 +262,9 @@ export default function StaffProjectStatusPage({ username, displayName, departme
   ), [editingId, form.project_name, tasks])
 
   const calendarTasks = useMemo(() => {
-    const ownerKeys = [username, displayName].filter(Boolean).map((value) => String(value).trim().toLowerCase())
+    const ownerKeys = [username, displayName].filter(Boolean).map(normalizeOwnerKey)
     return tasks.filter((task) => {
-      const assignee = String(task.assignee_name || '').trim().toLowerCase()
-      const isMine = ownerKeys.length > 0 && ownerKeys.includes(assignee)
+      const isMine = ownerKeys.length > 0 && isOwnerMatch(task.assignee_name, ownerKeys)
       if (!showProjectCalendar && !showMyCalendar) return false
       if (showProjectCalendar && showMyCalendar) return true
       if (showMyCalendar) return isMine
