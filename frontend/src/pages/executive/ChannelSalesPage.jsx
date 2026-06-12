@@ -524,7 +524,7 @@ export default function ChannelSalesPage() {
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <span className="material-symbols-outlined text-2xl text-blue-600">monitoring</span>
-          <h1 className="text-2xl font-black tracking-normal text-slate-950">판매 분석</h1>
+          <h1 className="text-2xl font-black tracking-tight text-slate-950">판매 분석</h1>
         </div>
         <div className="flex items-center gap-2">
           <span className={`rounded border px-3 py-1.5 text-xs font-black ${autoSync ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500'}`}>

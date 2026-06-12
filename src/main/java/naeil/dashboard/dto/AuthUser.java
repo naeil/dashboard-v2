@@ -8,7 +8,9 @@ public record AuthUser(
         String department,
         String positionName,
         String role,
+        String accountScope,
+        String accountLevel,
         String status,
-        String allowedMenuSections   // JSON 배열 문자열 또는 null (null = 부서 기반 기본값)
+        String allowedMenuSections
 ) {
 }

@@ -1,12 +1,16 @@
 package naeil.dashboard.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 import lombok.RequiredArgsConstructor;
@@ -31,35 +35,47 @@ public class AuthService {
     public static final String AUTHENTICATED_ROLE_ATTR = "authenticatedRole";
     public static final String AUTHENTICATED_USER_ATTR = "authenticatedUser";
 
+    public static final String FEATURE_CREATE_INVITE = "employee.invite";
+    public static final String FEATURE_RESET_PASSWORD = "employee.reset_password";
+    public static final String FEATURE_MANAGE_MENU_PERMISSIONS = "employee.manage_permissions";
+    public static final String FEATURE_DELETE_USERS = "employee.deactivate";
+
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final int HASH_ITERATIONS = 120_000;
     private static final int HASH_BITS = 256;
+    private static final String PASSWORD_RULE_MESSAGE =
+            "비밀번호는 영문 대문자, 소문자, 특수문자(!@#$%&*)를 각각 1개 이상 포함하고, 영문/숫자/특수문자(!@#$%&*)만 사용해 8~16자로 입력하세요.";
 
     private final AuthProperties authProperties;
     private final AuthTokenService authTokenService;
     private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
 
-    public AuthUser login(String username, String password) {
-        AuthUser user = findUser(username).orElseGet(() -> tryCreateBootstrapExecutive(username, password));
+    public AuthUser login(String companyCode, String username, String password) {
+        String normalizedUsername = required(username, "아이디를 입력하세요.").trim();
+        Long companyId = findCompanyIdByCode(companyCode)
+                .orElseGet(() -> tryBootstrapCompanyId(normalizedUsername, password));
+        AuthUser user = findUser(companyId, normalizedUsername)
+                .orElseGet(() -> tryCreateBootstrapExecutive(companyId, normalizedUsername, password));
         if (!"ACTIVE".equals(user.status())) {
             throw new CustomException(403, "비활성화된 계정입니다. 관리자에게 문의하세요.");
         }
 
         String passwordHash = jdbcTemplate.queryForObject(
-                "SELECT password_hash FROM dashboard_user WHERE username = ?",
+                "SELECT password_hash FROM dashboard_user WHERE id = ?",
                 String.class,
-                username
+                user.id()
         );
         if (!verifyPassword(password, passwordHash)) {
             throw new CustomException(401, "아이디 또는 비밀번호가 올바르지 않습니다.");
         }
 
-        jdbcTemplate.update("UPDATE dashboard_user SET last_login_at = NOW(), updated_at = NOW() WHERE username = ?", username);
-        return user;
+        jdbcTemplate.update("UPDATE dashboard_user SET last_login_at = NOW(), updated_at = NOW() WHERE id = ?", user.id());
+        return findUserById(user.id()).orElse(user);
     }
 
     public String createToken(AuthUser user) {
-        return authTokenService.createToken(user.username());
+        return authTokenService.createToken(user.id());
     }
 
     public Optional<AuthUser> authenticate(String authorizationHeader) {
@@ -68,13 +84,14 @@ public class AuthService {
         }
 
         String token = authorizationHeader.substring("Bearer ".length()).trim();
-        return authTokenService.validateAndExtractUsername(token)
-                .flatMap(this::findActiveUser);
+        return authTokenService.validateAndExtractUserId(token)
+                .flatMap(this::findActiveUserById);
     }
 
     public List<Map<String, Object>> listUsers() {
         return jdbcTemplate.queryForList("""
-                SELECT id, username, display_name, department, position_name, role, status, email, allowed_menu_sections, last_login_at, created_at
+                SELECT id, username, display_name, department, position_name, role, account_scope,
+                       account_level, status, email, allowed_menu_sections, last_login_at, created_at
                 FROM dashboard_user
                 ORDER BY created_at DESC
                 """);
@@ -83,11 +100,24 @@ public class AuthService {
     public List<Map<String, Object>> listInvites() {
         expireOldInvites();
         return jdbcTemplate.queryForList("""
-                SELECT id, invite_code, display_name, department, position_name, role, status, invited_by,
-                       accepted_by, expires_at, accepted_at, created_at
+                SELECT id, invite_code, display_name, department, position_name, role, account_scope,
+                       account_level, status, invited_by, accepted_by, expires_at, accepted_at, created_at
                 FROM dashboard_user_invite
                 ORDER BY created_at DESC
                 """);
+    }
+
+    public List<Map<String, Object>> listPositionPermissionTemplates(AuthUser actor) {
+        if (!canAccessEmployeeManagement(actor)) {
+            requireRole(actor, UserRole.EXECUTIVE);
+        }
+        return jdbcTemplate.queryForList("""
+                SELECT id, company_id, position_name, permission_group_name, description,
+                       permission_payload, created_at, updated_at
+                FROM position_permission_template
+                WHERE company_id = ?
+                ORDER BY position_name
+                """, actor.companyId());
     }
 
     public Map<String, Object> previewInvite(String inviteCode) {
@@ -99,31 +129,76 @@ public class AuthService {
                 "displayName", invite.get("display_name"),
                 "department", invite.get("department") != null ? invite.get("department") : "",
                 "positionName", invite.get("position_name") != null ? invite.get("position_name") : "",
-                "role", invite.get("role")
+                "role", invite.get("role"),
+                "accountScope", invite.get("account_scope"),
+                "accountLevel", invite.get("account_level")
+        );
+    }
+
+    public Map<String, Object> checkUsernameAvailable(String inviteCode, String username) {
+        String normalizedCode = required(inviteCode, "초대 코드를 입력하세요.").trim().toUpperCase();
+        String normalizedUsername = required(username, "아이디를 입력하세요.").trim();
+        Map<String, Object> invite = findPendingInvite(normalizedCode)
+                .orElseThrow(() -> new CustomException(400, "유효하지 않거나 만료된 초대 코드입니다."));
+        Long companyId = ((Number) invite.get("company_id")).longValue();
+        boolean available = findUser(companyId, normalizedUsername).isEmpty();
+        return Map.of(
+                "username", normalizedUsername,
+                "inviteCode", normalizedCode,
+                "companyId", companyId,
+                "available", available,
+                "message", available ? "사용 가능한 아이디입니다." : "이미 사용 중인 아이디입니다."
         );
     }
 
     public Map<String, Object> createInvite(InviteCreateRequest request, AuthUser actor) {
-        requireManagerOrExecutive(actor);
+        requireFeature(actor, FEATURE_CREATE_INVITE);
         String role = normalizeInviteRole(request.role(), actor);
+        String accountLevel = roleToAccountLevel(role);
         String code = createInviteCode();
         String displayName = required(request.displayName(), "직원 이름을 입력하세요.");
 
         jdbcTemplate.update("""
                 INSERT INTO dashboard_user_invite (
-                    company_id, invite_code, display_name, department, position_name, role, status,
-                    invited_by, expires_at
+                    company_id, invite_code, display_name, department, position_name, role,
+                    account_scope, account_level, status, invited_by, expires_at
                 )
-                VALUES (1, ?, ?, ?, ?, ?, 'PENDING', ?, NOW() + INTERVAL '7 days')
-                """, code, displayName, blankToNull(request.department()), blankToNull(request.positionName()),
-                role, actor.username());
+                VALUES (?, ?, ?, ?, ?, ?, 'TENANT', ?, 'PENDING', ?, NOW() + INTERVAL '7 days')
+                """, actor.companyId(), code, displayName, blankToNull(request.department()), blankToNull(request.positionName()),
+                role, accountLevel, actor.username());
 
         return Map.of(
                 "inviteCode", code,
                 "displayName", displayName,
                 "role", role,
+                "accountScope", "TENANT",
+                "accountLevel", accountLevel,
                 "expiresInDays", 7
         );
+    }
+
+    public void deleteInvite(Long inviteId, AuthUser actor) {
+        requireFeature(actor, FEATURE_CREATE_INVITE);
+
+        Map<String, Object> invite;
+        try {
+            invite = jdbcTemplate.queryForMap("""
+                    SELECT id, company_id, status
+                    FROM dashboard_user_invite
+                    WHERE id = ?
+                    """, inviteId);
+        } catch (EmptyResultDataAccessException exception) {
+            throw new CustomException(404, "초대 링크를 찾을 수 없습니다.");
+        }
+
+        if (!actor.companyId().equals(((Number) invite.get("company_id")).longValue())) {
+            throw new CustomException(403, "다른 회사의 초대 링크는 삭제할 수 없습니다.");
+        }
+        if ("ACCEPTED".equals(String.valueOf(invite.get("status")))) {
+            throw new CustomException(400, "이미 가입 완료된 초대는 삭제할 수 없습니다.");
+        }
+
+        jdbcTemplate.update("DELETE FROM dashboard_user_invite WHERE id = ?", inviteId);
     }
 
     public void changePassword(ChangePasswordRequest request, AuthUser actor) {
@@ -147,7 +222,7 @@ public class AuthService {
     }
 
     public void resetPassword(Long userId, ResetPasswordRequest request, AuthUser actor) {
-        requireRole(actor, UserRole.EXECUTIVE);
+        requireFeature(actor, FEATURE_RESET_PASSWORD);
         String newPassword = validateNewPassword(request.newPassword());
         int updated = jdbcTemplate.update(
                 "UPDATE dashboard_user SET password_hash = ?, updated_at = NOW() WHERE id = ?",
@@ -160,7 +235,7 @@ public class AuthService {
     }
 
     public void deleteUser(Long userId, AuthUser actor) {
-        requireRole(actor, UserRole.EXECUTIVE);
+        requireFeature(actor, FEATURE_DELETE_USERS);
         if (actor.id().equals(userId)) {
             throw new CustomException(400, "본인 계정은 삭제할 수 없습니다.");
         }
@@ -194,31 +269,37 @@ public class AuthService {
     public AuthUser register(RegisterRequest request) {
         String inviteCode = required(request.inviteCode(), "초대 코드를 입력하세요.").trim().toUpperCase();
         String username = required(request.username(), "아이디를 입력하세요.").trim();
-        String password = required(request.password(), "비밀번호를 입력하세요.");
-        if (password.length() < 8) {
-            throw new CustomException(400, "비밀번호는 8자 이상이어야 합니다.");
-        }
-        if (findUser(username).isPresent()) {
-            throw new CustomException(409, "이미 사용 중인 아이디입니다.");
-        }
-
+        String password = validateNewPassword(request.password());
         Map<String, Object> invite = findPendingInvite(inviteCode)
                 .orElseThrow(() -> new CustomException(400, "유효하지 않거나 만료된 초대 코드입니다."));
+        Long companyId = ((Number) invite.get("company_id")).longValue();
+        if (findUser(companyId, username).isPresent()) {
+            throw new CustomException(409, "이미 사용 중인 아이디입니다.");
+        }
         String passwordHash = hashPassword(password);
+
+        String defaultPermissions = findPositionPermissionPayload(
+                companyId,
+                invite.get("position_name")
+        ).orElse(null);
 
         jdbcTemplate.update("""
                 INSERT INTO dashboard_user (
-                    company_id, username, display_name, department, position_name, role, password_hash, status
+                    company_id, username, display_name, department, position_name, role,
+                    account_scope, account_level, password_hash, status, allowed_menu_sections
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
                 """,
-                ((Number) invite.get("company_id")).longValue(),
+                companyId,
                 username,
                 invite.get("display_name"),
                 invite.get("department"),
                 invite.get("position_name"),
                 invite.get("role"),
-                passwordHash
+                invite.get("account_scope"),
+                invite.get("account_level"),
+                passwordHash,
+                defaultPermissions
         );
 
         jdbcTemplate.update("""
@@ -227,7 +308,7 @@ public class AuthService {
                 WHERE id = ?
                 """, username, ((Number) invite.get("id")).longValue());
 
-        return findUser(username).orElseThrow();
+        return findUser(companyId, username).orElseThrow();
     }
 
     public void requireRole(AuthUser user, UserRole minimumRole) {
@@ -238,23 +319,76 @@ public class AuthService {
         }
     }
 
-    private AuthUser tryCreateBootstrapExecutive(String username, String password) {
+    public void requireFeature(AuthUser actor, String featureKey) {
+        if (!hasFeaturePermission(actor, featureKey)) {
+            throw new CustomException(403, "기능 권한이 없습니다.");
+        }
+    }
+
+    public boolean hasFeaturePermission(AuthUser actor, String featureKey) {
+        if (actor == null) {
+            return false;
+        }
+        if (UserRole.from(actor.role()) == UserRole.EXECUTIVE) {
+            return true;
+        }
+        return parseFeaturePermissions(actor.allowedMenuSections()).contains(featureKey);
+    }
+
+    public boolean canAccessEmployeeManagement(AuthUser actor) {
+        if (actor == null) {
+            return false;
+        }
+        if (UserRole.from(actor.role()) == UserRole.EXECUTIVE) {
+            return true;
+        }
+        Set<String> permissions = parseFeaturePermissions(actor.allowedMenuSections());
+        return permissions.contains(FEATURE_CREATE_INVITE)
+                || permissions.contains(FEATURE_RESET_PASSWORD)
+                || permissions.contains(FEATURE_MANAGE_MENU_PERMISSIONS)
+                || permissions.contains(FEATURE_DELETE_USERS);
+    }
+
+    private Optional<Long> findCompanyIdByCode(String companyCode) {
+        if (companyCode == null || companyCode.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.ofNullable(jdbcTemplate.queryForObject("""
+                    SELECT id
+                    FROM company
+                    WHERE company_code = ? AND status = 'ACTIVE'
+                    """, Long.class, companyCode.trim().toUpperCase()));
+        } catch (EmptyResultDataAccessException exception) {
+            throw new CustomException(401, "회사 코드, 아이디 또는 비밀번호가 올바르지 않습니다.");
+        }
+    }
+
+    private Long tryBootstrapCompanyId(String username, String password) {
+        if (matches(username, authProperties.username()) && matches(password, authProperties.password())) {
+            return 1L;
+        }
+        throw new CustomException(400, "회사 코드를 입력하세요.");
+    }
+
+    private AuthUser tryCreateBootstrapExecutive(Long companyId, String username, String password) {
         if (!matches(username, authProperties.username()) || !matches(password, authProperties.password())) {
             throw new CustomException(401, "아이디 또는 비밀번호가 올바르지 않습니다.");
         }
         String passwordHash = hashPassword(password);
         jdbcTemplate.update("""
                 INSERT INTO dashboard_user (
-                    company_id, username, display_name, department, position_name, role, password_hash, status
+                    company_id, username, display_name, department, position_name, role,
+                    account_scope, account_level, password_hash, status
                 )
-                VALUES (1, ?, '대표 관리자', '경영', '대표', 'EXECUTIVE', ?, 'ACTIVE')
-                ON CONFLICT (username) DO NOTHING
-                """, username, passwordHash);
-        return findUser(username).orElseThrow();
+                VALUES (?, ?, '대표 관리자', '경영', '대표', 'EXECUTIVE', 'PLATFORM', 'ADMIN', ?, 'ACTIVE')
+                ON CONFLICT (company_id, username) DO NOTHING
+                """, companyId, username, passwordHash);
+        return findUser(companyId, username).orElseThrow();
     }
 
-    private Optional<AuthUser> findActiveUser(String username) {
-        return findUser(username).filter(user -> "ACTIVE".equals(user.status()));
+    private Optional<AuthUser> findActiveUserById(Long userId) {
+        return findUserById(userId).filter(user -> "ACTIVE".equals(user.status()));
     }
 
     public void updateMenuPermissions(Long userId, String sectionsJson) {
@@ -263,29 +397,93 @@ public class AuthService {
                 sectionsJson, userId);
     }
 
-    private Optional<AuthUser> findUser(String username) {
-        if (username == null || username.isBlank()) {
+    @Transactional
+    public Map<String, Object> savePositionPermissionTemplate(Map<String, Object> body, AuthUser actor) {
+        requireFeature(actor, FEATURE_MANAGE_MENU_PERMISSIONS);
+        String positionName = required(text(body.get("positionName")), "직급명을 입력하세요.");
+        String permissionGroupName = blankToNull(text(body.get("permissionGroupName")));
+        String description = blankToNull(text(body.get("description")));
+        String sectionsJson = normalizeSectionsPayload(body.get("sections"));
+
+        jdbcTemplate.update("""
+                INSERT INTO position_permission_template (
+                    company_id, position_name, permission_group_name, description, permission_payload
+                )
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT (company_id, position_name)
+                DO UPDATE SET
+                    permission_group_name = EXCLUDED.permission_group_name,
+                    description = EXCLUDED.description,
+                    permission_payload = EXCLUDED.permission_payload,
+                    updated_at = NOW()
+                """,
+                actor.companyId(),
+                positionName,
+                permissionGroupName != null ? permissionGroupName : positionName + " 권한",
+                description,
+                sectionsJson);
+
+        int updatedUsers = jdbcTemplate.update("""
+                UPDATE dashboard_user
+                SET allowed_menu_sections = ?, updated_at = NOW()
+                WHERE company_id = ?
+                  AND COALESCE(NULLIF(position_name, ''), '직원') = ?
+                  AND role <> 'EXECUTIVE'
+                """, sectionsJson, actor.companyId(), positionName);
+
+        return Map.of(
+                "positionName", positionName,
+                "updatedUsers", updatedUsers,
+                "message", "직급 권한 템플릿이 저장되었습니다."
+        );
+    }
+
+    private Optional<AuthUser> findUser(Long companyId, String username) {
+        if (companyId == null || username == null || username.isBlank()) {
             return Optional.empty();
         }
         try {
             return Optional.ofNullable(jdbcTemplate.queryForObject("""
-                    SELECT id, company_id, username, display_name, department, position_name, role, status, allowed_menu_sections
+                    SELECT id, company_id, username, display_name, department, position_name, role,
+                           account_scope, account_level, status, allowed_menu_sections
                     FROM dashboard_user
-                    WHERE username = ?
-                    """, (rs, rowNum) -> new AuthUser(
-                    rs.getLong("id"),
-                    rs.getLong("company_id"),
-                    rs.getString("username"),
-                    rs.getString("display_name"),
-                    rs.getString("department"),
-                    rs.getString("position_name"),
-                    rs.getString("role"),
-                    rs.getString("status"),
-                    rs.getString("allowed_menu_sections")
-            ), username));
+                    WHERE company_id = ? AND username = ?
+                    """, this::mapAuthUser, companyId, username));
         } catch (EmptyResultDataAccessException exception) {
             return Optional.empty();
         }
+    }
+
+    private Optional<AuthUser> findUserById(Long userId) {
+        if (userId == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.ofNullable(jdbcTemplate.queryForObject("""
+                    SELECT id, company_id, username, display_name, department, position_name, role,
+                           account_scope, account_level, status, allowed_menu_sections
+                    FROM dashboard_user
+                    WHERE id = ?
+                    """, this::mapAuthUser, userId));
+        } catch (EmptyResultDataAccessException exception) {
+            return Optional.empty();
+        }
+    }
+
+    private AuthUser mapAuthUser(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
+        return new AuthUser(
+                rs.getLong("id"),
+                rs.getLong("company_id"),
+                rs.getString("username"),
+                rs.getString("display_name"),
+                rs.getString("department"),
+                rs.getString("position_name"),
+                rs.getString("role"),
+                rs.getString("account_scope"),
+                rs.getString("account_level"),
+                rs.getString("status"),
+                rs.getString("allowed_menu_sections")
+        );
     }
 
     private Optional<Map<String, Object>> findPendingInvite(String inviteCode) {
@@ -301,6 +499,22 @@ public class AuthService {
         }
     }
 
+    private Optional<String> findPositionPermissionPayload(Long companyId, Object positionName) {
+        String normalizedPosition = text(positionName);
+        if (normalizedPosition == null || normalizedPosition.isBlank()) {
+            normalizedPosition = "직원";
+        }
+        try {
+            return Optional.ofNullable(jdbcTemplate.queryForObject("""
+                    SELECT permission_payload
+                    FROM position_permission_template
+                    WHERE company_id = ? AND position_name = ?
+                    """, String.class, companyId, normalizedPosition.trim()));
+        } catch (EmptyResultDataAccessException exception) {
+            return Optional.empty();
+        }
+    }
+
     private void expireOldInvites() {
         jdbcTemplate.update("""
                 UPDATE dashboard_user_invite
@@ -311,17 +525,10 @@ public class AuthService {
 
     private String normalizeInviteRole(String requestedRole, AuthUser actor) {
         UserRole role = UserRole.from(requestedRole);
-        if (role == UserRole.EXECUTIVE && !"EXECUTIVE".equals(actor.role())) {
-            throw new CustomException(403, "대표 권한 초대는 대표만 생성할 수 있습니다.");
+        if (role == UserRole.EXECUTIVE) {
+            throw new CustomException(400, "대표 계정은 초대로 생성할 수 없습니다.");
         }
         return role.name();
-    }
-
-    private void requireManagerOrExecutive(AuthUser actor) {
-        UserRole role = UserRole.from(actor.role());
-        if (role != UserRole.MANAGER && role != UserRole.EXECUTIVE) {
-            throw new CustomException(403, "직원 초대 권한이 없습니다.");
-        }
     }
 
     private int roleRank(UserRole role) {
@@ -330,6 +537,32 @@ public class AuthService {
             case MANAGER -> 2;
             case EXECUTIVE -> 3;
         };
+    }
+
+    private String roleToAccountLevel(String role) {
+        return switch (UserRole.from(role)) {
+            case EXECUTIVE -> "ADMIN";
+            case MANAGER -> "MANAGER";
+            case EMPLOYEE -> "EMPLOYEE";
+        };
+    }
+
+    private Set<String> parseFeaturePermissions(String value) {
+        if (value == null || value.isBlank()) {
+            return Set.of();
+        }
+        try {
+            List<String> entries = objectMapper.readValue(value, new TypeReference<>() {});
+            Set<String> features = new HashSet<>();
+            for (String entry : entries) {
+                if (entry != null && entry.startsWith("feature:")) {
+                    features.add(entry.substring("feature:".length()));
+                }
+            }
+            return features;
+        } catch (Exception ignored) {
+            return Set.of();
+        }
     }
 
     private String createInviteCode() {
@@ -404,10 +637,28 @@ public class AuthService {
         return value.trim();
     }
 
+    private String text(Object value) {
+        return value == null ? null : String.valueOf(value).trim();
+    }
+
+    private String normalizeSectionsPayload(Object sections) {
+        if (sections == null) {
+            return "[]";
+        }
+        if (sections instanceof String text) {
+            return text.isBlank() ? "[]" : text;
+        }
+        try {
+            return objectMapper.writeValueAsString(sections);
+        } catch (Exception exception) {
+            throw new CustomException(400, "권한 정보를 저장할 수 없습니다.");
+        }
+    }
+
     private String validateNewPassword(String value) {
-        String password = required(value, "새 비밀번호를 입력하세요.");
-        if (password.length() < 8) {
-            throw new CustomException(400, "비밀번호는 8자 이상이어야 합니다.");
+        String password = required(value, "비밀번호를 입력하세요.");
+        if (!password.matches("^(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%&*])[A-Za-z0-9!@#$%&*]{8,16}$")) {
+            throw new CustomException(400, PASSWORD_RULE_MESSAGE);
         }
         return password;
     }

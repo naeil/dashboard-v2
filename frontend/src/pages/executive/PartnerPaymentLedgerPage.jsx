@@ -135,11 +135,10 @@ export default function PartnerPaymentLedgerPage() {
   }
 
   return (
-    <div className="space-y-6 bg-slate-50 p-6 text-slate-950">
+    <div className="space-y-6 bg-slate-50 text-slate-950">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.24em] text-sky-600">Accounting Sales</p>
-          <h1 className="mt-1 text-2xl font-black">거래처 수금 / 지급 내역</h1>
+          <h1 className="mt-1 text-2xl font-black tracking-tight">거래처 수금 / 지급 내역</h1>
           <p className="mt-2 text-sm font-bold text-slate-500">거래처별 미수금, 지급 예정, 세금계산서와 정산 확인을 관리합니다.</p>
         </div>
         <button onClick={openNew} className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-black text-white">

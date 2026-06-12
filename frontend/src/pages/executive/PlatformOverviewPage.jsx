@@ -347,7 +347,7 @@ export default function PlatformOverviewPage({ onNavigate, username = 'admin', r
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <p className="text-xs font-black text-slate-500">{todayLabel}</p>
-            <h1 className="mt-2 text-2xl font-black tracking-normal text-slate-950">대표 업무 홈</h1>
+            <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950">대표 업무 홈</h1>
             <p className="mt-2 text-sm font-bold text-slate-500">주요 업무로 바로 이동하고, 일정과 메일을 한 화면에서 확인합니다.</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">

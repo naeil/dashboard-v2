@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { getAllowedMenus, parseAccessPermissions } from '../utils/accessPermissions'
 
 const departmentAliases = {
   salesSupport: ['영업지원', '운영', '물류', '생산', 'CS'],
@@ -7,34 +8,50 @@ const departmentAliases = {
   sales: ['영업', '해외영업', '수출', '컨설팅', 'B2B'],
 }
 
-export const SIDEBAR_MENU_ORDER_KEY = 'sidebar_menu_order_v1'
+export const SIDEBAR_MENU_ORDER_KEY = 'sidebar_menu_order_v2'
 
 export const defaultMenuSections = [
   {
-    id: 'strategy-finance',
-    title: '전략 · 재무',
+    id: 'executive-home',
+    title: '대표 홈',
     group: 'executive',
     departments: ['executive'],
     items: [
       { id: 'ceo-dashboard', icon: 'monitoring', label: 'CEO 전략 대시보드', roles: ['EXECUTIVE'] },
+    ],
+  },
+  {
+    id: 'finance-management',
+    title: '재무 관리',
+    group: 'executive',
+    departments: ['manager'],
+    items: [
       { id: 'cash-flow', icon: 'account_balance_wallet', label: '현금 흐름', roles: ['EXECUTIVE'] },
-      { id: 'profit-management', icon: 'trending_up', label: 'BEP / 손익 시뮬레이션', roles: ['EXECUTIVE'] },
+      { id: 'payment-approval', icon: 'approval', label: '입출금 결재 관리', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'debts', icon: 'credit_score', label: '대출 / 부채', roles: ['EXECUTIVE'] },
       { id: 'operating-expenses', icon: 'receipt_long', label: '운영 비용', roles: ['EXECUTIVE'] },
       { id: 'support-programs', icon: 'volunteer_activism', label: '지원사업 현황', roles: ['EXECUTIVE'] },
     ],
   },
   {
+    id: 'profit-product',
+    title: '손익 · 상품 수익성',
+    group: 'executive',
+    departments: ['manager'],
+    items: [
+      { id: 'profit-management', icon: 'trending_up', label: 'BEP / 손익 시뮬레이션', roles: ['EXECUTIVE'] },
+      { id: 'product-cost', icon: 'calculate', label: '제품 원가 관리', roles: ['EXECUTIVE', 'MANAGER'] },
+    ],
+  },
+  {
     id: 'operations-management',
-    title: '운영 · 팀관리',
+    title: '운영 관리',
     group: 'executive',
     departments: ['manager'],
     items: [
       { id: 'work-management', icon: 'assignment', label: '업무 진행 관리', roles: ['EXECUTIVE', 'MANAGER'] },
-      { id: 'payment-approval', icon: 'approval', label: '입출금 결재 관리', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'employee-performance', icon: 'analytics', label: '직원 성과 분석', roles: ['EXECUTIVE', 'MANAGER'] },
-      { id: 'channel-credentials', icon: 'encrypted', label: '채널 계정 관리', roles: ['EXECUTIVE', 'MANAGER'] },
-      { id: 'product-cost', icon: 'calculate', label: '제품 원가 관리', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'organization', icon: 'account_tree', label: '조직 관리', roles: ['EXECUTIVE'] },
     ],
   },
   {
@@ -48,18 +65,19 @@ export const defaultMenuSections = [
       { id: 'staff-work-report', icon: 'assignment_add', label: '업무 보고', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], personal: true, personalSuffix: '업무 보고' },
       { id: 'staff-project-status', icon: 'view_timeline', label: '프로젝트 현황', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], personal: true, personalSuffix: '프로젝트 현황' },
       { id: 'brand-health', icon: 'storefront', label: '브랜드 사업 현황', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-      { id: 'channel-sales', icon: 'leaderboard', label: '실시간 매출', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'work-input', icon: 'edit_note', label: '내 업무 입력', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], personal: true },
       { id: 'payment-request', icon: 'request_page', label: '지출결의 / 기안서', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
     ],
   },
   {
-    id: 'sales-support',
-    title: '영업 지원',
+    id: 'channel-sales-management',
+    title: '채널 · 판매 관리',
     group: 'staff',
-    departments: ['salesSupport'],
+    departments: ['all'],
     items: [
+      { id: 'channel-sales', icon: 'leaderboard', label: '실시간 매출', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'channel-operations', icon: 'storefront', label: '채널 운영', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'channel-credentials', icon: 'encrypted', label: '채널 계정 관리', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'inventory', icon: 'warehouse', label: '재고 현황', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'product-movement', icon: 'inventory', label: '제품 출입고', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'partners', icon: 'groups', label: '거래처 관리', roles: ['EXECUTIVE', 'MANAGER'] },
@@ -68,7 +86,7 @@ export const defaultMenuSections = [
   },
   {
     id: 'marketing',
-    title: '마케팅팀',
+    title: '마케팅',
     group: 'staff',
     departments: ['marketing'],
     items: [
@@ -82,7 +100,7 @@ export const defaultMenuSections = [
   },
   {
     id: 'accounting-sales',
-    title: '회계 · 영업팀',
+    title: '회계 · 영업',
     group: 'staff',
     departments: ['accounting', 'sales'],
     items: [
@@ -97,8 +115,8 @@ export const defaultMenuSections = [
     group: 'system',
     departments: ['all'],
     items: [
+      { id: 'platform-admin', icon: 'admin_panel_settings', label: '플랫폼 관리', roles: ['EXECUTIVE'] },
       { id: 'account', icon: 'account_circle', label: '내 계정', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
-      { id: 'employees', icon: 'manage_accounts', label: '직원 관리', roles: ['EXECUTIVE'] },
       { id: 'attendance-admin', icon: 'badge', label: '출퇴근 기록', roles: ['EXECUTIVE'] },
       { id: 'menu-order-settings', icon: 'swap_vert', label: '카테고리 이동', roles: ['EXECUTIVE'] },
       { id: 'settings', icon: 'settings', label: '설정', roles: ['EXECUTIVE'] },
@@ -158,9 +176,9 @@ function matchesDepartment(sectionDepartments, department, role) {
   })
 }
 
-function isItemAllowed(itemId, allowedMenuSections) {
-  if (!allowedMenuSections || allowedMenuSections.length === 0) return true
-  return allowedMenuSections.includes(itemId)
+function isItemAllowed(itemId, allowedMenuIds) {
+  if (!Array.isArray(allowedMenuIds)) return true
+  return allowedMenuIds.includes(itemId)
 }
 
 function MenuLabel({ isExpanded, children }) {
@@ -193,7 +211,7 @@ export default function Sidebar({
 }) {
   const [collapsed, setCollapsed] = useState(getInitialCollapsed)
   const [, setMenuVersion] = useState(0)
-  const personalBaseLabel = displayName || username || '실무진'
+  const personalBaseLabel = displayName || username || '내'
 
   function getMenuOverrides() {
     try {
@@ -224,40 +242,41 @@ export default function Sidebar({
     })
   }
 
-  const hasItemLevelPermissions = Array.isArray(allowedMenuSections)
-    && allowedMenuSections.length > 0
-    && allowedMenuSections.some((v) => v.includes('-'))
+  const allowedMenuIds = role === 'EXECUTIVE'
+    ? null
+    : getAllowedMenus(parseAccessPermissions(allowedMenuSections))
+  const hasItemLevelPermissions = Array.isArray(allowedMenuIds)
   const overrides = getMenuOverrides()
 
   const visibleSections = getOrderedMenuSections()
     .map((section) => {
-      const sOv = overrides[section.id] || {}
-      if (sOv.deleted || sOv.hidden) return null
-      if (sOv.private && role !== 'EXECUTIVE') return null
+      const sectionOverride = overrides[section.id] || {}
+      if (sectionOverride.deleted || sectionOverride.hidden) return null
+      if (sectionOverride.private && role !== 'EXECUTIVE') return null
       if (!matchesDepartment(section.departments, department, role)) return null
 
       let items = section.items
         .map((item) => {
-          const iOv = overrides[item.id] || {}
-          if (iOv.deleted || iOv.hidden) return null
-          if (iOv.private && role !== 'EXECUTIVE') return null
-          return iOv.label ? { ...item, label: iOv.label } : item
+          const itemOverride = overrides[item.id] || {}
+          if (itemOverride.deleted || itemOverride.hidden) return null
+          if (itemOverride.private && role !== 'EXECUTIVE') return null
+          return itemOverride.label ? { ...item, label: itemOverride.label } : item
         })
         .filter(Boolean)
         .filter((item) => item.roles.includes(role))
 
-      if (hasItemLevelPermissions && section.group !== 'system' && !section.departments.includes('all')) {
-        items = items.filter((item) => isItemAllowed(item.id, allowedMenuSections))
+      if (hasItemLevelPermissions) {
+        items = items.filter((item) => isItemAllowed(item.id, allowedMenuIds))
       }
       if (items.length === 0) return null
-      const sectionWithOverride = sOv.label ? { ...section, title: sOv.label } : section
+      const sectionWithOverride = sectionOverride.label ? { ...section, title: sectionOverride.label } : section
       return { ...sectionWithOverride, items }
     })
     .filter(Boolean)
 
-  const executiveSections = visibleSections.filter((s) => s.group === 'executive')
-  const staffSections = visibleSections.filter((s) => s.group === 'staff')
-  const systemSections = visibleSections.filter((s) => s.group === 'system')
+  const executiveSections = visibleSections.filter((section) => section.group === 'executive')
+  const staffSections = visibleSections.filter((section) => section.group === 'staff')
+  const systemSections = visibleSections.filter((section) => section.group === 'system')
   const showExecutiveGroup = executiveSections.length > 0
   const showStaffGroup = staffSections.length > 0
 
@@ -312,27 +331,12 @@ export default function Sidebar({
       <nav className="flex-1 overflow-y-auto px-3 py-2">
         {showExecutiveGroup && (
           <div className="space-y-3">
-            {isExpanded && (
-              <div className="flex items-center gap-2 px-2">
-                <div className="h-px flex-1 bg-slate-200" />
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-500">경영진</span>
-                <div className="h-px flex-1 bg-slate-200" />
-              </div>
-            )}
             {executiveSections.map(renderSection)}
           </div>
         )}
 
         {showStaffGroup && (
           <div className="mt-4 space-y-3">
-            {isExpanded && showExecutiveGroup && (
-              <div className="flex items-center gap-2 px-2">
-                <div className="h-px flex-1 bg-slate-200" />
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500">실무진</span>
-                <div className="h-px flex-1 bg-slate-200" />
-              </div>
-            )}
-            {!isExpanded && showExecutiveGroup && <div className="my-2 border-t border-slate-200" />}
             {staffSections.map(renderSection)}
           </div>
         )}

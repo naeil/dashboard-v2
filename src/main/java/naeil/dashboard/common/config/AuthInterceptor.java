@@ -28,12 +28,15 @@ public class AuthInterceptor implements HandlerInterceptor {
 
         String path = request.getRequestURI();
         if ("/api/auth/login".equals(path)
+                || "/api/auth/tenant-login".equals(path)
+                || "/api/auth/tenent-login".equals(path)
                 || "/api/auth/register".equals(path)
+                || "/api/auth/username-available".equals(path)
                 || "/api/auth/invites/preview".equals(path)
                 || "/api/auth/session".equals(path)
                 || "/api/auth/logout".equals(path)
                 || "/api/health".equals(path)
-                || path.startsWith("/api/executive/diag/")) {  // 임시 진단용
+                || path.startsWith("/api/executive/diag/")) {
             return true;
         }
 
@@ -60,11 +63,8 @@ public class AuthInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        if (path.startsWith("/api/auth/users")) {
-            return false;
-        }
-        if (path.startsWith("/api/auth/invites")) {
-            return role == UserRole.MANAGER;
+        if (path.startsWith("/api/auth/users") || path.startsWith("/api/auth/invites")) {
+            return authService.canAccessEmployeeManagement(user);
         }
         if (isExecutiveOnlyPath(path)) {
             return false;

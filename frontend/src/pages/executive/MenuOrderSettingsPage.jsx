@@ -142,7 +142,7 @@ export default function MenuOrderSettingsPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.24em] text-sky-600">Admin Menu Control</p>
-            <h1 className="mt-1 text-2xl font-black text-slate-950">카테고리 관리</h1>
+            <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950">카테고리 관리</h1>
             <p className="mt-1 text-sm text-slate-500 font-bold">
               이름 수정 · 숨기기 · 비공개 · 삭제. 저장하면 전체 직원에게 즉시 반영됩니다.
             </p>

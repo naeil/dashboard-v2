@@ -21,8 +21,7 @@ function compareValues(a, b, type = 'number') {
 export function PageHeader({ title, description }) {
   return (
     <div className="mb-6">
-      <p className="text-xs font-black uppercase tracking-[0.24em] text-sky-600">Naeil Business Platform</p>
-      <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">{title}</h1>
+      <h1 className="text-2xl font-black tracking-tight text-slate-950">{title}</h1>
       {description && <p className="mt-2 text-sm font-medium text-slate-500">{description}</p>}
     </div>
   )
@@ -184,11 +183,10 @@ export function DataTable({
           )}
           {effectiveSortOptions.length > 0 && (
             <label className="flex items-center gap-2 self-start lg:self-auto">
-              <span className="text-xs font-black text-slate-500">정렬</span>
               <select
                 value={sortId}
                 onChange={(event) => setSortId(event.target.value)}
-                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-black text-slate-800 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
               >
                 {effectiveSortOptions.map((option) => (
                   <option key={option.id} value={option.id}>{option.label}</option>

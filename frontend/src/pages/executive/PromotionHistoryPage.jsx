@@ -163,8 +163,7 @@ export default function PromotionHistoryPage() {
     <div className="space-y-6 bg-slate-50 text-slate-950">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.28em] text-slate-700">Marketing Team</p>
-          <h1 className="mt-1 text-3xl font-black tracking-normal">프로모션 내역</h1>
+          <h1 className="mt-1 text-2xl font-black tracking-tight">프로모션 내역</h1>
           <p className="mt-2 text-sm font-bold text-slate-600">
             프로모션 마진에서 저장한 신청 내역을 채널별로 보고, 목표 매출 대비 실시간 매출과 영업이익을 바로 확인합니다.
           </p>

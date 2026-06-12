@@ -20,16 +20,16 @@ public class AuthTokenService {
 
     private final AuthProperties authProperties;
 
-    public String createToken(String username) {
+    public String createToken(Long userId) {
         long expiresAt = Instant.now().getEpochSecond() + authProperties.tokenTtlSeconds();
-        String payload = username + ":" + expiresAt;
+        String payload = userId + ":" + expiresAt;
         String signature = sign(payload);
         return URL_ENCODER.encodeToString(payload.getBytes(StandardCharsets.UTF_8))
                 + "."
                 + URL_ENCODER.encodeToString(signature.getBytes(StandardCharsets.UTF_8));
     }
 
-    public Optional<String> validateAndExtractUsername(String token) {
+    public Optional<Long> validateAndExtractUserId(String token) {
         if (token == null || token.isBlank()) {
             return Optional.empty();
         }
@@ -60,7 +60,7 @@ public class AuthTokenService {
                 return Optional.empty();
             }
 
-            return Optional.of(payloadParts[0]);
+            return Optional.of(Long.parseLong(payloadParts[0]));
         } catch (Exception exception) {
             return Optional.empty();
         }

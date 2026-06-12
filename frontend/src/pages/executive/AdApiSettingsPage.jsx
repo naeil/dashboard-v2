@@ -79,8 +79,8 @@ export default function AdApiSettingsPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-black text-slate-950">광고 API 연동 설정</h1>
+    <div className="space-y-6">
+      <h1 className="text-2xl font-black tracking-tight text-slate-950">광고 API 연동 설정</h1>
       <p className="text-sm text-slate-500">광고 플랫폼 API 인증 정보를 등록합니다. 저장된 키는 암호화되어 보관됩니다.</p>
 
       <div className="space-y-6">

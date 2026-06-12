@@ -634,7 +634,7 @@ export default function Settings({ isExpanded }) {
   }
 
   return (
-    <main className={`min-h-screen p-8 transition-all duration-300 ${isExpanded ? 'ml-64' : 'ml-20'}`}>
+    <main className="min-h-screen transition-all duration-300">
       {toast && (
         <div
           className={`fixed right-6 top-6 z-50 flex items-center gap-3 rounded-xl px-6 py-4 font-bold text-white shadow-xl ${
@@ -650,7 +650,7 @@ export default function Settings({ isExpanded }) {
 
       <div className="max-w-6xl">
         <div className="mb-8">
-          <h1 className="text-3xl font-black tracking-tight text-slate-950">설정</h1>
+          <h1 className="text-2xl font-black tracking-tight text-slate-950">설정</h1>
           <p className="mt-2 text-sm text-slate-500">인증 정보와 주문 수집 설정을 분리해서 관리할 수 있습니다.</p>
         </div>
 

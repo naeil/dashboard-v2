@@ -51,7 +51,6 @@
     .inventory-scroll::-webkit-scrollbar-thumb:hover {
         background: #c5c6cd;
     }
-}
 
     .app-light {
         color: #0f172a;
@@ -269,10 +268,10 @@
         border-color: #fde68a !important;
     }
 
-    .app-light button.bg-sky-400,
-    .app-light button.bg-sky-500,
-    .app-light a.bg-sky-400,
-    .app-light a.bg-sky-500,
+    .app-light :where(button).bg-sky-400,
+    .app-light :where(button).bg-sky-500,
+    .app-light :where(a).bg-sky-400,
+    .app-light :where(a).bg-sky-500,
     .app-light .bg-sky-400 *,
     .app-light .bg-sky-500 * {
         color: #ffffff !important;
@@ -487,3 +486,4 @@
             min-height: 40px;
         }
     }
+}

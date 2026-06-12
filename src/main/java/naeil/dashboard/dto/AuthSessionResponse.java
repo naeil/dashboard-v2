@@ -7,7 +7,9 @@ public record AuthSessionResponse(
         String department,
         String positionName,
         String role,
+        String accountScope,
+        String accountLevel,
         String token,
-        String allowedMenuSections   // JSON 배열 문자열 또는 null
+        String allowedMenuSections
 ) {
 }

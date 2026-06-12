@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { API_BASE_PATH, buildApiUrl } from './apiBase'
+import { getLoginEndpoint, LOGIN_MODES } from '../utils/loginModes'
 
 const AUTH_TOKEN_KEY = 'dashboard_auth_token'
 
@@ -57,12 +58,12 @@ authApi.interceptors.response.use(
   },
 )
 
-export const login = async (username, password) => {
-  const response = await fetch(buildApiUrl('/auth/login'), {
+export const loginWithMode = async (companyCode, username, password, mode = LOGIN_MODES.TENANT) => {
+  const response = await fetch(buildApiUrl(getLoginEndpoint(mode)), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ loginId: username, password }),
+    body: JSON.stringify({ companyCode, loginId: username, password }),
   })
 
   const body = await response.json().catch(() => ({}))
@@ -73,6 +74,10 @@ export const login = async (username, password) => {
   setAuthToken(body.token)
   return body
 }
+
+export const tenantLogin = (companyCode, username, password) => loginWithMode(companyCode, username, password, LOGIN_MODES.TENANT)
+export const adminLogin = (companyCode, username, password) => loginWithMode(companyCode, username, password, LOGIN_MODES.PLATFORM)
+export const login = tenantLogin
 
 export const registerWithInvite = async ({ inviteCode, username, password }) => {
   const response = await fetch(buildApiUrl('/auth/register'), {
@@ -88,6 +93,16 @@ export const registerWithInvite = async ({ inviteCode, username, password }) => 
   }
 
   setAuthToken(body.token)
+  return body
+}
+
+export const checkUsernameAvailability = async (username, inviteCode) => {
+  const query = new URLSearchParams({ username, inviteCode })
+  const response = await fetch(buildApiUrl(`/auth/username-available?${query.toString()}`))
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(body.message || '아이디 중복 확인에 실패했습니다.')
+  }
   return body
 }
 
@@ -119,7 +134,10 @@ export const logout = async () => {
 
 export const getUsers = () => authApi.get('/auth/users')
 export const getInvites = () => authApi.get('/auth/invites')
+export const getPositionPermissionTemplates = () => authApi.get('/auth/position-permissions')
+export const savePositionPermissionTemplate = (payload) => authApi.post('/auth/position-permissions', payload)
 export const createInvite = (payload) => authApi.post('/auth/invites', payload)
+export const deleteInvite = (id) => authApi.delete(`/auth/invites/${id}`)
 export const changePassword = (payload) => authApi.post('/auth/password', payload)
 export const resetUserPassword = (id, payload) => authApi.post(`/auth/users/${id}/password`, payload)
 export const deleteUser = (id) => authApi.delete(`/auth/users/${id}`)

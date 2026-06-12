@@ -155,12 +155,11 @@ export default function StaffWorkReportPage({ username, displayName, onNavigate 
   }
 
   return (
-    <main className="min-h-[calc(100vh-80px)] bg-slate-50 p-6">
+    <main className="min-h-[calc(100vh-80px)] bg-slate-50">
       <section className="mb-6 border-b border-slate-200 pb-5">
-        <p className="text-xs font-black uppercase tracking-[0.18em] text-sky-600">{ownerLabel} / 업무 보고</p>
         <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 className="text-2xl font-black text-slate-950">일일 업무 / 주간 업무</h1>
+            <h1 className="text-2xl font-black tracking-tight text-slate-950">업무 보고</h1>
             <p className="mt-2 text-sm font-bold text-slate-500">오늘 한 일, 다음 업무, 막힌 이슈를 누적해서 관리합니다.</p>
           </div>
           <button

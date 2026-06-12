@@ -93,8 +93,7 @@ export default function AttendanceAdminPage() {
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-sky-600">System Audit</p>
-            <h1 className="mt-2 text-2xl font-black text-slate-950">직원 출퇴근 기록</h1>
+            <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950">직원 출퇴근 기록</h1>
             <p className="mt-2 text-sm font-bold text-slate-500">
               대표 관리자 전용 화면입니다. 서버가 받은 실제 IP, 위치 조회 출처, ISP, 좌표, 관리자가 확인한 실제 위치를 함께 관리합니다.
             </p>

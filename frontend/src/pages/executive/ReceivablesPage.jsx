@@ -80,7 +80,7 @@ export default function ReceivablesPage() {
           <button
             type="button"
             onClick={() => setEditingRow(null)}
-            className="rounded-lg border border-white/10 px-4 py-2 text-sm font-black text-slate-200 transition-colors hover:bg-white/10"
+            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-600 transition-colors hover:bg-slate-50"
           >
             수정 취소
           </button>
@@ -118,7 +118,7 @@ export default function ReceivablesPage() {
                   <button
                     type="button"
                     onClick={() => setEditingRow(row)}
-                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-sky-400/30 px-2 text-xs font-black text-sky-100 transition-colors hover:bg-sky-400/10"
+                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 text-xs font-black text-sky-700 transition-colors hover:bg-sky-100"
                   >
                     <span className="material-symbols-outlined text-sm">edit</span>
                     수정
@@ -130,7 +130,7 @@ export default function ReceivablesPage() {
                       if (editingRow?.id === row.id) setEditingRow(null)
                       await load()
                     }}
-                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-400/30 px-2 text-xs font-black text-rose-100 transition-colors hover:bg-rose-400/10"
+                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 text-xs font-black text-rose-700 transition-colors hover:bg-rose-100"
                   >
                     <span className="material-symbols-outlined text-sm">delete</span>
                     삭제

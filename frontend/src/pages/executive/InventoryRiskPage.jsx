@@ -18,12 +18,12 @@ function CategoryTabs({ selectedCategory, setSelectedCategory, rows }) {
             onClick={() => setSelectedCategory(category)}
             className={`inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-sm font-black transition-colors ${
               active
-                ? 'border-sky-400/40 bg-sky-400/15 text-sky-100'
-                : 'border-white/10 bg-slate-900/70 text-slate-400 hover:bg-white/5'
+                ? 'border-sky-300 bg-sky-50 text-sky-700'
+                : 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
             }`}
           >
             {category}
-            <span className="rounded-full bg-slate-950/70 px-2 py-0.5 text-[11px]">{countByCategory}</span>
+            <span className={`rounded-full px-2 py-0.5 text-[11px] ${active ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-600'}`}>{countByCategory}</span>
           </button>
         )
       })}
@@ -33,16 +33,16 @@ function CategoryTabs({ selectedCategory, setSelectedCategory, rows }) {
 
 function QuickStockEditor({ rows, selectedProduct, setSelectedProduct, stockValue, setStockValue, onSave, saving, message }) {
   return (
-    <section className="mb-6 rounded-lg border border-sky-400/20 bg-slate-900/70 p-5 shadow-xl shadow-slate-950/20">
+    <section className="mb-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <h2 className="text-lg font-black text-white">간편 재고 입력</h2>
-          <p className="mt-1 text-xs font-bold text-slate-400">제품명을 클릭하면 현재 재고가 자동 입력됩니다. 재고 수량만 바꿔 저장하세요.</p>
+          <h2 className="text-lg font-black text-slate-950">간편 재고 입력</h2>
+          <p className="mt-1 text-xs font-bold text-slate-500">제품명을 클릭하면 현재 재고가 자동 입력됩니다. 재고 수량만 바꿔 저장하세요.</p>
         </div>
-        {message && <span className="text-xs font-black text-sky-100">{message}</span>}
+        {message && <span className="text-xs font-black text-sky-700">{message}</span>}
       </div>
 
-      <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+      <div className="mb-4 flex gap-2 overflow-x-auto pb-2">
         {rows.map((row) => {
           const active = selectedProduct?.id === row.id
           return (
@@ -55,12 +55,12 @@ function QuickStockEditor({ rows, selectedProduct, setSelectedProduct, stockValu
               }}
               className={`shrink-0 rounded-lg border px-3 py-2 text-left transition-colors ${
                 active
-                  ? 'border-emerald-400/40 bg-emerald-400/15 text-emerald-100'
-                  : 'border-white/10 bg-slate-950/70 text-slate-300 hover:bg-white/5'
+                  ? 'border-sky-300 bg-sky-50 text-sky-800'
+                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-sky-200 hover:bg-sky-50'
               }`}
             >
               <p className="max-w-[220px] truncate text-xs font-black">{row.product_name}</p>
-              <p className="mt-1 text-[11px] font-bold text-slate-400">
+              <p className="mt-1 text-[11px] font-bold text-slate-500">
                 현재 {count(row.stock_quantity, '개')} / 안전 {count(row.safe_stock || 3000, '개')}
               </p>
             </button>
@@ -69,18 +69,18 @@ function QuickStockEditor({ rows, selectedProduct, setSelectedProduct, stockValu
       </div>
 
       <form className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,2fr)_180px_140px]" onSubmit={onSave}>
-        <div className="rounded-lg border border-white/10 bg-slate-950 px-3 py-2">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
           <p className="text-[11px] font-bold text-slate-500">선택 제품</p>
-          <p className="mt-1 truncate text-sm font-black text-white">{selectedProduct?.product_name || '제품을 선택하세요'}</p>
+          <p className="mt-1 truncate text-sm font-black text-slate-950">{selectedProduct?.product_name || '제품을 선택하세요'}</p>
         </div>
         <label>
-          <span className="mb-1 block text-xs font-bold text-slate-400">재고 수량</span>
+          <span className="mb-1 block text-xs font-bold text-slate-500">재고 수량</span>
           <input
             type="number"
             min="0"
             value={stockValue}
             onChange={(event) => setStockValue(event.target.value)}
-            className="h-10 w-full rounded-lg border border-white/10 bg-slate-950 px-3 text-sm font-bold text-white outline-none focus:border-sky-400"
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
             placeholder="0"
             required
           />
@@ -89,7 +89,7 @@ function QuickStockEditor({ rows, selectedProduct, setSelectedProduct, stockValu
           <button
             type="submit"
             disabled={!selectedProduct || saving}
-            className="h-10 w-full rounded-lg bg-sky-400 px-4 text-sm font-black text-slate-950 transition-colors hover:bg-sky-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+            className="h-10 w-full rounded-lg bg-sky-600 px-4 text-sm font-black text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
           >
             {saving ? '저장 중...' : '재고 저장'}
           </button>
@@ -171,7 +171,7 @@ export default function InventoryRiskPage() {
 
       <CategoryTabs selectedCategory={selectedCategory} setSelectedCategory={setSelectedCategory} rows={rows} />
 
-      <section className="mb-6 rounded-2xl border border-sky-200 bg-sky-50 p-5 shadow-sm">
+      <section className="mb-6 rounded-lg border border-sky-200 bg-sky-50 p-5 shadow-sm">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.18em] text-sky-700">Realtime Inventory API</p>
@@ -190,14 +190,14 @@ export default function InventoryRiskPage() {
             type="button"
             onClick={syncInventory}
             disabled={syncing}
-            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 text-sm font-black text-white shadow-sm transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-sky-600 px-5 text-sm font-black text-white shadow-sm transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
           >
             <span className={`material-symbols-outlined text-lg ${syncing ? 'animate-spin' : ''}`}>{syncing ? 'sync' : 'cloud_sync'}</span>
             {syncing ? '업데이트 중' : 'API 실시간 업데이트'}
           </button>
         </div>
         {syncMessage && (
-          <div className="mt-4 rounded-xl border border-sky-200 bg-white px-4 py-3 text-sm font-bold text-sky-700">
+          <div className="mt-4 rounded-lg border border-sky-200 bg-white px-4 py-3 text-sm font-bold text-sky-700">
             {syncMessage}
           </div>
         )}
@@ -220,7 +220,7 @@ export default function InventoryRiskPage() {
         <KpiCard label="재고 과다 상품" value={count(overStock, '개')} badge={overStock ? 'WATCH' : 'NORMAL'} tone="rose" icon="warehouse" />
       </section>
 
-      <Panel title={`${selectedCategory} 제품별 재고 위험`} right={<span className="text-xs font-black text-slate-400">{filteredRows.length}개 구성</span>}>
+      <Panel title={`${selectedCategory} 제품별 재고 위험`} right={<span className="text-xs font-black text-slate-500">{filteredRows.length}개 구성</span>}>
         <DataTable
           rows={filteredRows}
           rowKey={(row) => row.id}
@@ -234,7 +234,7 @@ export default function InventoryRiskPage() {
                   setStockValue(String(row.stock_quantity ?? 0))
                   window.scrollTo({ top: 0, behavior: 'smooth' })
                 }}
-                className="text-left font-black text-sky-100 underline-offset-4 hover:underline"
+                className="text-left font-black text-sky-700 underline-offset-4 hover:underline"
               >
                 {row.product_name}
               </button>
@@ -249,9 +249,9 @@ export default function InventoryRiskPage() {
             { key: 'carton_quantity', label: '카톤수량' },
             { key: 'pallet_quantity', label: '파레트수량', render: (row) => row.pallet_quantity ?? '-' },
             { key: 'manufacture_date', label: '제조일자' },
-            { key: 'expiry_check_date', label: '유통기한 확인날짜' },
+            { key: 'expiry_check_date', label: '유통기한 확인일자' },
             { key: 'expiry_date', label: '유통기한' },
-            { key: 'supplied_materials', label: '사급원료' },
+            { key: 'supplied_materials', label: '지급원료' },
             { key: 'issue_text', label: '이슈' },
             { key: 'status', label: '상태', render: (row) => <StatusBadge value={row.status} /> },
           ]}
@@ -261,7 +261,7 @@ export default function InventoryRiskPage() {
             { id: 'stockAsc', label: '재고 적은 순', key: 'stock_quantity', direction: 'asc' },
             { id: 'valueDesc', label: '재고 평가금액 높은 순', value: (row) => Number(row.production_cost || 0) * Number(row.stock_quantity || 0) },
             { id: 'safeGapAsc', label: '안전재고 부족 순', value: (row) => Number(row.stock_quantity || 0) - Number(row.safe_stock || 3000), direction: 'asc' },
-            { id: 'expiryAsc', label: '유통기한 임박 순', key: 'expiry_date', type: 'date', direction: 'asc' },
+            { id: 'expiryAsc', label: '유통기한 빠른 순', key: 'expiry_date', type: 'date', direction: 'asc' },
           ]}
         />
       </Panel>

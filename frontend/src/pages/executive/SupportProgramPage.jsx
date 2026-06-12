@@ -146,11 +146,10 @@ export default function SupportProgramPage() {
   }
 
   return (
-    <div className="space-y-6 bg-slate-50 p-6 text-slate-950">
+    <div className="space-y-6 bg-slate-50 text-slate-950">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.24em] text-sky-600">Strategy Finance</p>
-          <h1 className="mt-1 text-2xl font-black">지원사업 신청 현황</h1>
+          <h1 className="mt-1 text-2xl font-black tracking-tight">지원사업 신청 현황</h1>
           <p className="mt-2 text-sm font-bold text-slate-500">정부지원, 보조금, 사업화 과제 신청과 선정 금액을 관리합니다.</p>
         </div>
         <button onClick={openNew} className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-black text-white">

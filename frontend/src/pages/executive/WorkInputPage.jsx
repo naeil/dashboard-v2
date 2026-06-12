@@ -267,8 +267,7 @@ export default function WorkInputPage({ username = 'admin', displayName, departm
     <>
       <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.24em] text-sky-600">My Work</p>
-          <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">{[department, ownerName].filter(Boolean).join(' / ')}</h1>
+          <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950">{[department, ownerName].filter(Boolean).join(' / ')}</h1>
           <p className="mt-2 text-sm font-medium text-slate-500">{positionName ? `${positionName} · ` : ''}개인 업무를 등록, 수정, 삭제하고 진행 상태를 관리합니다.</p>
         </div>
         <button type="button" onClick={load} className="h-11 rounded-lg border border-slate-200 bg-white px-5 text-sm font-black text-slate-700 hover:bg-slate-50">

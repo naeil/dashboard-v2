@@ -346,7 +346,7 @@ export default function CEOStrategicDashboard({ onNavigate }) {
       <div>
         <div className="mb-4 flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-black text-slate-900">CEO 대시보드</h1>
+            <h1 className="text-2xl font-black tracking-tight text-slate-900">CEO 대시보드</h1>
             <p className="mt-1 text-sm text-slate-500">{todayLabel} 기준</p>
           </div>
           {tab === 'today' && (

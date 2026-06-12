@@ -35,23 +35,22 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/login")
-    public ResponseEntity<AuthSessionResponse> login(@RequestBody LoginRequest request) {
-        AuthUser user = authService.login(request.resolvedLoginId(), request.password());
-        SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(
-                        user.username(),
-                        null,
-                        List.of(new SimpleGrantedAuthority("ROLE_" + user.role()))
-                )
-        );
-        return ResponseEntity.ok(toSession(user, authService.createToken(user)));
+    public ResponseEntity<AuthSessionResponse> platformLogin(@RequestBody LoginRequest request) {
+        return loginWithRequest(request);
+    }
+
+    @PostMapping({"/tenant-login", "/tenent-login"})
+    public ResponseEntity<AuthSessionResponse> tenantLogin(@RequestBody LoginRequest request) {
+        return loginWithRequest(request);
     }
 
     @GetMapping("/session")
     public ResponseEntity<AuthSessionResponse> getSession(HttpServletRequest request) {
         return authService.authenticate(request.getHeader("Authorization"))
                 .map(user -> ResponseEntity.ok(toSession(user, null)))
-                .orElseGet(() -> ResponseEntity.ok(new AuthSessionResponse(false, null, null, null, null, null, null, null)));
+                .orElseGet(() -> ResponseEntity.ok(new AuthSessionResponse(
+                        false, null, null, null, null, null, null, null, null, null
+                )));
     }
 
     @PostMapping("/register")
@@ -65,18 +64,36 @@ public class AuthController {
         return ResponseEntity.ok(authService.previewInvite(inviteCode));
     }
 
+    @GetMapping("/username-available")
+    public ResponseEntity<Map<String, Object>> checkUsernameAvailable(
+            @RequestParam String inviteCode,
+            @RequestParam String username
+    ) {
+        return ResponseEntity.ok(authService.checkUsernameAvailable(inviteCode, username));
+    }
+
     @GetMapping("/users")
     public ResponseEntity<List<Map<String, Object>>> getUsers(HttpServletRequest request) {
         AuthUser actor = requireUser(request);
-        authService.requireRole(actor, UserRole.EXECUTIVE);
+        if (!authService.canAccessEmployeeManagement(actor)) {
+            authService.requireRole(actor, UserRole.EXECUTIVE);
+        }
         return ResponseEntity.ok(authService.listUsers());
     }
 
     @GetMapping("/invites")
     public ResponseEntity<List<Map<String, Object>>> getInvites(HttpServletRequest request) {
         AuthUser actor = requireUser(request);
-        authService.requireRole(actor, UserRole.MANAGER);
+        if (!authService.canAccessEmployeeManagement(actor)) {
+            authService.requireRole(actor, UserRole.MANAGER);
+        }
         return ResponseEntity.ok(authService.listInvites());
+    }
+
+    @GetMapping("/position-permissions")
+    public ResponseEntity<List<Map<String, Object>>> getPositionPermissionTemplates(HttpServletRequest request) {
+        AuthUser actor = requireUser(request);
+        return ResponseEntity.ok(authService.listPositionPermissionTemplates(actor));
     }
 
     @PostMapping("/invites")
@@ -85,8 +102,18 @@ public class AuthController {
             @RequestBody InviteCreateRequest inviteRequest
     ) {
         AuthUser actor = requireUser(request);
-        authService.requireRole(actor, UserRole.MANAGER);
+        authService.requireFeature(actor, AuthService.FEATURE_CREATE_INVITE);
         return ResponseEntity.ok(authService.createInvite(inviteRequest, actor));
+    }
+
+    @DeleteMapping("/invites/{id}")
+    public ResponseEntity<Map<String, String>> deleteInvite(
+            HttpServletRequest request,
+            @PathVariable Long id
+    ) {
+        AuthUser actor = requireUser(request);
+        authService.deleteInvite(id, actor);
+        return ResponseEntity.ok(Map.of("message", "초대 링크를 삭제했습니다."));
     }
 
     @PostMapping("/password")
@@ -117,7 +144,7 @@ public class AuthController {
     ) {
         AuthUser actor = requireUser(request);
         authService.deleteUser(id, actor);
-        return ResponseEntity.ok(Map.of("message", "직원 계정이 삭제 처리되었습니다."));
+        return ResponseEntity.ok(Map.of("message", "직원 계정을 퇴사 처리했습니다."));
     }
 
     @PostMapping("/logout")
@@ -132,11 +159,32 @@ public class AuthController {
             HttpServletRequest request,
             @PathVariable Long id,
             @RequestBody Map<String, Object> body) {
-        requireUser(request);  // EXECUTIVE 권한은 AuthInterceptor에서 보장
+        AuthUser actor = requireUser(request);
+        authService.requireFeature(actor, AuthService.FEATURE_MANAGE_MENU_PERMISSIONS);
         Object sections = body.get("sections");
         String sectionsJson = sections != null ? sections.toString() : null;
         authService.updateMenuPermissions(id, sectionsJson);
         return ResponseEntity.ok(Map.of("message", "메뉴 권한이 저장되었습니다."));
+    }
+
+    @PostMapping("/position-permissions")
+    public ResponseEntity<Map<String, Object>> savePositionPermissionTemplate(
+            HttpServletRequest request,
+            @RequestBody Map<String, Object> body) {
+        AuthUser actor = requireUser(request);
+        return ResponseEntity.ok(authService.savePositionPermissionTemplate(body, actor));
+    }
+
+    private ResponseEntity<AuthSessionResponse> loginWithRequest(LoginRequest request) {
+        AuthUser user = authService.login(request.resolvedCompanyCode(), request.resolvedLoginId(), request.password());
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(
+                        user.username(),
+                        null,
+                        List.of(new SimpleGrantedAuthority("ROLE_" + user.role()))
+                )
+        );
+        return ResponseEntity.ok(toSession(user, authService.createToken(user)));
     }
 
     private AuthSessionResponse toSession(AuthUser user, String token) {
@@ -147,6 +195,8 @@ public class AuthController {
                 user.department(),
                 user.positionName(),
                 user.role(),
+                user.accountScope(),
+                user.accountLevel(),
                 token,
                 user.allowedMenuSections()
         );

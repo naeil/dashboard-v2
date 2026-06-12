@@ -265,8 +265,7 @@ export default function PromotionMarginPage() {
     <div className="space-y-6 bg-slate-50 text-slate-950">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.28em] text-slate-700">Marketing Team</p>
-          <h1 className="mt-1 text-3xl font-black tracking-normal">프로모션 마진 / 실시간 판매 판단</h1>
+          <h1 className="mt-1 text-2xl font-black tracking-tight">프로모션 마진 / 실시간 판매 판단</h1>
           <p className="mt-2 text-sm font-bold text-slate-600">MD가 할인, 1+1, 오프라인 행사를 설계할 때 원가와 실시간 판매 흐름 기준으로 손익을 바로 확인합니다.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

@@ -419,8 +419,7 @@ export default function EmployeePerformancePage() {
     <div>
       {/* 페이지 헤더 */}
       <div className="mb-6">
-        <p className="text-xs font-black uppercase tracking-[0.24em] text-sky-600">Naeil Business Platform</p>
-        <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">직원 성과 분석</h1>
+        <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950">직원 성과 분석</h1>
         <p className="mt-1.5 text-sm text-slate-500">직원 카드를 클릭하면 업무 현황 상세 · AI 분석 · 대표 피드백을 확인할 수 있습니다.</p>
       </div>
 

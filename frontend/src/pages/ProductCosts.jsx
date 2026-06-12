@@ -493,15 +493,11 @@ export default function ProductCosts({ isExpanded }) {
   }
 
   return (
-    <main
-      className={`min-h-screen bg-slate-50 p-8 transition-all duration-300 ${
-        isExpanded ? 'ml-64' : 'ml-20'
-      }`}
-    >
+    <main className="min-h-screen bg-slate-50">
       <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900">비용 관리</h1>
-          <p className="mt-3 text-slate-500">
+          <h1 className="text-2xl font-black tracking-tight text-slate-950">비용 관리</h1>
+          <p className="mt-2 text-sm font-medium text-slate-500">
             수집된 상품 기준으로 판매가, 원가, 공급가와 공통 비용, 마켓별 비용을 관리합니다.
           </p>
           <div className="mt-4 inline-flex rounded-full bg-slate-100 p-1">

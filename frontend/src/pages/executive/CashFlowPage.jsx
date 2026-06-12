@@ -9,20 +9,20 @@ const sum = (rows, key) => rows.reduce((total, row) => total + Number(row[key] |
 
 function DecisionCard({ title, value, description, tone = 'sky', icon }) {
   const tones = {
-    sky: 'border-sky-400/20 bg-sky-400/10 text-sky-100',
-    emerald: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-100',
-    amber: 'border-amber-400/20 bg-amber-400/10 text-amber-100',
-    rose: 'border-rose-400/20 bg-rose-400/10 text-rose-100',
+    sky: 'border-sky-200 bg-sky-50 text-sky-800',
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+    amber: 'border-amber-200 bg-amber-50 text-amber-800',
+    rose: 'border-rose-200 bg-rose-50 text-rose-800',
   }
 
   return (
-    <div className={`rounded-lg border p-5 ${tones[tone]}`}>
+    <div className={`rounded-lg border p-5 shadow-sm ${tones[tone] || tones.sky}`}>
       <div className="flex items-start justify-between gap-4">
         <p className="text-sm font-black">{title}</p>
-        <span className="material-symbols-outlined text-xl">{icon}</span>
+        <span className="material-symbols-outlined text-xl opacity-80">{icon}</span>
       </div>
-      <p className="mt-4 text-3xl font-black tracking-tight">{value}</p>
-      <p className="mt-3 text-xs font-bold opacity-70">{description}</p>
+      <p className="mt-4 text-2xl font-black tracking-tight text-slate-950">{value}</p>
+      <p className="mt-3 text-xs font-bold opacity-80">{description}</p>
     </div>
   )
 }
@@ -35,14 +35,14 @@ function CashProjectionChart({ rows }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between text-xs font-black uppercase tracking-[0.18em] text-slate-400">
+      <div className="flex items-center justify-between text-xs font-black uppercase tracking-[0.14em] text-slate-500">
         <span>30일 예상 잔액</span>
         <span>{rows.length ? `기간 ${rows.length}일` : '데이터 없음'}</span>
       </div>
-      <div className="relative overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/80 p-3">
-        <div className="pointer-events-none absolute inset-x-0 top-1/4 h-px bg-slate-800" />
-        <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-slate-800" />
-        <div className="pointer-events-none absolute inset-x-0 top-3/4 h-px bg-slate-800" />
+      <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <div className="pointer-events-none absolute inset-x-0 top-1/4 h-px bg-slate-200" />
+        <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-slate-200" />
+        <div className="pointer-events-none absolute inset-x-0 top-3/4 h-px bg-slate-200" />
         <div className="flex h-72 items-end gap-2">
           {rows.map((row) => {
             const balance = Number(row.projected_balance || 0)
@@ -52,9 +52,9 @@ function CashProjectionChart({ rows }) {
 
             return (
               <div key={row.target_date} className="flex min-w-0 flex-1 flex-col items-center gap-2">
-                <div className="flex h-56 w-full items-end rounded-xl bg-slate-950/60 px-1">
+                <div className="flex h-56 w-full items-end rounded bg-white px-1">
                   <div
-                    className={`w-full rounded-t-md ${isNegative ? 'bg-rose-500' : isRisk ? 'bg-amber-400' : 'bg-sky-400'}`}
+                    className={`w-full rounded-t ${isNegative ? 'bg-rose-500' : isRisk ? 'bg-amber-400' : 'bg-sky-500'}`}
                     style={{ height: `${height}%` }}
                     title={`${row.target_date}: ${won(balance)}`}
                   />
@@ -67,8 +67,8 @@ function CashProjectionChart({ rows }) {
           })}
         </div>
       </div>
-      <div className="flex flex-wrap gap-3 text-xs font-bold text-slate-400">
-        <span className="inline-flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-sky-400" />정상</span>
+      <div className="flex flex-wrap gap-3 text-xs font-bold text-slate-500">
+        <span className="inline-flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-sky-500" />정상</span>
         <span className="inline-flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-amber-400" />주의</span>
         <span className="inline-flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-rose-500" />부족</span>
       </div>
@@ -122,25 +122,27 @@ export default function CashFlowPage() {
           title="현금 흐름"
           description="계좌 잔액과 예정 입출금을 합산해 30일 현금 런웨이를 관리합니다."
         />
-        <button
-          type="button"
-          onClick={() => {
-            setEditingAccount(null)
-            setShowAccountForm((prev) => !prev)
-          }}
-          className="mb-6 inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-sky-400 px-5 text-sm font-black text-slate-950 transition-colors hover:bg-sky-300"
-        >
-          <span className="material-symbols-outlined text-base">{showAccountForm ? 'close' : 'account_balance'}</span>
-          {showAccountForm ? '계좌 입력 닫기' : '계좌 잔액 입력'}
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowFlowForm((prev) => !prev)}
-          className="mb-6 ml-3 inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-white/10 px-5 text-sm font-black text-white transition-colors hover:bg-white/15"
-        >
-          <span className="material-symbols-outlined text-base">{showFlowForm ? 'close' : 'add'}</span>
-          {showFlowForm ? '입출금 입력 닫기' : '입출금 예정 추가'}
-        </button>
+        <div className="mb-6 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setEditingAccount(null)
+              setShowAccountForm((prev) => !prev)
+            }}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-sky-600 px-5 text-sm font-black text-white transition-colors hover:bg-sky-500"
+          >
+            <span className="material-symbols-outlined text-base">{showAccountForm ? 'close' : 'account_balance'}</span>
+            {showAccountForm ? '계좌 입력 닫기' : '계좌 잔액 입력'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowFlowForm((prev) => !prev)}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-5 text-sm font-black text-slate-700 transition-colors hover:bg-slate-50"
+          >
+            <span className="material-symbols-outlined text-base">{showFlowForm ? 'close' : 'add'}</span>
+            {showFlowForm ? '입출금 입력 닫기' : '입출금 예정 추가'}
+          </button>
+        </div>
       </div>
 
       {showAccountForm && (
@@ -168,11 +170,8 @@ export default function CashFlowPage() {
             status: editingAccount.status || 'NORMAL',
           } : { status: 'NORMAL' }}
           onSubmit={async (values) => {
-            if (editingAccount) {
-              await updateExecutiveRecord('cash-accounts', editingAccount.id, values)
-            } else {
-              await createExecutiveRecord('cash-accounts', values)
-            }
+            if (editingAccount) await updateExecutiveRecord('cash-accounts', editingAccount.id, values)
+            else await createExecutiveRecord('cash-accounts', values)
             await load()
             setEditingAccount(null)
             setShowAccountForm(false)
@@ -189,7 +188,7 @@ export default function CashFlowPage() {
               { value: 'INFLOW', label: '입금' },
               { value: 'OUTFLOW', label: '출금' },
             ] },
-            { name: 'category', label: '카테고리', required: true, placeholder: '급여, 광고비, 납품대금' },
+            { name: 'category', label: '카테고리', required: true, placeholder: '급여, 광고비, 상품대금' },
             { name: 'counterparty', label: '거래처/지급처', required: true },
             { name: 'amount', label: '금액', type: 'number', required: true },
             { name: 'confidence_level', label: '확정도', type: 'select', options: [
@@ -199,7 +198,7 @@ export default function CashFlowPage() {
             ] },
             { name: 'status', label: '상태', type: 'select', options: [
               { value: 'EXPECTED', label: '예정' },
-              { value: 'SCHEDULED', label: '스케줄' },
+              { value: 'SCHEDULED', label: '대기' },
               { value: 'DONE', label: '완료' },
               { value: 'DELAYED', label: '지연' },
               { value: 'CANCELLED', label: '취소' },
@@ -220,31 +219,31 @@ export default function CashFlowPage() {
         />
       )}
 
-      <section className="mb-6 rounded-lg border border-sky-400/20 bg-sky-400/10 p-5">
+      <section className="mb-6 rounded-lg border border-sky-200 bg-sky-50 p-5 shadow-sm">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <p className="text-sm font-black text-sky-100">온라인 채널 정산 자동 반영</p>
-            <p className="mt-1 text-xs font-bold text-slate-400">
+            <p className="text-sm font-black text-sky-800">온라인 채널 정산 자동 반영</p>
+            <p className="mt-1 text-xs font-bold text-slate-600">
               스마트스토어, 쿠팡 등 온라인 주문 정산만 현금흐름 입금 예정으로 가져옵니다. 오프라인, 수출, B2B, 매입/출금은 직접 입력하세요.
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <label>
-              <span className="mb-1 block text-xs font-bold text-slate-400">시작일</span>
+              <span className="mb-1 block text-xs font-bold text-slate-500">시작일</span>
               <input
                 type="date"
                 value={importStartDate}
                 onChange={(event) => setImportStartDate(event.target.value)}
-                className="h-10 rounded-lg border border-white/10 bg-slate-950 px-3 text-sm font-bold text-white outline-none focus:border-sky-400"
+                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
               />
             </label>
             <label>
-              <span className="mb-1 block text-xs font-bold text-slate-400">종료일</span>
+              <span className="mb-1 block text-xs font-bold text-slate-500">종료일</span>
               <input
                 type="date"
                 value={importEndDate}
                 onChange={(event) => setImportEndDate(event.target.value)}
-                className="h-10 rounded-lg border border-white/10 bg-slate-950 px-3 text-sm font-bold text-white outline-none focus:border-sky-400"
+                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-900 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
               />
             </label>
             <button
@@ -254,13 +253,8 @@ export default function CashFlowPage() {
                 setImporting(true)
                 setImportMessage('')
                 try {
-                  const response = await importOnlineSettlements({
-                    startDate: importStartDate,
-                    endDate: importEndDate,
-                  })
-                  setImportMessage(
-                    `생성 ${response.data.insertedCount}건 · 중복 제외 ${response.data.skippedCount}건 · 대상 ${response.data.candidateCount}건`,
-                  )
+                  const response = await importOnlineSettlements({ startDate: importStartDate, endDate: importEndDate })
+                  setImportMessage(`생성 ${response.data.insertedCount}건 / 중복 제외 ${response.data.skippedCount}건 / 대상 ${response.data.candidateCount}건`)
                   await load()
                 } catch (error) {
                   setImportMessage(error?.response?.data?.message || '온라인 정산 불러오기에 실패했습니다.')
@@ -268,13 +262,13 @@ export default function CashFlowPage() {
                   setImporting(false)
                 }
               }}
-              className="h-10 rounded-lg bg-sky-400 px-4 text-sm font-black text-slate-950 transition-colors hover:bg-sky-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+              className="h-10 rounded-lg bg-sky-600 px-4 text-sm font-black text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
             >
               {importing ? '불러오는 중...' : '온라인 정산 불러오기'}
             </button>
           </div>
         </div>
-        {importMessage && <p className="mt-3 text-xs font-black text-sky-100">{importMessage}</p>}
+        {importMessage && <p className="mt-3 text-xs font-black text-sky-700">{importMessage}</p>}
       </section>
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -295,7 +289,7 @@ export default function CashFlowPage() {
         <div className="xl:col-span-8">
           <Panel
             title="30일 예상 잔액 그래프"
-            right={lowest && <span className="text-xs font-black text-slate-400">최저점 {formatDate(lowest.target_date)} · {won(lowest.projected_balance)}</span>}
+            right={lowest && <span className="text-xs font-black text-slate-500">최저점 {formatDate(lowest.target_date)} · {won(lowest.projected_balance)}</span>}
           >
             <CashProjectionChart rows={projection} />
           </Panel>
@@ -303,17 +297,17 @@ export default function CashFlowPage() {
         <div className="xl:col-span-4">
           <Panel title="대표 체크포인트" right={<StatusBadge value={data?.expectedCashShortageDate ? 'HIGH' : 'NORMAL'} />}>
             <div className="space-y-3">
-              <div className="rounded-lg bg-slate-950/50 p-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-bold text-slate-500">지연 입금</p>
-                <p className="mt-1 text-2xl font-black text-rose-200">{delayedInflows.length}건</p>
+                <p className="mt-1 text-2xl font-black text-rose-700">{delayedInflows.length}건</p>
               </div>
-              <div className="rounded-lg bg-slate-950/50 p-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-bold text-slate-500">다가오는 큰 출금</p>
-                <p className="mt-1 text-2xl font-black text-amber-100">{upcomingOutflows.length}건</p>
+                <p className="mt-1 text-2xl font-black text-amber-700">{upcomingOutflows.length}건</p>
               </div>
-              <div className="rounded-lg bg-slate-950/50 p-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-bold text-slate-500">이번 달 순현금</p>
-                <p className={`mt-1 text-2xl font-black ${Number(totals.month_inflow || 0) >= Number(totals.month_outflow || 0) ? 'text-emerald-200' : 'text-rose-200'}`}>
+                <p className={`mt-1 text-2xl font-black ${Number(totals.month_inflow || 0) >= Number(totals.month_outflow || 0) ? 'text-emerald-700' : 'text-rose-700'}`}>
                   {won(Number(totals.month_inflow || 0) - Number(totals.month_outflow || 0))}
                 </p>
               </div>
@@ -340,7 +334,7 @@ export default function CashFlowPage() {
                       setEditingAccount(row)
                       setShowAccountForm(true)
                     }}
-                    className="inline-flex h-8 items-center rounded-md border border-sky-400/30 bg-sky-400/10 px-3 text-xs font-black text-sky-100 transition-colors hover:bg-sky-400/20"
+                    className="inline-flex h-8 items-center rounded-md border border-sky-200 bg-sky-50 px-3 text-xs font-black text-sky-700 transition-colors hover:bg-sky-100"
                   >
                     수정
                   </button>
@@ -355,7 +349,7 @@ export default function CashFlowPage() {
                       }
                       await load()
                     }}
-                    className="inline-flex h-8 items-center rounded-md border border-rose-400/30 bg-rose-400/10 px-3 text-xs font-black text-rose-100 transition-colors hover:bg-rose-400/20"
+                    className="inline-flex h-8 items-center rounded-md border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-700 transition-colors hover:bg-rose-100"
                   >
                     삭제
                   </button>

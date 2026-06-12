@@ -449,7 +449,7 @@ export default function StaffProjectStatusPage({ username, displayName, departme
       <div className="grid min-h-[calc(100vh-80px)] grid-cols-[280px_minmax(0,1fr)]">
         <aside className="border-r border-slate-200 bg-white px-6 py-7">
           <div className="mb-8 flex items-center justify-between">
-            <h1 className="text-2xl font-black text-slate-950">캘린더</h1>
+            <h1 className="text-2xl font-black tracking-tight text-slate-950">캘린더</h1>
             <span className="material-symbols-outlined text-slate-500">more_vert</span>
           </div>
 

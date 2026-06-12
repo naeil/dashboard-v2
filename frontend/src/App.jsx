@@ -24,9 +24,11 @@ import MarketingProjectBoardPage from './pages/executive/MarketingProjectBoardPa
 import MarketingStatusPage from './pages/executive/MarketingStatusPage'
 import MenuOrderSettingsPage from './pages/executive/MenuOrderSettingsPage'
 import OperatingExpensesPage from './pages/executive/OperatingExpensesPage'
+import OrganizationManagementPage from './pages/executive/OrganizationManagementPage'
 import PartnerManagementPage from './pages/executive/PartnerManagementPage'
 import PartnerPaymentLedgerPage from './pages/executive/PartnerPaymentLedgerPage'
 import PayrollPage from './pages/executive/PayrollPage'
+import PlatformAdminPage from './pages/executive/PlatformAdminPage'
 import ProfitManagementPage from './pages/executive/ProfitManagementPage'
 import ProductCostPage from './pages/executive/ProductCostPage'
 import PromotionHistoryPage from './pages/executive/PromotionHistoryPage'
@@ -50,9 +52,12 @@ import StaffDashboardPage from './pages/staff/StaffDashboardPage'
 import StaffProjectStatusPage from './pages/staff/StaffProjectStatusPage'
 import StaffWorkReportPage from './pages/staff/StaffWorkReportPage'
 import { getAuthToken, getSession, logout } from './api/authApi'
+import { LOGIN_MODES } from './utils/loginModes'
 
 const pages = {
   platform: PlatformOverviewPage,
+  'platform-admin': PlatformAdminPage,
+  organization: OrganizationManagementPage,
   'staff-dashboard': StaffDashboardPage,
   'staff-work-report': StaffWorkReportPage,
   'staff-project-status': StaffProjectStatusPage,
@@ -139,6 +144,7 @@ function MobileLayout({ activePage, setPage, session, userRole }) {
           department={session?.department}
           positionName={session?.positionName}
           role={userRole}
+          accessPermissions={session?.allowedMenuSections}
         />
       </main>
       <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 px-2">
@@ -172,7 +178,13 @@ export default function App() {
 
   useEffect(() => {
     getSession()
-      .then((data) => setSession(data))
+      .then((data) => {
+        if (data?.authenticated) {
+          setSession(data)
+        } else {
+          setSession(null)
+        }
+      })
       .catch(() => setSession(null))
       .finally(() => setAuthLoading(false))
   }, [])
@@ -200,6 +212,12 @@ export default function App() {
   const handleLogout = async () => {
     await logout()
     setSession(null)
+    setPage('platform')
+  }
+
+  const handleLogin = (nextSession) => {
+    setSession(nextSession)
+    setPage(nextSession?.loginSurface === LOGIN_MODES.PLATFORM ? 'platform-admin' : 'platform')
   }
 
   if (authLoading) {
@@ -213,7 +231,7 @@ export default function App() {
     )
   }
 
-  if (!session) return <LoginPage onLogin={setSession} />
+  if (!session) return <LoginPage onLogin={handleLogin} />
 
   const userRole = session.role ?? 'EMPLOYEE'
   if (isMobile && mobilePageIds.has(page)) {
@@ -227,7 +245,7 @@ export default function App() {
         activePage={page}
         onNavigate={setPage}
         isExpanded={isSidebarExpanded}
-        onToggle={() => setIsSidebarExpanded((v) => !v)}
+        onToggle={() => setIsSidebarExpanded((value) => !value)}
         username={session.username}
         displayName={session.displayName}
         department={session.department}
@@ -244,7 +262,7 @@ export default function App() {
           onNavigate={setPage}
           userRole={userRole}
         />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto px-6 py-6">
           <PageComponent
             onNavigate={setPage}
             username={session.username}
@@ -252,6 +270,7 @@ export default function App() {
             department={session.department}
             positionName={session.positionName}
             role={userRole}
+            accessPermissions={session.allowedMenuSections}
           />
         </main>
       </div>

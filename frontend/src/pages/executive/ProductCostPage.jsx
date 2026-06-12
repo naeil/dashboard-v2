@@ -721,12 +721,12 @@ export default function ProductCostPage() {
   const msgBg = { success: '#1a4a2a', error: '#4a1a1a', info: '#1a3050' }
 
   return (
-    <div className="product-cost-page" style={{ padding: '20px 24px', minHeight: '100vh', background: '#0d1b2e', color: '#c8dff0', fontFamily: 'sans-serif' }}>
+    <div className="product-cost-page" style={{ minHeight: '100vh', background: '#0d1b2e', color: '#c8dff0', fontFamily: 'sans-serif' }}>
       {/* 헤더 */}
       <div className="product-cost-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 20, color: '#e8f4ff', fontWeight: 700 }}>제품 원가 관리</h2>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: '#6a9abf' }}>
+          <h1 style={{ margin: 0, fontSize: 24, lineHeight: '32px', color: '#0f172a', fontWeight: 900, letterSpacing: '-0.025em' }}>제품 원가 관리</h1>
+          <p style={{ margin: '8px 0 0', fontSize: 14, color: '#64748b', fontWeight: 500 }}>
             채널별 제품 원가·수수료율을 관리합니다. 셀을 클릭하면 바로 수정됩니다.
           </p>
         </div>

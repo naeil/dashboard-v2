@@ -116,14 +116,14 @@ export default function StaffDashboardPage({ isExpanded = false, mobile = false 
   }, [startDate, endDate, attendanceByDate])
 
   return (
-    <main className={`min-h-screen bg-slate-50 transition-all duration-300 ${mobile ? 'p-0' : `p-6 ${isExpanded ? 'ml-64' : 'ml-20'}`}`}>
+    <main className="min-h-screen bg-slate-50 transition-all duration-300">
       <section className="mb-6 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-xs font-black text-slate-500">
               {startDate.toISOString().slice(0, 10)} ~ {endDate.toISOString().slice(0, 10)}
             </p>
-            <h1 className="mt-2 text-2xl font-black text-slate-950">직원 업무 대시보드</h1>
+            <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950">직원 업무 대시보드</h1>
             <p className="mt-2 text-sm font-bold text-slate-500">오늘 처리할 업무, 매출 흐름, 다우오피스 메일을 한 화면에서 확인합니다.</p>
           </div>
           <button
