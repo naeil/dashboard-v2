@@ -6,6 +6,63 @@ const fmt = (v) => Math.round(Number(v || 0)).toLocaleString('ko-KR')
 const won = (v) => fmt(v) + '원'
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0)
 
+// 오늘 기준 기본 기간: 90일 전 ~ 오늘
+function defaultDates() {
+  const today = new Date()
+  const from = new Date(today)
+  from.setDate(from.getDate() - 90)
+  return {
+    start: from.toISOString().slice(0, 10),
+    end: today.toISOString().slice(0, 10),
+  }
+}
+
+// ordered_products 문자열 → 짧은 상품명 배열 파싱
+function parseProducts(str) {
+  if (!str) return []
+  // "[오늘출발]단백깡 혼합, 50g, 12개 2건" 형태에서 핵심 상품명만 추출
+  return str.split(',').reduce((acc, part, i, arr) => {
+    // 첫 번째 파트가 상품명
+    if (i % 1 === 0) {
+      const cleaned = part
+        .replace(/\[오늘출발\]/g, '')
+        .replace(/\[.*?\]/g, '')
+        .trim()
+      if (cleaned && cleaned.length > 2 && !cleaned.match(/^[0-9]/)) {
+        // 상품명에서 앞 20자만
+        const short = cleaned.slice(0, 22).trim()
+        if (short && !acc.includes(short)) acc.push(short)
+      }
+    }
+    return acc
+  }, []).slice(0, 3)
+}
+
+// ordered_products 전체 문자열에서 건수 포함 상품 목록
+function parseProductsFull(str) {
+  if (!str) return []
+  // "상품명A 2건, 상품명B 1건" 형식으로 분리
+  const items = []
+  // "상품명 Xkg, Y개 Z건" 패턴을 분리
+  const parts = str.split(/(?=\[오늘출발\])/)
+  parts.forEach(part => {
+    const cleaned = part
+      .replace(/\[오늘출발\]/g, '')
+      .replace(/\[.*?\]/g, '')
+      .trim()
+    if (!cleaned) return
+    // "단백깡 혼합, 50g, 12개 2건" → 마지막 "N건" 찾기
+    const matchCount = cleaned.match(/(\d+)건$/)
+    const count = matchCount ? matchCount[1] : '1'
+    // 쉼표 기준 첫 파트가 상품명
+    const namePart = cleaned.split(',')[0].trim()
+    if (namePart.length > 2) {
+      items.push({ name: namePart.slice(0, 30), count })
+    }
+  })
+  return items.slice(0, 5)
+}
+
 function getGrade(row) {
   if (row.order_count >= 5) return 'VIP'
   if (row.order_count >= 3) return 'GOLD'
@@ -108,21 +165,93 @@ function CohortTable({ rows }) {
   )
 }
 
+// 기간 선택 프리셋
+const DATE_PRESETS = [
+  { label: '최근 30일', days: 30 },
+  { label: '최근 90일', days: 90 },
+  { label: '최근 180일', days: 180 },
+  { label: '최근 1년', days: 365 },
+  { label: '전체', days: 0 },
+]
+
+function getPresetDates(days) {
+  if (days === 0) return { start: '2020-01-01', end: new Date().toISOString().slice(0, 10) }
+  const today = new Date()
+  const from = new Date(today)
+  from.setDate(from.getDate() - days)
+  return { start: from.toISOString().slice(0, 10), end: today.toISOString().slice(0, 10) }
+}
+
+// 구매 상품 툴팁 컴포넌트
+function ProductCell({ products }) {
+  const [open, setOpen] = useState(false)
+  const items = parseProductsFull(products)
+  if (!items.length) return <span className="text-slate-300">-</span>
+  const preview = items[0].name.slice(0, 14) + (items[0].name.length > 14 ? '…' : '')
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 rounded bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700 hover:bg-sky-100"
+      >
+        {preview}
+        {items.length > 1 && <span className="rounded-full bg-sky-200 px-1 text-[9px]">+{items.length - 1}</span>}
+      </button>
+      {open && (
+        <div className="absolute left-0 top-7 z-50 min-w-[240px] rounded-lg border border-slate-200 bg-white p-3 shadow-xl">
+          <div className="mb-2 text-[10px] font-black uppercase text-slate-400">구매 상품 목록</div>
+          {items.map((item, i) => (
+            <div key={i} className="flex items-start justify-between gap-2 border-b border-slate-50 py-1.5 last:border-0">
+              <span className="text-[11px] text-slate-700">{item.name}</span>
+              <span className="flex-shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">{item.count}건</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function CustomerIntelligencePage({ role = 'EXECUTIVE' }) {
+  const def = defaultDates()
   const [data, setData] = useState({ summary: {}, rows: [] })
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [message, setMessage] = useState('')
   const [gradeFilter, setGradeFilter] = useState('all')
+  const [dateStart, setDateStart] = useState(def.start)
+  const [dateEnd, setDateEnd] = useState(def.end)
+  const [activePreset, setActivePreset] = useState(90)
   const canAccess = role === 'EXECUTIVE' || role === 'MANAGER'
 
-  useEffect(() => {
-    if (!canAccess) { setLoading(false); return }
-    getExecutiveCustomerDatabase()
+  function fetchData(start, end) {
+    setLoading(true)
+    const params = {}
+    if (start) params.startDate = start
+    if (end) params.endDate = end
+    getExecutiveCustomerDatabase(params)
       .then((res) => setData(res.data || { summary: {}, rows: [] }))
       .catch(() => setMessage('데이터를 불러오지 못했습니다.'))
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    if (!canAccess) { setLoading(false); return }
+    fetchData(dateStart, dateEnd)
   }, [canAccess])
+
+  const handlePreset = (days) => {
+    const d = getPresetDates(days)
+    setActivePreset(days)
+    setDateStart(d.start)
+    setDateEnd(d.end)
+    fetchData(d.start, d.end)
+  }
+
+  const handleDateApply = () => {
+    setActivePreset(null)
+    fetchData(dateStart, dateEnd)
+  }
 
   const rows = data.rows || []
   const summary = data.summary || {}
@@ -156,7 +285,7 @@ export default function CustomerIntelligencePage({ role = 'EXECUTIVE' }) {
 
   const filteredRows = useMemo(() => {
     const base = [...rows].sort((a, b) => Number(b.total_purchase_amount) - Number(a.total_purchase_amount))
-    return (gradeFilter === 'all' ? base : base.filter((r) => getGrade(r) === gradeFilter)).slice(0, 20)
+    return (gradeFilter === 'all' ? base : base.filter((r) => getGrade(r) === gradeFilter)).slice(0, 30)
   }, [rows, gradeFilter])
 
   const handleSync = async () => {
@@ -164,8 +293,8 @@ export default function CustomerIntelligencePage({ role = 'EXECUTIVE' }) {
     setSyncing(true)
     setMessage('PlayAuto에서 고객 데이터를 동기화하는 중...')
     try {
-      const res = await syncPlayAutoCustomerDatabase()
-      setData(res.data || { summary: {}, rows: [] })
+      await syncPlayAutoCustomerDatabase()
+      fetchData(dateStart, dateEnd)
       setMessage('PlayAuto 동기화 완료!')
     } catch {
       setMessage('동기화 실패. 연동 설정을 확인해주세요.')
@@ -185,6 +314,45 @@ export default function CustomerIntelligencePage({ role = 'EXECUTIVE' }) {
         </button>
       </PageHeader>
 
+      {/* ── 기간 설정 ── */}
+      <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">기간 설정</span>
+          <div className="flex gap-1">
+            {DATE_PRESETS.map(({ label, days }) => (
+              <button
+                key={days}
+                onClick={() => handlePreset(days)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${activePreset === days ? 'bg-sky-500 text-white' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 ml-auto">
+            <input
+              type="date"
+              value={dateStart}
+              onChange={(e) => setDateStart(e.target.value)}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-700 focus:border-sky-400 focus:outline-none"
+            />
+            <span className="text-slate-400 text-xs">~</span>
+            <input
+              type="date"
+              value={dateEnd}
+              onChange={(e) => setDateEnd(e.target.value)}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-700 focus:border-sky-400 focus:outline-none"
+            />
+            <button
+              onClick={handleDateApply}
+              className="rounded-lg bg-slate-800 px-4 py-1.5 text-xs font-bold text-white hover:bg-slate-700"
+            >
+              조회
+            </button>
+          </div>
+        </div>
+      </div>
+
       {message && <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-bold text-sky-700">{message}</div>}
 
       {loading ? (
@@ -199,7 +367,7 @@ export default function CustomerIntelligencePage({ role = 'EXECUTIVE' }) {
           </div>
           <div className="grid grid-cols-4 gap-3">
             <KpiBox label="평균 주문 단가" value={won(kpis.avgOrderAmt)} sub="주문 1건 평균" />
-            <KpiBox label="누적 총 매출" value={won(kpis.totalAmt)} sub="플레이오토 전체 기간" />
+            <KpiBox label="누적 총 매출" value={won(kpis.totalAmt)} sub="선택 기간 기준" />
             <KpiBox label="VIP 고객 (5회+)" value={fmt(kpis.vip) + '명'} sub={'상위 10% · 매출 ' + kpis.vipContrib + '% 기여'} />
             <KpiBox label="휴면 고객 (90일+)" value={fmt(kpis.dormant) + '명'} sub={'잠재 매출 ' + won(kpis.dormant * kpis.avgLtv)} warn />
           </div>
@@ -249,7 +417,10 @@ export default function CustomerIntelligencePage({ role = 'EXECUTIVE' }) {
 
           <div className="rounded-xl border border-slate-100 bg-white shadow-sm">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-              <span className="text-sm font-black text-slate-900">고객별 가치 분석 (상위 20명 · 실제 플레이오토 데이터)</span>
+              <div>
+                <span className="text-sm font-black text-slate-900">고객별 가치 분석 (상위 30명 · 실제 플레이오토 데이터)</span>
+                <span className="ml-2 text-[11px] text-slate-400">{dateStart} ~ {dateEnd}</span>
+              </div>
               <div className="flex gap-1 rounded-lg bg-slate-50 p-1">
                 {['all','VIP','GOLD','DORMANT'].map((g)=>(
                   <button key={g} onClick={()=>setGradeFilter(g)} className={`rounded-md px-3 py-1 text-xs font-bold transition ${gradeFilter===g?'bg-white shadow text-slate-900':'text-slate-500 hover:text-slate-700'}`}>
@@ -260,7 +431,13 @@ export default function CustomerIntelligencePage({ role = 'EXECUTIVE' }) {
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-[12px]">
-                <thead><tr className="border-b border-slate-100 bg-slate-50 text-left">{['고객명','등급','구매횟수','총구매액','평균주문','첫구매','최근구매','경과일'].map(h=><th key={h} className="px-4 py-2.5 font-bold text-slate-500">{h}</th>)}</tr></thead>
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50 text-left">
+                    {['고객명','등급','구매횟수','총구매액','평균주문','구매 상품','첫구매','최근구매','경과일'].map(h=>(
+                      <th key={h} className="px-4 py-2.5 font-bold text-slate-500">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
                 <tbody>
                   {filteredRows.map((row,i)=>{
                     const grade=getGrade(row)
@@ -272,6 +449,7 @@ export default function CustomerIntelligencePage({ role = 'EXECUTIVE' }) {
                         <td className="px-4 py-2.5 text-center">{row.order_count}회</td>
                         <td className="px-4 py-2.5 font-bold">{won(row.total_purchase_amount)}</td>
                         <td className="px-4 py-2.5">{won(Math.round(row.total_purchase_amount/row.order_count))}</td>
+                        <td className="px-4 py-2.5 max-w-[180px]"><ProductCell products={row.ordered_products}/></td>
                         <td className="px-4 py-2.5 text-slate-500">{row.first_order_at?.slice(0,10)??'-'}</td>
                         <td className="px-4 py-2.5 text-slate-500">{row.last_order_at?.slice(0,10)??'-'}</td>
                         <td className={`px-4 py-2.5 font-bold ${row.days_since_last_order>=90?'text-rose-600':'text-slate-600'}`}>{row.days_since_last_order}일</td>
@@ -286,4 +464,4 @@ export default function CustomerIntelligencePage({ role = 'EXECUTIVE' }) {
       )}
     </div>
   )
-      }
+}
