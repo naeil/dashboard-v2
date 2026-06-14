@@ -40,7 +40,7 @@ export const getExecutiveAdRoasGoals = () => api.get('/executive/ad-roas-goals',
 export const getExecutiveIssues = () => api.get('/executive/issues', { params: companyParams })
 export const getExecutiveIssueBriefing = () => api.get('/executive/issue-briefing', { params: companyParams })
 export const getExecutiveCustomerInquiries = () => api.get('/executive/customer-inquiries', { params: companyParams })
-export const getExecutiveCustomerDatabase = () => api.get('/executive/customer-db', { params: companyParams })
+export const getExecutiveCustomerDatabase = (params = {}) => api.get('/executive/customer-db', { params: { ...companyParams, ...params } })
 export const syncPlayAutoCustomerDatabase = () =>
   api.post('/executive/customer-db/sync-playauto', null, { params: companyParams })
 export const searchKeywordTrend = (keyword) =>
