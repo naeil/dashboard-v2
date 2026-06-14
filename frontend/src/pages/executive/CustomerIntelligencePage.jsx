@@ -264,7 +264,7 @@ export default function CustomerIntelligencePage({ role = 'EXECUTIVE' }) {
                 <tbody>
                   {filteredRows.map((row,i)=>{
                     const grade=getGrade(row)
-                    const name=row.customer_name?row.customer_name.slice(0,1)+'**':'***'
+                    const name=row.customer_name||'이름없음'
                     return(
                       <tr key={i} className="border-b border-slate-50 hover:bg-slate-50">
                         <td className="px-4 py-2.5 font-bold text-slate-800">{name}</td>
