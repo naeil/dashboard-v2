@@ -11,6 +11,7 @@ import ChannelOperationsPage from './pages/executive/ChannelOperationsPage'
 import ChannelSalesPage from './pages/executive/ChannelSalesPage'
 import ConsultingRevenuePage from './pages/executive/ConsultingRevenuePage'
 import CustomerDatabasePage from './pages/executive/CustomerDatabasePage'
+import CustomerIntelligencePage from './pages/executive/CustomerIntelligencePage'
 import DebtPage from './pages/executive/DebtPage'
 import EmployeeManagementPage from './pages/executive/EmployeeManagementPage'
 import EmployeePerformancePage from './pages/executive/EmployeePerformancePage'
@@ -69,6 +70,7 @@ const pages = {
   'cash-flow': CashFlowPage,
   'channel-credentials': ChannelCredentialPage,
   'customer-db': CustomerDatabasePage,
+  'customer-intelligence': CustomerIntelligencePage,
   'channel-operations': ChannelOperationsPage,
   'product-profit': ProductProfitPage,
   'product-forecast': ProductForecastPage,
