@@ -47,15 +47,15 @@ public class AuthController {
     @GetMapping("/session")
     public ResponseEntity<AuthSessionResponse> getSession(HttpServletRequest request) {
         return authService.authenticate(request.getHeader("Authorization"))
-                .map(user -> ResponseEntity.ok(toSession(user, null)))
-                .orElseGet(() -> ResponseEntity.ok(new AuthSessionResponse(
-                        false, null, null, null, null, null, null, null, null, null
-                )));
+            .map(user -> ResponseEntity.ok(toSession(user, null)))
+            .orElseGet(() -> ResponseEntity.ok(new AuthSessionResponse(
+                false, null, null, null, null, null, null, null, null, null
+            )));
     }
 
     @PostMapping("/register")
     public ResponseEntity<AuthSessionResponse> register(@RequestBody RegisterRequest request) {
-        AuthUser user = authService.register(request);
+        AuthUser user = authService.registerWithInvite(request);
         return ResponseEntity.ok(toSession(user, authService.createToken(user)));
     }
 
@@ -66,8 +66,8 @@ public class AuthController {
 
     @GetMapping("/username-available")
     public ResponseEntity<Map<String, Object>> checkUsernameAvailable(
-            @RequestParam String inviteCode,
-            @RequestParam String username
+        @RequestParam String inviteCode,
+        @RequestParam String username
     ) {
         return ResponseEntity.ok(authService.checkUsernameAvailable(inviteCode, username));
     }
@@ -98,8 +98,8 @@ public class AuthController {
 
     @PostMapping("/invites")
     public ResponseEntity<Map<String, Object>> createInvite(
-            HttpServletRequest request,
-            @RequestBody InviteCreateRequest inviteRequest
+        HttpServletRequest request,
+        @RequestBody InviteCreateRequest inviteRequest
     ) {
         AuthUser actor = requireUser(request);
         authService.requireFeature(actor, AuthService.FEATURE_CREATE_INVITE);
@@ -108,97 +108,124 @@ public class AuthController {
 
     @DeleteMapping("/invites/{id}")
     public ResponseEntity<Map<String, String>> deleteInvite(
-            HttpServletRequest request,
-            @PathVariable Long id
+        HttpServletRequest request,
+        @PathVariable Long id
     ) {
         AuthUser actor = requireUser(request);
         authService.deleteInvite(id, actor);
-        return ResponseEntity.ok(Map.of("message", "초대 링크를 삭제했습니다."));
+        return ResponseEntity.ok(Map.of("message", "\uCD08\uB300 \uB9C1\uD06C\uB97C \uC0AD\uC81C\uD588\uC2B5\uB2C8\uB2E4."));
     }
 
     @PostMapping("/password")
     public ResponseEntity<Map<String, String>> changePassword(
-            HttpServletRequest request,
-            @RequestBody ChangePasswordRequest passwordRequest
+        HttpServletRequest request,
+        @RequestBody ChangePasswordRequest passwordRequest
     ) {
         AuthUser actor = requireUser(request);
         authService.changePassword(passwordRequest, actor);
-        return ResponseEntity.ok(Map.of("message", "비밀번호가 변경되었습니다."));
+        return ResponseEntity.ok(Map.of("message", "\uBE44\uBC00\uBC88\uD638\uAC00 \uBCC0\uACBD\uB418\uC5C8\uC2B5\uB2C8\uB2E4."));
     }
 
     @PostMapping("/users/{id}/password")
     public ResponseEntity<Map<String, String>> resetPassword(
-            HttpServletRequest request,
-            @PathVariable Long id,
-            @RequestBody ResetPasswordRequest passwordRequest
+        HttpServletRequest request,
+        @PathVariable Long id,
+        @RequestBody ResetPasswordRequest passwordRequest
     ) {
         AuthUser actor = requireUser(request);
         authService.resetPassword(id, passwordRequest, actor);
-        return ResponseEntity.ok(Map.of("message", "비밀번호가 초기화되었습니다."));
+        return ResponseEntity.ok(Map.of("message", "\uBE44\uBC00\uBC88\uD638\uAC00 \uCD08\uAE30\uD654\uB418\uC5C8\uC2B5\uB2C8\uB2E4."));
     }
 
     @DeleteMapping("/users/{id}")
     public ResponseEntity<Map<String, String>> deleteUser(
-            HttpServletRequest request,
-            @PathVariable Long id
+        HttpServletRequest request,
+        @PathVariable Long id
     ) {
         AuthUser actor = requireUser(request);
         authService.deleteUser(id, actor);
-        return ResponseEntity.ok(Map.of("message", "직원 계정을 퇴사 처리했습니다."));
+        return ResponseEntity.ok(Map.of("message", "\uC9C1\uC6D0 \uACC4\uC815\uC744 \uD1F4\uC0AC \uCC98\uB9AC\uD588\uC2B5\uB2C8\uB2E4."));
     }
 
     @PostMapping("/logout")
     public ResponseEntity<Map<String, String>> logout(HttpSession session) {
         session.invalidate();
         SecurityContextHolder.clearContext();
-        return ResponseEntity.ok(Map.of("message", "로그아웃되었습니다."));
+        return ResponseEntity.ok(Map.of("message", "\uB85C\uADF8\uC544\uC6C3\uB418\uC5C8\uC2B5\uB2C8\uB2E4."));
     }
 
     @PostMapping("/users/{id}/menu-permissions")
     public ResponseEntity<Map<String, String>> updateMenuPermissions(
-            HttpServletRequest request,
-            @PathVariable Long id,
-            @RequestBody Map<String, Object> body) {
+        HttpServletRequest request,
+        @PathVariable Long id,
+        @RequestBody Map<String, Object> body) {
         AuthUser actor = requireUser(request);
         authService.requireFeature(actor, AuthService.FEATURE_MANAGE_MENU_PERMISSIONS);
-        Object sections = body.get("sections");
-        String sectionsJson = sections != null ? sections.toString() : null;
+        String sectionsJson = (String) body.get("sections");
         authService.updateMenuPermissions(id, sectionsJson);
-        return ResponseEntity.ok(Map.of("message", "메뉴 권한이 저장되었습니다."));
+        return ResponseEntity.ok(Map.of("message", "\uBA54\uB274 \uAD8C\uD55C\uC774 \uC800\uC7A5\uB418\uC5C8\uC2B5\uB2C8\uB2E4."));
     }
 
     @PostMapping("/position-permissions")
     public ResponseEntity<Map<String, Object>> savePositionPermissionTemplate(
-            HttpServletRequest request,
-            @RequestBody Map<String, Object> body) {
+        HttpServletRequest request,
+        @RequestBody Map<String, Object> body) {
         AuthUser actor = requireUser(request);
         return ResponseEntity.ok(authService.savePositionPermissionTemplate(body, actor));
+    }
+
+    // ===== \uBE44\uBC00\uBC88\uD638 \uCC3E\uAE30 - SMS OTP =====
+
+    /** STEP 1: \uD734\uB300\uD3F0 \uBC88\uD638 \uC778\uC99D \uBC1C\uC1A1 */
+    @PostMapping("/password-reset/request")
+    public ResponseEntity<Map<String, Object>> requestPasswordReset(
+        @RequestBody Map<String, String> body
+    ) {
+        String companyCode = body.get("companyCode");
+        String loginId = body.get("loginId");
+        String phoneNumber = body.get("phoneNumber");
+        Map<String, Object> result = authService.requestPasswordReset(companyCode, loginId, phoneNumber);
+        return ResponseEntity.ok(result);
+    }
+
+    /** STEP 2: OTP \uD655\uC778 + \uC0C8 \uBE44\uBC00\uBC88\uD638 \uC124\uC815 */
+    @PostMapping("/password-reset/verify")
+    public ResponseEntity<Map<String, String>> verifyPasswordReset(
+        @RequestBody Map<String, String> body
+    ) {
+        String companyCode = body.get("companyCode");
+        String loginId = body.get("loginId");
+        String phoneNumber = body.get("phoneNumber");
+        String otpCode = body.get("otpCode");
+        String newPassword = body.get("newPassword");
+        authService.verifyAndResetPassword(companyCode, loginId, phoneNumber, otpCode, newPassword);
+        return ResponseEntity.ok(Map.of("message", "\uBE44\uBC00\uBC88\uD638\uAC00 \uBCC0\uACBD\uB418\uC5C8\uC2B5\uB2C8\uB2E4."));
     }
 
     private ResponseEntity<AuthSessionResponse> loginWithRequest(LoginRequest request) {
         AuthUser user = authService.login(request.resolvedCompanyCode(), request.resolvedLoginId(), request.password());
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(
-                        user.username(),
-                        null,
-                        List.of(new SimpleGrantedAuthority("ROLE_" + user.role()))
-                )
+            new UsernamePasswordAuthenticationToken(
+                user.username(),
+                null,
+                List.of(new SimpleGrantedAuthority("ROLE_" + user.role()))
+            )
         );
         return ResponseEntity.ok(toSession(user, authService.createToken(user)));
     }
 
     private AuthSessionResponse toSession(AuthUser user, String token) {
         return new AuthSessionResponse(
-                true,
-                user.username(),
-                user.displayName(),
-                user.department(),
-                user.positionName(),
-                user.role(),
-                user.accountScope(),
-                user.accountLevel(),
-                token,
-                user.allowedMenuSections()
+            true,
+            user.username(),
+            user.displayName(),
+            user.department(),
+            user.positionName(),
+            user.role(),
+            user.accountScope(),
+            user.accountLevel(),
+            token,
+            user.allowedMenuSections()
         );
     }
 
