@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildApiUrl } from '../api/apiBase'
 import { authorizedFetch } from '../api/authApi'
+import { AI_PROVIDER_CONFIGS, getAiProviderConfig, isAiProviderReady } from '../utils/aiProviderCatalog'
 import { groupExternalIntegrations } from '../utils/externalIntegrationGroups'
 
 const SETTINGS_API_BASE = buildApiUrl('/settings/integrations')
+const AI_SETTINGS_API_BASE = buildApiUrl('/settings/ai')
 
 const AUTH_TAB = 'auth'
 const COLLECTION_TAB = 'collection'
@@ -180,6 +182,18 @@ export default function Settings({ isExpanded }) {
   const [externalValidationStatus, setExternalValidationStatus] = useState(() => createExternalState('idle'))
   const [externalValidationMessage, setExternalValidationMessage] = useState(() => createExternalState(''))
   const [externalDirty, setExternalDirty] = useState(() => createExternalState(false))
+  const [aiSettings, setAiSettings] = useState([])
+  const [selectedAiProvider, setSelectedAiProvider] = useState('OPENAI')
+  const [aiDisplayName, setAiDisplayName] = useState('OpenAI 기본')
+  const [aiApiKey, setAiApiKey] = useState('')
+  const [aiOrganizationId, setAiOrganizationId] = useState('')
+  const [aiProjectId, setAiProjectId] = useState('')
+  const [aiModelName, setAiModelName] = useState(getAiProviderConfig('OPENAI').models[0])
+  const [aiValidationStatus, setAiValidationStatus] = useState('idle')
+  const [aiValidationMessage, setAiValidationMessage] = useState('')
+  const [aiDirty, setAiDirty] = useState(false)
+  const [isValidatingAi, setIsValidatingAi] = useState(false)
+  const [isSavingAi, setIsSavingAi] = useState(false)
 
   const [isValidPlayauto, setIsValidPlayauto] = useState(false)
   const [isValidOpenMarket, setIsValidOpenMarket] = useState(false)
@@ -199,9 +213,10 @@ export default function Settings({ isExpanded }) {
 
   const loadSettings = async () => {
     try {
-      const [response, historyResponse] = await Promise.all([
+      const [response, historyResponse, aiResponse] = await Promise.all([
         authorizedFetch(SETTINGS_API_BASE),
         authorizedFetch(`${SETTINGS_API_BASE}/history?integrationType=PLAYAUTO&limit=10`),
+        authorizedFetch(AI_SETTINGS_API_BASE),
       ])
 
       if (!response.ok) return
@@ -274,6 +289,11 @@ export default function Settings({ isExpanded }) {
         const history = await historyResponse.json()
         setCollectionHistory(history || [])
       }
+
+      if (aiResponse.ok) {
+        const savedAiSettings = await aiResponse.json()
+        setAiSettings(savedAiSettings || [])
+      }
     } catch (error) {
       showToast(error.message || '설정 정보를 불러오지 못했습니다.', 'error')
     }
@@ -294,6 +314,19 @@ export default function Settings({ isExpanded }) {
     }
     setIsValidOpenMarket(false)
   }, [openMarketKey, selectedMarket])
+
+  useEffect(() => {
+    const provider = getAiProviderConfig(selectedAiProvider)
+    const saved = aiSettings.find((setting) => setting.provider === selectedAiProvider)
+    setAiDisplayName(saved?.displayName || `${provider.label} 기본`)
+    setAiModelName(saved?.modelName || provider.models[0])
+    setAiApiKey('')
+    setAiOrganizationId('')
+    setAiProjectId('')
+    setAiValidationStatus(saved?.validatedAt ? 'saved' : 'idle')
+    setAiValidationMessage(saved?.validatedAt ? '저장된 인증 정보가 있습니다. 변경하려면 새 API Key를 입력 후 다시 테스트해주세요.' : '')
+    setAiDirty(false)
+  }, [selectedAiProvider, aiSettings])
 
   useEffect(() => {
     let timeoutId
@@ -359,6 +392,94 @@ export default function Settings({ isExpanded }) {
     setExternalDirty((current) => ({ ...current, [integrationId]: true }))
     setExternalValidationStatus((current) => ({ ...current, [integrationId]: 'idle' }))
     setExternalValidationMessage((current) => ({ ...current, [integrationId]: '' }))
+  }
+
+  const markAiChanged = (setter, value) => {
+    setter(value)
+    setAiDirty(true)
+    setAiValidationStatus('idle')
+    setAiValidationMessage('')
+  }
+
+  const getAiValidationPayload = () => ({
+    provider: selectedAiProvider,
+    displayName: aiDisplayName,
+    modelName: aiModelName,
+    apiKey: aiApiKey,
+    organizationId: aiOrganizationId,
+    projectId: aiProjectId,
+  })
+
+  const handleValidateAi = async () => {
+    const provider = getAiProviderConfig(selectedAiProvider)
+    if (!isAiProviderReady(selectedAiProvider, { apiKey: aiApiKey })) {
+      showToast(`${provider.label} API Key를 입력해주세요.`, 'error')
+      return
+    }
+
+    setIsValidatingAi(true)
+    setAiValidationStatus('checking')
+    setAiValidationMessage('AI 인증 정보를 확인하고 있습니다.')
+    try {
+      const response = await authorizedFetch(`${AI_SETTINGS_API_BASE}/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(getAiValidationPayload()),
+      })
+      const responseBody = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        const message = responseBody.message || 'AI 인증 정보 검증에 실패했습니다.'
+        setAiValidationStatus('error')
+        setAiValidationMessage(message)
+        showToast(message, 'error')
+        return
+      }
+
+      setAiValidationStatus('success')
+      setAiValidationMessage(responseBody.message || 'AI 인증 정보가 확인되었습니다.')
+      showToast('AI 인증 테스트가 완료되었습니다.')
+    } catch (error) {
+      const message = error.message || 'AI 인증 테스트 중 오류가 발생했습니다.'
+      setAiValidationStatus('error')
+      setAiValidationMessage(message)
+      showToast(message, 'error')
+    } finally {
+      setIsValidatingAi(false)
+    }
+  }
+
+  const handleSaveAi = async () => {
+    if (aiValidationStatus !== 'success') {
+      showToast('AI 인증 테스트를 먼저 완료해주세요.', 'error')
+      return
+    }
+
+    setIsSavingAi(true)
+    try {
+      const response = await authorizedFetch(AI_SETTINGS_API_BASE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(getAiValidationPayload()),
+      })
+      const responseBody = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(responseBody.message || 'AI 설정 저장에 실패했습니다.')
+      }
+
+      setAiSettings((current) => {
+        const others = current.filter((setting) => setting.provider !== responseBody.provider)
+        return [...others, responseBody]
+      })
+      setAiValidationStatus('saved')
+      setAiValidationMessage('AI 설정이 저장되었습니다. API Key는 암호화되어 보관됩니다.')
+      setAiDirty(false)
+      setAiApiKey('')
+      showToast('AI 설정이 저장되었습니다.')
+    } catch (error) {
+      showToast(error.message || 'AI 설정 저장에 실패했습니다.', 'error')
+    } finally {
+      setIsSavingAi(false)
+    }
   }
 
   const getExternalValidationPayload = (integrationId) => {
@@ -704,6 +825,10 @@ export default function Settings({ isExpanded }) {
   const configuredIntegrationCount = externalIntegrations.filter((item) => item.configured).length
   const selectedExternalStatus = externalValidationStatus[selectedExternalIntegration]
   const selectedExternalMessage = externalValidationMessage[selectedExternalIntegration]
+  const selectedAiConfig = getAiProviderConfig(selectedAiProvider)
+  const selectedSavedAiSetting = aiSettings.find((setting) => setting.provider === selectedAiProvider)
+  const aiCanValidate = isAiProviderReady(selectedAiProvider, { apiKey: aiApiKey }) && Boolean(aiModelName)
+  const aiCanSave = aiValidationStatus === 'success' && aiDirty && !isSavingAi
   const hasDirtyExternalIntegration = EXTERNAL_INTEGRATION_IDS.some((id) => externalDirty[id])
   const hasUnvalidatedExternalChange = EXTERNAL_INTEGRATION_IDS.some(
     (id) => externalDirty[id] && externalValidationStatus[id] !== 'success',
@@ -921,6 +1046,210 @@ export default function Settings({ isExpanded }) {
                     >
                       연동 테스트
                     </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-white">
+                <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-5 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h3 className="text-xl font-black text-slate-950">AI 모델 설정</h3>
+                    <p className="mt-1 text-sm font-medium text-slate-500">
+                      OpenAI, Claude, Gemini 인증 정보를 검증한 뒤 사용할 모델을 저장합니다.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm font-bold">
+                    <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700">
+                      저장됨 {aiSettings.length}개
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-500">
+                      사용 가능 {AI_PROVIDER_CONFIGS.length}개
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid min-h-[420px] lg:grid-cols-[300px_minmax(0,1fr)]">
+                  <div className="border-b border-slate-200 bg-slate-50 p-3 lg:border-b-0 lg:border-r">
+                    <div className="space-y-2">
+                      {AI_PROVIDER_CONFIGS.map((provider) => {
+                        const active = selectedAiProvider === provider.id
+                        const saved = aiSettings.some((setting) => setting.provider === provider.id)
+                        return (
+                          <button
+                            key={provider.id}
+                            type="button"
+                            onClick={() => setSelectedAiProvider(provider.id)}
+                            className={`flex w-full items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors ${
+                              active
+                                ? 'border-sky-200 bg-white text-slate-950 shadow-sm'
+                                : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white'
+                            }`}
+                          >
+                            <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg text-sm font-black ${
+                              active ? 'bg-sky-50 text-sky-600' : 'bg-white text-slate-400'
+                            }`}>
+                              {provider.badge}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-[11px] font-black tracking-[0.12em] text-slate-400">AI PROVIDER</span>
+                              <span className="mt-0.5 block truncate text-sm font-black">{provider.label}</span>
+                            </span>
+                            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                              saved ? 'bg-emerald-500' : 'bg-slate-300'
+                            }`} />
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="p-6">
+                    <div className="mb-6 flex items-start justify-between gap-4 border-b border-slate-100 pb-5">
+                      <div>
+                        <p className="text-xs font-black tracking-[0.16em] text-sky-600">AI</p>
+                        <h4 className="mt-2 text-2xl font-black text-slate-950">{selectedAiConfig.label}</h4>
+                        <p className="mt-2 text-sm font-medium text-slate-500">{selectedAiConfig.description}</p>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-black ${
+                        aiValidationStatus === 'success' || aiValidationStatus === 'saved'
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : aiValidationStatus === 'error'
+                            ? 'bg-rose-50 text-rose-700'
+                            : aiValidationStatus === 'checking'
+                              ? 'bg-sky-50 text-sky-700'
+                              : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        {aiValidationStatus === 'success'
+                          ? '검증 완료'
+                          : aiValidationStatus === 'saved'
+                            ? '저장됨'
+                            : aiValidationStatus === 'error'
+                              ? '검증 실패'
+                              : aiValidationStatus === 'checking'
+                                ? '검증 중'
+                                : selectedSavedAiSetting ? '저장됨' : '미설정'}
+                      </span>
+                    </div>
+
+                    <div className="grid gap-5 md:grid-cols-2">
+                      <label>
+                        <span className="mb-2 block text-sm font-bold text-slate-700">설정 이름</span>
+                        <input
+                          type="text"
+                          value={aiDisplayName}
+                          onChange={(event) => markAiChanged(setAiDisplayName, event.target.value)}
+                          placeholder={`${selectedAiConfig.label} 기본`}
+                          className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                        />
+                      </label>
+
+                      <label>
+                        <span className="mb-2 block text-sm font-bold text-slate-700">모델</span>
+                        <SelectField
+                          value={aiModelName}
+                          onChange={(event) => markAiChanged(setAiModelName, event.target.value)}
+                          className="w-full"
+                        >
+                          {selectedAiConfig.models.map((model) => (
+                            <option key={model} value={model}>
+                              {model}
+                            </option>
+                          ))}
+                        </SelectField>
+                      </label>
+
+                      <label className="md:col-span-2">
+                        <span className="mb-2 block text-sm font-bold text-slate-700">API Key</span>
+                        <input
+                          type="password"
+                          value={aiApiKey}
+                          onChange={(event) => markAiChanged(setAiApiKey, event.target.value)}
+                          placeholder={selectedSavedAiSetting?.apiKeyMasked || `${selectedAiConfig.label} API Key 입력`}
+                          className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                        />
+                      </label>
+
+                      {selectedAiProvider === 'OPENAI' && (
+                        <>
+                          <label>
+                            <span className="mb-2 block text-sm font-bold text-slate-700">Organization ID 선택</span>
+                            <input
+                              type="text"
+                              value={aiOrganizationId}
+                              onChange={(event) => markAiChanged(setAiOrganizationId, event.target.value)}
+                              placeholder={selectedSavedAiSetting?.organizationIdMasked || 'org_...'}
+                              className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                            />
+                          </label>
+                          <label>
+                            <span className="mb-2 block text-sm font-bold text-slate-700">Project ID 선택</span>
+                            <input
+                              type="text"
+                              value={aiProjectId}
+                              onChange={(event) => markAiChanged(setAiProjectId, event.target.value)}
+                              placeholder={selectedSavedAiSetting?.projectIdMasked || 'proj_...'}
+                              className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                            />
+                          </label>
+                        </>
+                      )}
+
+                      {selectedAiProvider === 'CLAUDE' && (
+                        <div className="md:col-span-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-600">
+                          Claude API 버전은 백엔드에서 {selectedAiConfig.apiVersion} 값으로 고정합니다.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-8 flex flex-col gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
+                      <div className={`flex min-h-6 items-center gap-2 text-sm font-bold ${
+                        aiValidationStatus === 'success' || aiValidationStatus === 'saved'
+                          ? 'text-emerald-600'
+                          : aiValidationStatus === 'error'
+                            ? 'text-rose-600'
+                            : 'text-slate-400'
+                      }`}>
+                        {aiValidationMessage && (
+                          <>
+                            <span className="material-symbols-outlined text-lg">
+                              {aiValidationStatus === 'success' || aiValidationStatus === 'saved'
+                                ? 'check_circle'
+                                : aiValidationStatus === 'error'
+                                  ? 'error'
+                                  : 'hourglass_top'}
+                            </span>
+                            <span>{aiValidationMessage}</span>
+                          </>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                        <button
+                          type="button"
+                          onClick={handleValidateAi}
+                          disabled={!aiCanValidate || isValidatingAi}
+                          className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg px-5 text-sm font-bold transition-colors ${
+                            !aiCanValidate || isValidatingAi
+                              ? 'cursor-not-allowed bg-slate-200 text-slate-400'
+                              : 'bg-white text-slate-900 ring-1 ring-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-lg">sync</span>
+                          {isValidatingAi ? '테스트 중...' : '인증 테스트'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveAi}
+                          disabled={!aiCanSave}
+                          className={`inline-flex h-11 items-center justify-center rounded-lg px-5 text-sm font-bold transition-colors ${
+                            !aiCanSave
+                              ? 'cursor-not-allowed bg-slate-200 text-slate-400'
+                              : 'bg-slate-950 text-white hover:bg-slate-800'
+                          }`}
+                        >
+                          {isSavingAi ? '저장 중...' : 'AI 설정 저장'}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

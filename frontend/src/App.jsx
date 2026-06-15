@@ -12,6 +12,7 @@ import ChannelSalesPage from './pages/executive/ChannelSalesPage'
 import ConsultingRevenuePage from './pages/executive/ConsultingRevenuePage'
 import CustomerDatabasePage from './pages/executive/CustomerDatabasePage'
 import CustomerIntelligencePage from './pages/executive/CustomerIntelligencePage'
+import SettlementSchedulePage from './pages/executive/SettlementSchedulePage'
 import DebtPage from './pages/executive/DebtPage'
 import EmployeeManagementPage from './pages/executive/EmployeeManagementPage'
 import EmployeePerformancePage from './pages/executive/EmployeePerformancePage'
@@ -100,6 +101,7 @@ const pages = {
   'ad-performance': AdPerformancePage,
   partners: PartnerManagementPage,
   'partner-payment': PartnerPaymentLedgerPage,
+  'settlement-schedule': SettlementSchedulePage,
   payroll: PayrollPage,
   'quotation': QuotationPage,
   'profit-management': ProfitManagementPage,
@@ -181,7 +183,13 @@ export default function App() {
   const isMobile = useIsMobile()
 
   useEffect(() => {
-    getSession()
+  const token = getAuthToken()
+            if (!token) {
+                        setSession(null)
+                                setAuthLoading(false)
+                                        return
+            }
+        getSession()
       .then((data) => {
         if (data?.authenticated) {
           setSession(data)
@@ -191,13 +199,12 @@ export default function App() {
       })
       .catch(() => setSession(null))
       .finally(() => setAuthLoading(false))
+    const handleUnauthorized = () => { setSession(null); setAuthLoading(false) }
+    window.addEventListener('auth:unauthorized', handleUnauthorized)
+    return () => window.removeEventListener('auth:unauthorized', handleUnauthorized)
   }, [])
 
-  useEffect(() => {
-    const token = getAuthToken()
-    if (!token && !authLoading) setSession(null)
-  }, [authLoading])
-
+  
   useEffect(() => {
     const openDatePicker = (event) => {
       const input = event.target?.closest?.('[data-date-trigger]')?.querySelector?.('input[type="date"]')

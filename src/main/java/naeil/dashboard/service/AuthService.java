@@ -790,4 +790,166 @@ public class AuthService {
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
     }
+
+    // ===== 비밀번호 찾기 - SMS OTP =====
+
+    public Map<String, Object> requestPasswordReset(String companyCode, String loginId, String phoneNumber) {
+        // 회사코드 + 로그인ID + 휴대폰번호 전하여 사용자 확인
+        Map<String, Object> user = null;
+        try {
+            user = jdbcTemplate.queryForMap("""
+                SELECT id, username, phone_number
+                FROM dashboard_user
+                WHERE company_code = ?
+                  AND username = ?
+                  AND status = 'active'
+                """, companyCode, loginId);
+        } catch (org.springframework.dao.EmptyResultDataAccessException e) {
+            throw new CustomException(404, "일치하는 계정 정보가 없습니다.");
+        }
+
+        // 휴대폰 번호 검증 - 저장된 번호와 일치 확인
+        String storedPhone = (String) user.get("phone_number");
+        if (storedPhone == null || storedPhone.isBlank()) {
+            throw new CustomException(400, "등록된 휴대폰 번호가 없습니다. 관리자에게 문의하세요.");
+        }
+        // 휴대폰 번호 마스킹 비교 (숨긴 부분 허용: 010****1234)
+        String normalizedInput = phoneNumber.replaceAll("[^0-9]", "");
+        String normalizedStored = storedPhone.replaceAll("[^0-9]", "");
+        if (!normalizedInput.equals(normalizedStored)) {
+            throw new CustomException(400, "휴대폰 번호가 일치하지 않습니다.");
+        }
+
+        // 6자리 OTP 생성
+        String otp = String.format("%06d", new SecureRandom().nextInt(1000000));
+
+        // 기존 미사용 OTP 삭제
+        jdbcTemplate.update(
+            "DELETE FROM password_reset_otp WHERE company_code = ? AND login_id = ? AND used = false",
+            companyCode, loginId
+        );
+
+        // OTP DB저장 (5분 유효)
+        jdbcTemplate.update("""
+            INSERT INTO password_reset_otp (company_code, login_id, phone_number, otp_code, expires_at)
+            VALUES (?, ?, ?, ?, NOW() + INTERVAL '5 minutes')
+            """, companyCode, loginId, normalizedStored, otp);
+
+        // SMS 발송
+        boolean smsSent = sendSmsOtp(normalizedStored, otp);
+
+        java.util.Map<String, Object> result = new java.util.HashMap<>();
+        result.put("success", true);
+        result.put("message", smsSent
+            ? "인증번호가 발송되었습니다."
+            : "인증번호: " + otp + " (SMS 문자 발송 미설정)");
+        result.put("masked_phone", maskPhone(normalizedStored));
+        return result;
+    }
+
+    public void verifyAndResetPassword(String companyCode, String loginId, String phoneNumber, String otpCode, String newPassword) {
+        String normalizedPhone = phoneNumber.replaceAll("[^0-9]", "");
+
+        // OTP 검증
+        Map<String, Object> otpRow = null;
+        try {
+            otpRow = jdbcTemplate.queryForMap("""
+                SELECT id FROM password_reset_otp
+                WHERE company_code = ?
+                  AND login_id = ?
+                  AND phone_number = ?
+                  AND otp_code = ?
+                  AND used = false
+                  AND expires_at > NOW()
+                ORDER BY created_at DESC
+                LIMIT 1
+                """, companyCode, loginId, normalizedPhone, otpCode);
+        } catch (org.springframework.dao.EmptyResultDataAccessException e) {
+            throw new CustomException(400, "인증번호가 일치하지 않거나 만료되었습니다.");
+        }
+
+        // 비밀번호 유효성 검사
+        if (newPassword == null || newPassword.length() < 8) {
+            throw new CustomException(400, "비밀번호는 8자 이상이어야 합니다.");
+        }
+
+        // 비밀번호 변경
+        Long userId = ((Number) jdbcTemplate.queryForObject(
+            "SELECT id FROM dashboard_user WHERE company_code = ? AND username = ? AND status = 'active'",
+            Long.class, companyCode, loginId
+        )).longValue();
+
+        jdbcTemplate.update(
+            "UPDATE dashboard_user SET password_hash = ?, updated_at = NOW() WHERE id = ?",
+            hashPassword(newPassword), userId
+        );
+
+        // OTP 사용 처리
+        jdbcTemplate.update(
+            "UPDATE password_reset_otp SET used = true WHERE id = ?",
+            otpRow.get("id")
+        );
+    }
+
+    private boolean sendSmsOtp(String phoneNumber, String otpCode) {
+        String apiKey = System.getenv("COOLSMS_API_KEY");
+        String apiSecret = System.getenv("COOLSMS_API_SECRET");
+        String fromNumber = System.getenv("COOLSMS_FROM_NUMBER");
+
+        if (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank()) {
+            // SMS 설정 없으면 로깅만 하고 false 반환
+            System.out.println("[SMS OTP] " + phoneNumber + " 로그 (API미설정): " + otpCode);
+            return false;
+        }
+
+        try {
+            String timestamp = String.valueOf(System.currentTimeMillis() / 1000);
+            String salt = java.util.UUID.randomUUID().toString().replaceAll("-", "").substring(0, 16);
+            String signature = hmacSha256(apiSecret, timestamp + salt);
+
+            org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
+            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+            headers.set("Authorization", "HMAC-SHA256 apiKey=" + apiKey
+                + ", date=" + timestamp
+                + ", salt=" + salt
+                + ", signature=" + signature);
+
+            Map<String, Object> requestBody = new java.util.HashMap<>();
+            requestBody.put("message", Map.of(
+                "to", phoneNumber,
+                "from", fromNumber != null ? fromNumber : "0",
+                "text", "[내일그룹] 비밀번호 찾기 인증번호: " + otpCode + " (5분 유효)"
+            ));
+
+            org.springframework.http.HttpEntity<Map<String, Object>> entity =
+                new org.springframework.http.HttpEntity<>(requestBody, headers);
+
+            restTemplate.postForObject("https://api.coolsms.co.kr/messages/v4/send", entity, String.class);
+            return true;
+        } catch (Exception e) {
+            System.err.println("[SMS OTP] 발송 실패: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private String hmacSha256(String key, String data) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] bytes = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : bytes) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private String maskPhone(String phone) {
+        if (phone == null || phone.length() < 8) return phone;
+        int len = phone.length();
+        return phone.substring(0, 3) + "****" + phone.substring(len - 4);
+    }
+
 }

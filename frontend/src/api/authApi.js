@@ -148,3 +148,31 @@ export const updateMenuPermissions = (id, sections) =>
   authApi.post(`/auth/users/${id}/menu-permissions`, { sections: JSON.stringify(sections) })
 
 export { authApi }
+
+export const requestPasswordReset = async ({ companyCode, loginId, phoneNumber }) => {
+  const response = await fetch(buildApiUrl('/auth/password-reset/request'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ companyCode, loginId, phoneNumber }),
+  })
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(body.message || '인증번호 발송에 실패했습니다.')
+  }
+  return body
+}
+
+export const verifyPasswordReset = async ({ companyCode, loginId, phoneNumber, otpCode, newPassword }) => {
+  const response = await fetch(buildApiUrl('/auth/password-reset/verify'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ companyCode, loginId, phoneNumber, otpCode, newPassword }),
+  })
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(body.message || '비밀번호 변경에 실패했습니다.')
+  }
+  return body
+}

@@ -11,7 +11,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: false
+    show-sql: falseh
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
@@ -54,7 +54,7 @@ app:
     username: ${APP_AUTH_USERNAME:admin}
     password: ${APP_AUTH_PASSWORD:change-me-1234}
     token-secret: ${APP_AUTH_TOKEN_SECRET:change-this-token-secret-for-production-32chars}
-    token-ttl-seconds: ${APP_AUTH_TOKEN_TTL_SECONDS:43200}
+    token-ttl-seconds: ${APP_AUTH_TOKEN_TTL_SECONDS:2592000}
   encryption:
     secret-key: ${APP_ENCRYPTION_SECRET_KEY:0123456789abcdef0123456789abcdef}
   mail:

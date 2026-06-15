@@ -15,6 +15,7 @@ hs_err_pid*
 !gradle/wrapper/gradle-wrapper.properties
 
 # Node / Frontend
+.vite/
 frontend/node_modules/
 frontend/dist/
 frontend/.env
