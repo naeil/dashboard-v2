@@ -305,7 +305,7 @@ public class ExecutiveDashboardService {
                     consulting_sales.expected_operating_profit AS consulting_expected_month_operating_profit,
                     channel_sales.ad_cost AS channel_month_ad_cost
                 FROM channel_sales, consulting_sales
-                """, companyId, startDate, startDate, endDate, endDate, companyId);
+                """, companyId, companyId);
 
         Map<String, Object> advertising = jdbcTemplate.queryForMap("""
                 WITH ad_performance AS (
