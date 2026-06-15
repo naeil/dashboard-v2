@@ -1960,7 +1960,7 @@ public class ExecutiveDashboardService {
                     COALESCE(SUM(order_count), 0) AS total_orders,
                     COALESCE(SUM(total_purchase_amount), 0) AS total_purchase_amount
                 FROM scored
-                """, companyId, companyId);
+                """, companyId, startDate, startDate, endDate, endDate, companyId);
 
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 WITH valid_orders AS (
@@ -2060,7 +2060,7 @@ public class ExecutiveDashboardService {
                     END,
                     total_purchase_amount DESC,
                     last_order_at DESC
-                """, companyId, companyId, startDate, startDate, endDate, endDate, companyId, companyId);
+                """, companyId, companyId);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("summary", summary);

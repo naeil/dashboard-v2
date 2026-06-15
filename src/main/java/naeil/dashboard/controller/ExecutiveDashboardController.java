@@ -220,9 +220,7 @@ public class ExecutiveDashboardController {
     ) {
         requireManagerOrExecutive(requireUser(request));
         playAutoCollectionService.runOrderCollection(companyId, false);
-        Map<String, Object> result = new LinkedHashMap<>(
-                executiveDashboardService.getCustomerDatabase(companyId, null, null)
-        );
+        Map<String, Object> result = new LinkedHashMap<>(executiveDashboardService.getCustomerDatabase(companyId, null, null));
         result.put("message", "PlayAuto 고객 주문 데이터 수집이 완료되었습니다.");
         return ResponseEntity.ok(result);
     }
