@@ -25,7 +25,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-
+@RestController
+@RequestMapping("/api/executive")
+@RequiredArgsConstructor
 public class ExecutiveDashboardController {
 
     private final ExecutiveDashboardService executiveDashboardService;
@@ -117,6 +119,84 @@ public class ExecutiveDashboardController {
         return ResponseEntity.ok(executiveDashboardService.approvePaymentRequest(id));
     }
 
+    @GetMapping("/channel-sales")
+    public ResponseEntity<List<Map<String, Object>>> getChannelSales(@RequestParam(defaultValue = "1") Long companyId) {
+        return ResponseEntity.ok(executiveDashboardService.getChannelSales(companyId));
+    }
+
+    @GetMapping("/consulting-revenues")
+    public ResponseEntity<List<Map<String, Object>>> getConsultingRevenues(@RequestParam(defaultValue = "1") Long companyId) {
+        return ResponseEntity.ok(executiveDashboardService.getConsultingRevenues(companyId));
+    }
+
+    @GetMapping("/channel-sales/analytics")
+    public ResponseEntity<Map<String, Object>> getChannelSalesAnalytics(
+            @RequestParam(defaultValue = "1") Long companyId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) Long brandId,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String productGroup,
+            @RequestParam(required = false) String channel
+    ) {
+        return ResponseEntity.ok(executiveDashboardService.getChannelSalesAnalytics(companyId, startDate, endDate, brandId, search, productGroup, channel));
+    }
+
+    @PostMapping("/channel-sales/import-playauto")
+    public ResponseEntity<Map<String, Object>> importPlayAutoChannelSales(
+            @RequestParam(defaultValue = "1") Long companyId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(defaultValue = "false") boolean refreshOrders
+    ) {
+        return ResponseEntity.ok(executiveDashboardService.importPlayAutoChannelSales(companyId, startDate, endDate, refreshOrders));
+    }
+
+    @GetMapping("/receivables")
+    public ResponseEntity<List<Map<String, Object>>> getReceivables(@RequestParam(defaultValue = "1") Long companyId) {
+        return ResponseEntity.ok(executiveDashboardService.getReceivables(companyId));
+    }
+
+    @GetMapping("/partners")
+    public ResponseEntity<List<Map<String, Object>>> getPartners(@RequestParam(defaultValue = "1") Long companyId) {
+        return ResponseEntity.ok(executiveDashboardService.getPartners(companyId));
+    }
+
+    @GetMapping("/operating-expenses")
+    public ResponseEntity<List<Map<String, Object>>> getOperatingExpenses(@RequestParam(defaultValue = "1") Long companyId) {
+        return ResponseEntity.ok(executiveDashboardService.getOperatingExpenses(companyId));
+    }
+
+    @GetMapping("/debts")
+    public ResponseEntity<List<Map<String, Object>>> getDebts(@RequestParam(defaultValue = "1") Long companyId) {
+        return ResponseEntity.ok(executiveDashboardService.getDebts(companyId));
+    }
+
+    @GetMapping("/export-pipeline")
+    public ResponseEntity<List<Map<String, Object>>> getExportPipeline(@RequestParam(defaultValue = "1") Long companyId) {
+        return ResponseEntity.ok(executiveDashboardService.getExportPipeline(companyId));
+    }
+
+    @GetMapping("/export-supply-prices")
+    public ResponseEntity<List<Map<String, Object>>> getExportSupplyPrices(@RequestParam(defaultValue = "1") Long companyId) {
+        return ResponseEntity.ok(executiveDashboardService.getExportSupplyPrices(companyId));
+    }
+
+    @GetMapping("/ad-performance")
+    public ResponseEntity<List<Map<String, Object>>> getAdPerformance(@RequestParam(defaultValue = "1") Long companyId) {
+        return ResponseEntity.ok(executiveDashboardService.getAdPerformance(companyId));
+    }
+
+    @GetMapping("/ad-roas-goals")
+    public ResponseEntity<List<Map<String, Object>>> getAdRoasGoals(@RequestParam(defaultValue = "1") Long companyId) {
+        return ResponseEntity.ok(executiveDashboardService.getAdRoasGoals(companyId));
+    }
+
+    @GetMapping("/issues")
+    public ResponseEntity<List<Map<String, Object>>> getIssueLogs(@RequestParam(defaultValue = "1") Long companyId) {
+        return ResponseEntity.ok(executiveDashboardService.getIssueLogs(companyId));
+    }
+
     @GetMapping("/customer-inquiries")
     public ResponseEntity<Map<String, Object>> getCustomerInquiries(@RequestParam(defaultValue = "1") Long companyId) {
         return ResponseEntity.ok(executiveDashboardService.getCustomerInquiries(companyId));
@@ -129,7 +209,7 @@ public class ExecutiveDashboardController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             HttpServletRequest request
     ) {
-        requireExecutive(request);
+        requireManagerOrExecutive(requireUser(request));
         return ResponseEntity.ok(executiveDashboardService.getCustomerDatabase(companyId, startDate, endDate));
     }
 
@@ -138,7 +218,7 @@ public class ExecutiveDashboardController {
             @RequestParam(defaultValue = "1") Long companyId,
             HttpServletRequest request
     ) {
-        requireExecutive(request);
+        requireManagerOrExecutive(requireUser(request));
         playAutoCollectionService.runOrderCollection(companyId, false);
         Map<String, Object> result = new LinkedHashMap<>(executiveDashboardService.getCustomerDatabase(companyId, null, null));
         result.put("message", "PlayAuto 고객 주문 데이터 수집이 완료되었습니다.");
@@ -163,148 +243,90 @@ public class ExecutiveDashboardController {
         return ResponseEntity.ok(executiveDashboardService.saveCeoFinancials(companyId, payload));
     }
 
-    // 이하 기존 핸들러들은 원본 유지 필요 - 아래는 나머지 엔드포인트들
-    @GetMapping("/issues")
-    public ResponseEntity<List<Map<String, Object>>> getIssueLogs(@RequestParam(defaultValue = "1") Long companyId) {
-        return ResponseEntity.ok(executiveDashboardService.getIssueLogs(companyId));
-    }
-
-    @GetMapping("/issue-briefing")
-    public ResponseEntity<Map<String, Object>> getIssueBriefing(
-            @RequestParam(defaultValue = "1") Long companyId,
-            HttpServletRequest request
-    ) {
-        return ResponseEntity.ok(issueBriefingService.getIssueBriefing(companyId, requireUser(request)));
-    }
-
-    @GetMapping("/ad-performance")
-    public ResponseEntity<List<Map<String, Object>>> getAdPerformance(@RequestParam(defaultValue = "1") Long companyId) {
-        return ResponseEntity.ok(executiveDashboardService.getAdPerformance(companyId));
-    }
-
-    @GetMapping("/ad-roas-goals")
-    public ResponseEntity<List<Map<String, Object>>> getAdRoasGoals(@RequestParam(defaultValue = "1") Long companyId) {
-        return ResponseEntity.ok(executiveDashboardService.getAdRoasGoals(companyId));
-    }
-
-    @GetMapping("/channel-sales")
-    public ResponseEntity<Map<String, Object>> getChannelSales(@RequestParam(defaultValue = "1") Long companyId) {
-        return ResponseEntity.ok(executiveDashboardService.getChannelSales(companyId));
-    }
-
-    @GetMapping("/channel-sales/analytics")
-    public ResponseEntity<Map<String, Object>> getChannelSalesAnalytics(
+    /** 임시 진단 엔드포인트 - 쿠팡 pay_amt 값 확인용 */
+    @GetMapping("/diag/channel-orders")
+    public ResponseEntity<Map<String, Object>> diagnoseChannelOrders(
             @RequestParam(defaultValue = "1") Long companyId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @RequestParam(required = false) String shopName
     ) {
-        return ResponseEntity.ok(executiveDashboardService.getChannelSalesAnalytics(companyId, startDate, endDate, shopName));
-    }
-
-    @PostMapping("/channel-sales/import-playauto")
-    public ResponseEntity<Map<String, Object>> importPlayAutoChannelSales(
-            @RequestParam(defaultValue = "1") Long companyId,
-            @RequestParam(defaultValue = "true") boolean refreshOrders,
-            HttpServletRequest request
-    ) {
-        requireExecutive(request);
-        return ResponseEntity.ok(executiveDashboardService.importPlayAutoChannelSales(companyId, refreshOrders));
-    }
-
-    @GetMapping("/receivables")
-    public ResponseEntity<Map<String, Object>> getReceivables(@RequestParam(defaultValue = "1") Long companyId) {
-        return ResponseEntity.ok(executiveDashboardService.getReceivables(companyId));
-    }
-
-    @GetMapping("/partners")
-    public ResponseEntity<List<Map<String, Object>>> getPartners(@RequestParam(defaultValue = "1") Long companyId) {
-        return ResponseEntity.ok(executiveDashboardService.getPartners(companyId));
-    }
-
-    @GetMapping("/operating-expenses")
-    public ResponseEntity<Map<String, Object>> getOperatingExpenses(@RequestParam(defaultValue = "1") Long companyId) {
-        return ResponseEntity.ok(executiveDashboardService.getOperatingExpenses(companyId));
-    }
-
-    @GetMapping("/debts")
-    public ResponseEntity<Map<String, Object>> getDebts(@RequestParam(defaultValue = "1") Long companyId) {
-        return ResponseEntity.ok(executiveDashboardService.getDebts(companyId));
-    }
-
-    @GetMapping("/export-pipeline")
-    public ResponseEntity<Map<String, Object>> getExportPipeline(@RequestParam(defaultValue = "1") Long companyId) {
-        return ResponseEntity.ok(executiveDashboardService.getExportPipeline(companyId));
-    }
-
-    @GetMapping("/export-supply-prices")
-    public ResponseEntity<List<Map<String, Object>>> getExportSupplyPrices(@RequestParam(defaultValue = "1") Long companyId) {
-        return ResponseEntity.ok(executiveDashboardService.getExportSupplyPrices(companyId));
+        return ResponseEntity.ok(executiveDashboardService.diagnoseChannelOrders(companyId, startDate, endDate, shopName));
     }
 
     @GetMapping("/brand-health")
     public ResponseEntity<Map<String, Object>> getBrandHealth(
             @RequestParam(defaultValue = "1") Long companyId,
+            @RequestParam(required = false) Long brandId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate
     ) {
-        return ResponseEntity.ok(executiveDashboardService.getBrandHealth(companyId, startDate, endDate));
+        return ResponseEntity.ok(executiveDashboardService.getBrandHealth(companyId, brandId, startDate, endDate));
+    }
+
+    @GetMapping("/issue-briefing")
+    public ResponseEntity<Map<String, Object>> getIssueBriefing() {
+        return ResponseEntity.ok(issueBriefingService.getIssueBriefing());
     }
 
     @GetMapping("/profit-management")
     public ResponseEntity<Map<String, Object>> getProfitManagement(
             @RequestParam(defaultValue = "1") Long companyId,
-            @RequestParam(required = false) String planMonth
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate planMonth
     ) {
         return ResponseEntity.ok(executiveDashboardService.getProfitManagement(companyId, planMonth));
     }
 
     @PostMapping("/profit-management/plan")
-    public ResponseEntity<Map<String, Object>> saveProfitPlan(
+    public ResponseEntity<Map<String, String>> saveProfitPlan(
             @RequestParam(defaultValue = "1") Long companyId,
-            @RequestParam String planMonth,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate planMonth,
             @RequestBody List<Map<String, Object>> items
     ) {
-        return ResponseEntity.ok(executiveDashboardService.saveProfitPlan(companyId, planMonth, items));
+        executiveDashboardService.saveProfitPlan(companyId, planMonth, items);
+        return ResponseEntity.ok(Map.of("message", "저장되었습니다."));
     }
 
     @PostMapping("/{resource}")
     public ResponseEntity<Map<String, Object>> createRecord(
             @PathVariable String resource,
-            @RequestBody Map<String, Object> payload
+            @RequestBody Map<String, Object> payload,
+            HttpServletRequest request
     ) {
-        return ResponseEntity.ok(executiveDashboardService.createRecord(resource, payload));
+        return ResponseEntity.ok(executiveDashboardService.createRecord(resource, payload, requireUser(request)));
     }
 
     @PutMapping("/{resource}/{id}")
     public ResponseEntity<Map<String, Object>> updateRecord(
             @PathVariable String resource,
             @PathVariable Long id,
-            @RequestBody Map<String, Object> payload
+            @RequestBody Map<String, Object> payload,
+            HttpServletRequest request
     ) {
-        return ResponseEntity.ok(executiveDashboardService.updateRecord(resource, id, payload));
+        return ResponseEntity.ok(executiveDashboardService.updateRecord(resource, id, payload, requireUser(request)));
     }
 
     @DeleteMapping("/{resource}/{id}")
-    public ResponseEntity<Map<String, Object>> deleteRecord(
+    public ResponseEntity<Map<String, String>> deleteRecord(
             @PathVariable String resource,
             @PathVariable Long id,
             HttpServletRequest request
     ) {
-        requireExecutive(request);
-        return ResponseEntity.ok(executiveDashboardService.deleteRecord(resource, id));
+        executiveDashboardService.deleteRecord(resource, id, requireUser(request));
+        return ResponseEntity.ok(Map.of("message", "삭제되었습니다."));
     }
 
     private AuthUser requireUser(HttpServletRequest request) {
-        AuthUser user = (AuthUser) request.getAttribute("user");
-        if (user == null) throw new CustomException("인증이 필요합니다.", 401);
-        return user;
+        return (AuthUser) request.getAttribute(AuthService.AUTHENTICATED_USER_ATTR);
     }
 
-    private void requireExecutive(HttpServletRequest request) {
-        AuthUser user = requireUser(request);
-        if (user.getRole() != UserRole.EXECUTIVE && user.getRole() != UserRole.MANAGER) {
-            throw new CustomException("임원/관리자만 접근 가능합니다.", 403);
+    private void requireManagerOrExecutive(AuthUser user) {
+        if (user == null) {
+            throw new CustomException(401, "로그인이 필요합니다.");
+        }
+        UserRole role = UserRole.from(user.role());
+        if (role != UserRole.EXECUTIVE && role != UserRole.MANAGER) {
+            throw new CustomException(403, "관리자 권한이 필요한 고객 DB입니다.");
         }
     }
-    }
+}
