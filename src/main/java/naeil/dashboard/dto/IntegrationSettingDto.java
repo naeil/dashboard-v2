@@ -11,6 +11,7 @@ public class IntegrationSettingDto {
         private String apiKey;
         private String email;
         private String password;
+        private String extraValue;
 
         public IntegrationType getIntegrationType() { return integrationType; }
         public void setIntegrationType(IntegrationType integrationType) { this.integrationType = integrationType; }
@@ -20,6 +21,8 @@ public class IntegrationSettingDto {
         public void setEmail(String email) { this.email = email; }
         public String getPassword() { return password; }
         public void setPassword(String password) { this.password = password; }
+        public String getExtraValue() { return extraValue; }
+        public void setExtraValue(String extraValue) { this.extraValue = extraValue; }
     }
 
     public static class SaveRequest {
@@ -73,6 +76,16 @@ public class IntegrationSettingDto {
         public void setPassword(String password) { this.password = password; }
         public String getExtraValue() { return extraValue; }
         public void setExtraValue(String extraValue) { this.extraValue = extraValue; }
+
+        public ValidateRequest toValidateRequest() {
+            ValidateRequest request = new ValidateRequest();
+            request.setIntegrationType(integrationType);
+            request.setApiKey(apiKey);
+            request.setEmail(email);
+            request.setPassword(password);
+            request.setExtraValue(extraValue);
+            return request;
+        }
     }
 
     public static class SaveCollectionRequest {

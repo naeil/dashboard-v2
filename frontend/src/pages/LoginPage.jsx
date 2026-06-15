@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { adminLogin, checkUsernameAvailability, previewInvite, registerWithInvite, tenantLogin } from '../api/authApi'
-import { LOGIN_MODES } from '../utils/loginModes'
+import { LOGIN_MODES, requiresCompanyCode } from '../utils/loginModes'
 
 const PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%&*])[A-Za-z0-9!@#$%&*]{8,16}$/
 
@@ -74,7 +74,7 @@ export default function LoginPage({ onLogin }) {
   const canSubmit = !submitting
     && Boolean(username.trim())
     && Boolean(password)
-    && (isRegister || Boolean(companyCode.trim()))
+    && (isRegister || !requiresCompanyCode(loginMode) || Boolean(companyCode.trim()))
     && (!isRegister || (inviteCode && usernameCheckPassed && passwordValid && passwordConfirm && password === passwordConfirm))
 
   const handleUsernameChange = (event) => {
@@ -131,7 +131,7 @@ export default function LoginPage({ onLogin }) {
       const session = isRegister
         ? await registerWithInvite({ inviteCode, username: username.trim(), password })
         : loginMode === LOGIN_MODES.PLATFORM
-          ? await adminLogin(companyCode.trim(), username.trim(), password)
+          ? await adminLogin(username.trim(), password)
           : await tenantLogin(companyCode.trim(), username.trim(), password)
       onLogin({ ...session, loginSurface: isRegister ? LOGIN_MODES.TENANT : loginMode })
     } catch (submitError) {
@@ -202,7 +202,7 @@ export default function LoginPage({ onLogin }) {
             </label>
           )}
 
-          {!isRegister && (
+          {!isRegister && requiresCompanyCode(loginMode) && (
             <label className="block">
               <span className="mb-2 block text-sm font-black text-slate-700">회사 코드</span>
               <input

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildApiUrl } from '../api/apiBase'
 import { authorizedFetch } from '../api/authApi'
+import { groupExternalIntegrations } from '../utils/externalIntegrationGroups'
 
 const SETTINGS_API_BASE = buildApiUrl('/settings/integrations')
 
@@ -22,6 +23,18 @@ const MARKET_OPTIONS = [
 ]
 
 const MARKET_TYPE_VALUES = new Set(MARKET_OPTIONS.map((option) => option.value))
+
+const EXTERNAL_INTEGRATION_IDS = [
+  'naver-search',
+  'naver-blog',
+  'naver-ad',
+  'meta-ad',
+  'daou-mail',
+]
+
+const createExternalState = (value) => Object.fromEntries(
+  EXTERNAL_INTEGRATION_IDS.map((id) => [id, value]),
+)
 
 const HISTORY_STATUS_LABELS = {
   RUNNING: '실행 중',
@@ -162,6 +175,11 @@ export default function Settings({ isExpanded }) {
   const [daouMailHost, setDaouMailHost] = useState('imap.daouoffice.com')
   const [daouMailUsername, setDaouMailUsername] = useState('')
   const [daouMailPassword, setDaouMailPassword] = useState('')
+  const [selectedExternalIntegration, setSelectedExternalIntegration] = useState('naver-search')
+  const [isNaverExpanded, setIsNaverExpanded] = useState(true)
+  const [externalValidationStatus, setExternalValidationStatus] = useState(() => createExternalState('idle'))
+  const [externalValidationMessage, setExternalValidationMessage] = useState(() => createExternalState(''))
+  const [externalDirty, setExternalDirty] = useState(() => createExternalState(false))
 
   const [isValidPlayauto, setIsValidPlayauto] = useState(false)
   const [isValidOpenMarket, setIsValidOpenMarket] = useState(false)
@@ -336,6 +354,94 @@ export default function Settings({ isExpanded }) {
     applyAuthResponse(await response.json())
   }
 
+  const markExternalCredentialChanged = (integrationId, setter, value) => {
+    setter(value)
+    setExternalDirty((current) => ({ ...current, [integrationId]: true }))
+    setExternalValidationStatus((current) => ({ ...current, [integrationId]: 'idle' }))
+    setExternalValidationMessage((current) => ({ ...current, [integrationId]: '' }))
+  }
+
+  const getExternalValidationPayload = (integrationId) => {
+    switch (integrationId) {
+      case 'naver-search':
+        return {
+          integrationType: 'NAVER_SEARCH',
+          apiKey: naverSearchClientId,
+          password: naverSearchClientSecret,
+        }
+      case 'naver-blog':
+        return {
+          integrationType: 'NAVER_BLOG',
+          apiKey: naverBlogClientId,
+          email: naverBlogAccessToken,
+          password: naverBlogClientSecret,
+          extraValue: naverBlogId,
+        }
+      case 'naver-ad':
+        return {
+          integrationType: 'NAVER_AD',
+          apiKey: naverAdCustomerId,
+          email: naverAdAccessLicense,
+          password: naverAdSecretKey,
+        }
+      case 'meta-ad':
+        return {
+          integrationType: 'META_ADS',
+          apiKey: metaAccessToken,
+          email: metaAdAccountId,
+        }
+      case 'daou-mail':
+        return {
+          integrationType: 'DAOU_MAIL',
+          apiKey: daouMailHost,
+          email: daouMailUsername,
+          password: daouMailPassword,
+        }
+      default:
+        return null
+    }
+  }
+
+  const handleValidateExternal = async () => {
+    const integrationId = selectedExternalIntegration
+    const payload = getExternalValidationPayload(integrationId)
+    const integration = externalIntegrations.find((item) => item.id === integrationId)
+
+    if (!payload || !integration?.configured) {
+      showToast('필수 인증 정보를 모두 입력해주세요.', 'error')
+      return
+    }
+
+    setExternalValidationStatus((current) => ({ ...current, [integrationId]: 'checking' }))
+    setExternalValidationMessage((current) => ({ ...current, [integrationId]: '연결을 확인하고 있습니다.' }))
+
+    try {
+      const response = await authorizedFetch(`${SETTINGS_API_BASE}/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const responseBody = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        const message = responseBody.message || '인증 정보 검증에 실패했습니다.'
+        setExternalValidationStatus((current) => ({ ...current, [integrationId]: 'error' }))
+        setExternalValidationMessage((current) => ({ ...current, [integrationId]: message }))
+        showToast(message, 'error')
+        return
+      }
+
+      setExternalValidationStatus((current) => ({ ...current, [integrationId]: 'success' }))
+      setExternalValidationMessage((current) => ({ ...current, [integrationId]: '현재 입력값으로 연동할 수 있습니다.' }))
+      showToast('외부 서비스 연동 검증이 완료되었습니다.')
+    } catch (error) {
+      const message = error.message || '서버 연결 중 오류가 발생했습니다.'
+      setExternalValidationStatus((current) => ({ ...current, [integrationId]: 'error' }))
+      setExternalValidationMessage((current) => ({ ...current, [integrationId]: message }))
+      showToast(message, 'error')
+    }
+  }
+
   const applyCollectionResponse = (responseBody) => {
     setCollectionValue(responseBody.collectionValue != null ? String(responseBody.collectionValue) : '')
     setCollectionUnit(responseBody.collectionUnit || 'DAY')
@@ -385,6 +491,26 @@ export default function Settings({ isExpanded }) {
   }
 
   const handleSaveAuth = async () => {
+    const hasPlayautoInput = Boolean(playautoKey || playautoEmail || playautoPassword)
+    const hasOpenMarketInput = Boolean(selectedMarket || openMarketKey)
+    const unvalidatedExternalId = EXTERNAL_INTEGRATION_IDS.find(
+      (id) => externalDirty[id] && externalValidationStatus[id] !== 'success',
+    )
+
+    if (hasPlayautoInput && !isValidPlayauto) {
+      showToast('PlayAuto 연동 테스트를 먼저 완료해주세요.', 'error')
+      return
+    }
+    if (hasOpenMarketInput && !isValidOpenMarket) {
+      showToast('오픈마켓 연동 테스트를 먼저 완료해주세요.', 'error')
+      return
+    }
+    if (unvalidatedExternalId) {
+      setSelectedExternalIntegration(unvalidatedExternalId)
+      showToast('변경한 외부 서비스의 연동 테스트를 먼저 완료해주세요.', 'error')
+      return
+    }
+
     setIsSavingAuth(true)
     try {
       if (playautoKey || playautoEmail || playautoPassword) {
@@ -425,48 +551,14 @@ export default function Settings({ isExpanded }) {
         applyAuthResponse(await response.json())
       }
 
-      if (naverSearchClientId || naverSearchClientSecret) {
-        await saveAuthPayload({
-          integrationType: 'NAVER_SEARCH',
-          apiKey: naverSearchClientId,
-          password: naverSearchClientSecret,
-        }, 'NAVER 검색 API 인증 정보 저장에 실패했습니다.')
-      }
-
-      if (naverBlogClientId || naverBlogClientSecret || naverBlogAccessToken || naverBlogId) {
-        await saveAuthPayload({
-          integrationType: 'NAVER_BLOG',
-          apiKey: naverBlogClientId,
-          email: naverBlogAccessToken,
-          password: naverBlogClientSecret,
-          extraValue: naverBlogId,
-        }, 'NAVER 블로그 인증 정보 저장에 실패했습니다.')
-      }
-
-      if (naverAdCustomerId || naverAdAccessLicense || naverAdSecretKey) {
-        await saveAuthPayload({
-          integrationType: 'NAVER_AD',
-          apiKey: naverAdCustomerId,
-          email: naverAdAccessLicense,
-          password: naverAdSecretKey,
-        }, 'NAVER 광고 인증 정보 저장에 실패했습니다.')
-      }
-
-      if (metaAccessToken || metaAdAccountId) {
-        await saveAuthPayload({
-          integrationType: 'META_ADS',
-          apiKey: metaAccessToken,
-          email: metaAdAccountId,
-        }, 'Meta 광고 인증 정보 저장에 실패했습니다.')
-      }
-
-      if (daouMailHost || daouMailUsername || daouMailPassword) {
-        await saveAuthPayload({
-          integrationType: 'DAOU_MAIL',
-          apiKey: daouMailHost,
-          email: daouMailUsername,
-          password: daouMailPassword,
-        }, '메일 인증 정보 저장에 실패했습니다.')
+      for (const integrationId of EXTERNAL_INTEGRATION_IDS.filter((id) => externalDirty[id])) {
+        const payload = getExternalValidationPayload(integrationId)
+        const integration = externalIntegrations.find((item) => item.id === integrationId)
+        await saveAuthPayload(
+          payload,
+          `${integration?.group || '외부 서비스'} ${integration?.name || ''} 인증 정보 저장에 실패했습니다.`,
+        )
+        setExternalDirty((current) => ({ ...current, [integrationId]: false }))
       }
       showToast('인증 정보가 저장되었습니다.')
     } catch (error) {
@@ -560,37 +652,70 @@ export default function Settings({ isExpanded }) {
     () => Boolean(playautoKey && playautoEmail && playautoPassword),
     [playautoKey, playautoEmail, playautoPassword],
   )
-  const externalAuthReady = useMemo(
-    () => Boolean(
-      naverSearchClientId ||
-      naverSearchClientSecret ||
-      naverBlogClientId ||
-      naverBlogClientSecret ||
-      naverBlogAccessToken ||
-      naverBlogId ||
-      naverAdCustomerId ||
-      naverAdAccessLicense ||
-      naverAdSecretKey ||
-      metaAccessToken ||
-      metaAdAccountId ||
-      daouMailUsername ||
-      daouMailPassword
-    ),
-    [
-      naverSearchClientId,
-      naverSearchClientSecret,
-      naverBlogClientId,
-      naverBlogClientSecret,
-      naverBlogAccessToken,
-      naverBlogId,
-      naverAdCustomerId,
-      naverAdAccessLicense,
-      naverAdSecretKey,
-      metaAccessToken,
-      metaAdAccountId,
-      daouMailUsername,
-      daouMailPassword,
-    ],
+  const externalIntegrations = [
+    {
+      id: 'naver-search',
+      integrationType: 'NAVER_SEARCH',
+      group: 'NAVER',
+      name: '검색 API',
+      description: '검색 결과와 키워드 데이터를 조회합니다.',
+      icon: 'search',
+      configured: Boolean(naverSearchClientId && naverSearchClientSecret),
+    },
+    {
+      id: 'naver-blog',
+      integrationType: 'NAVER_BLOG',
+      group: 'NAVER',
+      name: '블로그 API',
+      description: 'NAVER 공식 글쓰기 API 지원이 종료되어 현재 인증 테스트와 자동 발행을 사용할 수 없습니다.',
+      icon: 'article',
+      configured: Boolean(naverBlogClientId && naverBlogClientSecret && naverBlogAccessToken && naverBlogId),
+    },
+    {
+      id: 'naver-ad',
+      integrationType: 'NAVER_AD',
+      group: 'NAVER',
+      name: '검색 광고 API',
+      description: '네이버 광고 계정과 성과 데이터를 연결합니다.',
+      icon: 'campaign',
+      configured: Boolean(naverAdCustomerId && naverAdAccessLicense && naverAdSecretKey),
+    },
+    {
+      id: 'meta-ad',
+      integrationType: 'META_ADS',
+      group: 'META',
+      name: '광고 API',
+      description: 'Meta 광고 계정과 캠페인 데이터를 연결합니다.',
+      icon: 'ads_click',
+      configured: Boolean(metaAccessToken && metaAdAccountId),
+    },
+    {
+      id: 'daou-mail',
+      integrationType: 'DAOU_MAIL',
+      group: 'MAIL',
+      name: '다우오피스 메일',
+      description: '업무 메일을 수신하고 대시보드에 표시합니다.',
+      icon: 'mail',
+      configured: Boolean(daouMailHost && daouMailUsername && daouMailPassword),
+    },
+  ]
+  const groupedExternalIntegrations = groupExternalIntegrations(externalIntegrations)
+  const selectedIntegration = externalIntegrations.find((item) => item.id === selectedExternalIntegration) || externalIntegrations[0]
+  const configuredIntegrationCount = externalIntegrations.filter((item) => item.configured).length
+  const selectedExternalStatus = externalValidationStatus[selectedExternalIntegration]
+  const selectedExternalMessage = externalValidationMessage[selectedExternalIntegration]
+  const hasDirtyExternalIntegration = EXTERNAL_INTEGRATION_IDS.some((id) => externalDirty[id])
+  const hasUnvalidatedExternalChange = EXTERNAL_INTEGRATION_IDS.some(
+    (id) => externalDirty[id] && externalValidationStatus[id] !== 'success',
+  )
+  const hasPlayautoInput = Boolean(playautoKey || playautoEmail || playautoPassword)
+  const hasOpenMarketInput = Boolean(selectedMarket || openMarketKey)
+  const authSaveDisabled = Boolean(
+    isSavingAuth
+    || (hasPlayautoInput && !isValidPlayauto)
+    || (hasOpenMarketInput && !isValidOpenMarket)
+    || hasUnvalidatedExternalChange
+    || (!hasPlayautoInput && !hasOpenMarketInput && !hasDirtyExternalIntegration),
   )
   const collectionPeriodReady = useMemo(() => Number(collectionValue) > 0, [collectionValue])
   const scheduleReady = useMemo(() => Number(scheduleValue) > 0, [scheduleValue])
@@ -664,26 +789,23 @@ export default function Settings({ isExpanded }) {
               </div>
             </div>
 
-            <p className="mt-4 text-sm text-slate-500">
-              {activeTab === AUTH_TAB
-                ? 'PlayAuto와 오픈마켓 연동 정보를 저장합니다.'
-                : '주문 수집과 재고/출고량 수집을 각각 관리할 수 있습니다.'}
-            </p>
-
-            <div className="mt-3 text-xs font-medium text-slate-400">
-              {activeTab === AUTH_TAB
-                ? authSavedAt
-                  ? `마지막 저장: ${formatSavedAtKst(authSavedAt)}`
-                  : '아직 인증 정보가 저장되지 않았습니다.'
-                : collectionSavedAt
-                  ? `마지막 저장: ${formatSavedAtKst(collectionSavedAt)}`
-                  : '아직 수집 설정이 저장되지 않았습니다.'}
-            </div>
+            {activeTab === COLLECTION_TAB && (
+              <>
+                <p className="mt-4 text-sm text-slate-500">
+                  주문 수집과 재고/출고량 수집을 각각 관리할 수 있습니다.
+                </p>
+                <div className="mt-3 text-xs font-medium text-slate-400">
+                  {collectionSavedAt
+                    ? `마지막 저장: ${formatSavedAtKst(collectionSavedAt)}`
+                    : '아직 수집 설정이 저장되지 않았습니다.'}
+                </div>
+              </>
+            )}
           </div>
 
           {activeTab === AUTH_TAB && (
             <div className="space-y-8">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+              <div className="rounded-2xl border border-slate-200 bg-white p-6">
                 <div className="mb-5 flex items-start justify-between">
                   <div>
                     <h3 className="text-xl font-bold text-slate-900">PlayAuto 인증 정보</h3>
@@ -746,7 +868,7 @@ export default function Settings({ isExpanded }) {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+              <div className="rounded-2xl border border-slate-200 bg-white p-6">
                 <div className="mb-5 flex items-start justify-between">
                   <div>
                     <h3 className="text-xl font-bold text-slate-900">오픈마켓 통합</h3>
@@ -803,56 +925,215 @@ export default function Settings({ isExpanded }) {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-                <div className="mb-5">
-                  <h3 className="text-xl font-bold text-slate-900">외부 API 인증 정보</h3>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Docker 환경변수 없이도 네이버, Meta, 메일 연동 정보를 저장해서 사용할 수 있습니다.
-                  </p>
+              <div className="rounded-lg border border-slate-200 bg-white">
+                <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-5 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h3 className="text-xl font-black text-slate-950">외부 서비스 연동</h3>
+                    <p className="mt-1 text-sm font-medium text-slate-500">
+                      네이버, Meta, 메일 서비스의 인증 정보를 한 곳에서 관리합니다.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm font-bold">
+                    <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700">연결됨 {configuredIntegrationCount}개</span>
+                    <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-500">설정 필요 {externalIntegrations.length - configuredIntegrationCount}개</span>
+                  </div>
                 </div>
 
-                <div className="grid gap-5">
-                  <div className="rounded-2xl bg-white p-5">
-                    <h4 className="mb-4 text-sm font-black text-slate-800">NAVER 검색 API</h4>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <input type="text" value={naverSearchClientId} onChange={(event) => setNaverSearchClientId(event.target.value)} placeholder="Client ID" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
-                      <input type="password" value={naverSearchClientSecret} onChange={(event) => setNaverSearchClientSecret(event.target.value)} placeholder="Client Secret" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                <div className="grid min-h-[420px] lg:grid-cols-[300px_minmax(0,1fr)]">
+                  <div className="border-b border-slate-200 bg-slate-50 p-3 lg:border-b-0 lg:border-r">
+                    <div className="space-y-1">
+                      {groupedExternalIntegrations.map((item) => {
+                        if (item.children) {
+                          const naverActive = item.children.some(
+                            (integration) => integration.id === selectedExternalIntegration,
+                          )
+
+                          return (
+                            <div key={item.id} className="rounded-lg border border-slate-200 bg-white">
+                              <button
+                                type="button"
+                                onClick={() => setIsNaverExpanded((expanded) => !expanded)}
+                                aria-expanded={isNaverExpanded}
+                                className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition-colors ${
+                                  naverActive ? 'text-slate-950' : 'text-slate-600 hover:text-slate-950'
+                                }`}
+                              >
+                                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#03c75a] text-base font-black text-white">
+                                  N
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block text-[11px] font-black tracking-[0.12em] text-[#03a94f]">SERVICE</span>
+                                  <span className="mt-0.5 block text-sm font-black">{item.label}</span>
+                                </span>
+                                <span
+                                  className={`material-symbols-outlined text-xl text-slate-400 transition-transform ${
+                                    isNaverExpanded ? 'rotate-180' : ''
+                                  }`}
+                                >
+                                  expand_more
+                                </span>
+                              </button>
+
+                              {isNaverExpanded && (
+                                <div className="space-y-1 border-t border-slate-100 p-2">
+                                  {item.children.map((integration) => {
+                                    const active = selectedExternalIntegration === integration.id
+                                    return (
+                                      <button
+                                        key={integration.id}
+                                        type="button"
+                                        onClick={() => setSelectedExternalIntegration(integration.id)}
+                                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
+                                          active
+                                            ? 'bg-sky-50 text-slate-950'
+                                            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'
+                                        }`}
+                                      >
+                                        <span className={`material-symbols-outlined grid h-9 w-9 shrink-0 place-items-center rounded-lg text-lg ${
+                                          active ? 'bg-white text-sky-600 shadow-sm' : 'bg-slate-50 text-slate-400'
+                                        }`}>
+                                          {integration.icon}
+                                        </span>
+                                        <span className="min-w-0 flex-1 truncate text-sm font-bold">{integration.name}</span>
+                                        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                                          externalValidationStatus[integration.id] === 'success'
+                                            ? 'bg-emerald-500'
+                                            : externalValidationStatus[integration.id] === 'error'
+                                              ? 'bg-rose-500'
+                                              : integration.configured
+                                                ? 'bg-sky-400'
+                                                : 'bg-slate-300'
+                                        }`} />
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        }
+
+                        const active = selectedExternalIntegration === item.id
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setSelectedExternalIntegration(item.id)}
+                            className={`flex w-full items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors ${
+                              active
+                                ? 'border-sky-200 bg-white text-slate-950 shadow-sm'
+                                : 'border-transparent text-slate-600 hover:border-slate-200 hover:bg-white'
+                            }`}
+                          >
+                            <span className={`material-symbols-outlined grid h-10 w-10 shrink-0 place-items-center rounded-lg text-xl ${active ? 'bg-sky-50 text-sky-600' : 'bg-white text-slate-400'}`}>
+                              {item.icon}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-[11px] font-black tracking-[0.12em] text-slate-400">{item.group}</span>
+                              <span className="mt-0.5 block truncate text-sm font-black">{item.name}</span>
+                            </span>
+                            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                              externalValidationStatus[item.id] === 'success'
+                                ? 'bg-emerald-500'
+                                : externalValidationStatus[item.id] === 'error'
+                                  ? 'bg-rose-500'
+                                  : item.configured
+                                    ? 'bg-sky-400'
+                                    : 'bg-slate-300'
+                            }`} />
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
 
-                  <div className="rounded-2xl bg-white p-5">
-                    <h4 className="mb-4 text-sm font-black text-slate-800">NAVER 블로그 API</h4>
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      <input type="text" value={naverBlogClientId} onChange={(event) => setNaverBlogClientId(event.target.value)} placeholder="Client ID" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
-                      <input type="password" value={naverBlogClientSecret} onChange={(event) => setNaverBlogClientSecret(event.target.value)} placeholder="Client Secret" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
-                      <input type="password" value={naverBlogAccessToken} onChange={(event) => setNaverBlogAccessToken(event.target.value)} placeholder="Access Token" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
-                      <input type="text" value={naverBlogId} onChange={(event) => setNaverBlogId(event.target.value)} placeholder="Blog ID" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                  <div className="p-6">
+                    <div className="mb-6 flex items-start justify-between gap-4 border-b border-slate-100 pb-5">
+                      <div>
+                        <p className="text-xs font-black tracking-[0.16em] text-sky-600">{selectedIntegration.group}</p>
+                        <h4 className="mt-2 text-2xl font-black text-slate-950">{selectedIntegration.name}</h4>
+                        <p className="mt-2 text-sm font-medium text-slate-500">{selectedIntegration.description}</p>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-black ${
+                        selectedExternalStatus === 'success'
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : selectedExternalStatus === 'error'
+                            ? 'bg-rose-50 text-rose-700'
+                            : selectedExternalStatus === 'checking'
+                              ? 'bg-sky-50 text-sky-700'
+                              : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        {selectedExternalStatus === 'success'
+                          ? '검증 완료'
+                          : selectedExternalStatus === 'error'
+                            ? '검증 실패'
+                            : selectedExternalStatus === 'checking'
+                              ? '검증 중'
+                              : selectedIntegration.configured ? '미검증' : '미설정'}
+                      </span>
                     </div>
-                  </div>
 
-                  <div className="rounded-2xl bg-white p-5">
-                    <h4 className="mb-4 text-sm font-black text-slate-800">NAVER 광고 API</h4>
-                    <div className="grid gap-4 md:grid-cols-3">
-                      <input type="text" value={naverAdCustomerId} onChange={(event) => setNaverAdCustomerId(event.target.value)} placeholder="Customer ID" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
-                      <input type="password" value={naverAdAccessLicense} onChange={(event) => setNaverAdAccessLicense(event.target.value)} placeholder="Access License" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
-                      <input type="password" value={naverAdSecretKey} onChange={(event) => setNaverAdSecretKey(event.target.value)} placeholder="Secret Key" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                    <div className="grid gap-5 md:grid-cols-2">
+                      {selectedExternalIntegration === 'naver-search' && <>
+                        <label><span className="mb-2 block text-sm font-bold text-slate-700">Client ID</span><input type="text" value={naverSearchClientId} onChange={(event) => markExternalCredentialChanged('naver-search', setNaverSearchClientId, event.target.value)} placeholder="Client ID 입력" className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" /></label>
+                        <label><span className="mb-2 block text-sm font-bold text-slate-700">Client Secret</span><input type="password" value={naverSearchClientSecret} onChange={(event) => markExternalCredentialChanged('naver-search', setNaverSearchClientSecret, event.target.value)} placeholder="Client Secret 입력" className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" /></label>
+                      </>}
+                      {selectedExternalIntegration === 'naver-blog' && <>
+                        <label><span className="mb-2 block text-sm font-bold text-slate-700">Client ID</span><input type="text" value={naverBlogClientId} onChange={(event) => markExternalCredentialChanged('naver-blog', setNaverBlogClientId, event.target.value)} placeholder="Client ID 입력" className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" /></label>
+                        <label><span className="mb-2 block text-sm font-bold text-slate-700">Client Secret</span><input type="password" value={naverBlogClientSecret} onChange={(event) => markExternalCredentialChanged('naver-blog', setNaverBlogClientSecret, event.target.value)} placeholder="Client Secret 입력" className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" /></label>
+                        <label><span className="mb-2 block text-sm font-bold text-slate-700">Access Token</span><input type="password" value={naverBlogAccessToken} onChange={(event) => markExternalCredentialChanged('naver-blog', setNaverBlogAccessToken, event.target.value)} placeholder="Access Token 입력" className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" /></label>
+                        <label><span className="mb-2 block text-sm font-bold text-slate-700">Blog ID</span><input type="text" value={naverBlogId} onChange={(event) => markExternalCredentialChanged('naver-blog', setNaverBlogId, event.target.value)} placeholder="Blog ID 입력" className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" /></label>
+                      </>}
+                      {selectedExternalIntegration === 'naver-ad' && <>
+                        <label><span className="mb-2 block text-sm font-bold text-slate-700">Customer ID</span><input type="text" value={naverAdCustomerId} onChange={(event) => markExternalCredentialChanged('naver-ad', setNaverAdCustomerId, event.target.value)} placeholder="Customer ID 입력" className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" /></label>
+                        <label><span className="mb-2 block text-sm font-bold text-slate-700">Access License</span><input type="password" value={naverAdAccessLicense} onChange={(event) => markExternalCredentialChanged('naver-ad', setNaverAdAccessLicense, event.target.value)} placeholder="Access License 입력" className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" /></label>
+                        <label className="md:col-span-2"><span className="mb-2 block text-sm font-bold text-slate-700">Secret Key</span><input type="password" value={naverAdSecretKey} onChange={(event) => markExternalCredentialChanged('naver-ad', setNaverAdSecretKey, event.target.value)} placeholder="Secret Key 입력" className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" /></label>
+                      </>}
+                      {selectedExternalIntegration === 'meta-ad' && <>
+                        <label><span className="mb-2 block text-sm font-bold text-slate-700">Access Token</span><input type="password" value={metaAccessToken} onChange={(event) => markExternalCredentialChanged('meta-ad', setMetaAccessToken, event.target.value)} placeholder="Access Token 입력" className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" /></label>
+                        <label><span className="mb-2 block text-sm font-bold text-slate-700">Ad Account ID</span><input type="text" value={metaAdAccountId} onChange={(event) => markExternalCredentialChanged('meta-ad', setMetaAdAccountId, event.target.value)} placeholder="Ad Account ID 입력" className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" /></label>
+                      </>}
+                      {selectedExternalIntegration === 'daou-mail' && <>
+                        <label><span className="mb-2 block text-sm font-bold text-slate-700">IMAP 서버</span><input type="text" value={daouMailHost} onChange={(event) => markExternalCredentialChanged('daou-mail', setDaouMailHost, event.target.value)} placeholder="imap.daouoffice.com" className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" /></label>
+                        <label><span className="mb-2 block text-sm font-bold text-slate-700">메일 아이디</span><input type="text" value={daouMailUsername} onChange={(event) => markExternalCredentialChanged('daou-mail', setDaouMailUsername, event.target.value)} placeholder="메일 아이디 입력" className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" /></label>
+                        <label className="md:col-span-2"><span className="mb-2 block text-sm font-bold text-slate-700">메일 비밀번호</span><input type="password" value={daouMailPassword} onChange={(event) => markExternalCredentialChanged('daou-mail', setDaouMailPassword, event.target.value)} placeholder="메일 비밀번호 입력" className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100" /></label>
+                      </>}
                     </div>
-                  </div>
 
-                  <div className="rounded-2xl bg-white p-5">
-                    <h4 className="mb-4 text-sm font-black text-slate-800">Meta 광고 API</h4>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <input type="password" value={metaAccessToken} onChange={(event) => setMetaAccessToken(event.target.value)} placeholder="Access Token" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
-                      <input type="text" value={metaAdAccountId} onChange={(event) => setMetaAdAccountId(event.target.value)} placeholder="Ad Account ID" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl bg-white p-5">
-                    <h4 className="mb-4 text-sm font-black text-slate-800">다우오피스 메일</h4>
-                    <div className="grid gap-4 md:grid-cols-3">
-                      <input type="text" value={daouMailHost} onChange={(event) => setDaouMailHost(event.target.value)} placeholder="imap.daouoffice.com" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
-                      <input type="text" value={daouMailUsername} onChange={(event) => setDaouMailUsername(event.target.value)} placeholder="Mail ID" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
-                      <input type="password" value={daouMailPassword} onChange={(event) => setDaouMailPassword(event.target.value)} placeholder="Mail Password" className="rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                    <div className="mt-8 flex flex-col gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
+                      <div className={`flex min-h-6 items-center gap-2 text-sm font-bold ${
+                        selectedExternalStatus === 'success'
+                          ? 'text-emerald-600'
+                          : selectedExternalStatus === 'error'
+                            ? 'text-rose-600'
+                            : 'text-slate-400'
+                      }`}>
+                        {selectedExternalMessage && (
+                          <>
+                            <span className="material-symbols-outlined text-lg">
+                              {selectedExternalStatus === 'success'
+                                ? 'check_circle'
+                                : selectedExternalStatus === 'error'
+                                  ? 'error'
+                                  : 'hourglass_top'}
+                            </span>
+                            <span>{selectedExternalMessage}</span>
+                          </>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleValidateExternal}
+                        disabled={!selectedIntegration.configured || selectedExternalStatus === 'checking'}
+                        className={`inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg px-5 text-sm font-bold transition-colors ${
+                          !selectedIntegration.configured || selectedExternalStatus === 'checking'
+                            ? 'cursor-not-allowed bg-slate-200 text-slate-400'
+                            : 'bg-slate-950 text-white hover:bg-slate-800'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-lg">sync</span>
+                        {selectedExternalStatus === 'checking' ? '테스트 중...' : '연동 테스트'}
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -862,9 +1143,9 @@ export default function Settings({ isExpanded }) {
                 <button
                   type="button"
                   onClick={handleSaveAuth}
-                  disabled={isSavingAuth || (!authReady && !(selectedMarket && openMarketKey) && !externalAuthReady)}
+                  disabled={authSaveDisabled}
                   className={`rounded-xl px-6 py-3 text-sm font-bold transition-all ${
-                    isSavingAuth || (!authReady && !(selectedMarket && openMarketKey) && !externalAuthReady)
+                    authSaveDisabled
                       ? 'cursor-not-allowed bg-slate-200 text-slate-400'
                       : 'bg-slate-950 text-white hover:bg-slate-800'
                   }`}

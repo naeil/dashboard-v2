@@ -32,15 +32,18 @@ public class IntegrationSettingService {
     private final IntegrationSettingRepository settingRepository;
     private final CollectionExecutionHistoryRepository collectionExecutionHistoryRepository;
     private final PlayAutoApiClient playAutoApiClient;
+    private final ExternalIntegrationValidationService externalValidationService;
 
     public IntegrationSettingService(
             IntegrationSettingRepository settingRepository,
             CollectionExecutionHistoryRepository collectionExecutionHistoryRepository,
-            PlayAutoApiClient playAutoApiClient
+            PlayAutoApiClient playAutoApiClient,
+            ExternalIntegrationValidationService externalValidationService
     ) {
         this.settingRepository = settingRepository;
         this.collectionExecutionHistoryRepository = collectionExecutionHistoryRepository;
         this.playAutoApiClient = playAutoApiClient;
+        this.externalValidationService = externalValidationService;
     }
 
     public List<IntegrationSettingDto.Response> getSettingsByCompanyId(Long companyId) {
@@ -83,6 +86,9 @@ public class IntegrationSettingService {
     }
 
     public boolean validateApiKey(IntegrationSettingDto.ValidateRequest request) {
+        if (request == null || request.getIntegrationType() == null) {
+            return false;
+        }
         String apiKey = request.getApiKey();
         if (isBlank(apiKey)) {
             return false;
@@ -105,7 +111,26 @@ public class IntegrationSettingService {
             return apiKey.length() > 5;
         }
 
+        if (isExternalIntegration(request.getIntegrationType())) {
+            return externalValidationService.validate(request);
+        }
+
         return false;
+    }
+
+    public ExternalIntegrationValidationService.ValidationResult validateApiKeyWithResult(
+            IntegrationSettingDto.ValidateRequest request
+    ) {
+        if (request != null && request.getIntegrationType() != null
+                && isExternalIntegration(request.getIntegrationType())) {
+            return externalValidationService.validateWithResult(request);
+        }
+
+        return validateApiKey(request)
+                ? ExternalIntegrationValidationService.ValidationResult.success("인증 정보가 확인되었습니다.")
+                : ExternalIntegrationValidationService.ValidationResult.failure(
+                        "인증 정보 검증에 실패했습니다. 입력값을 확인해주세요."
+                );
     }
 
     @Transactional
@@ -142,6 +167,14 @@ public class IntegrationSettingService {
 
     @Transactional
     public IntegrationSettingDto.Response saveAuthSetting(Long companyId, IntegrationSettingDto.SaveAuthRequest request) {
+        if (isMarketplaceIntegration(request.getIntegrationType())
+                && !validateApiKey(request.toValidateRequest())) {
+            throw new CustomException(400, "Marketplace integration validation failed");
+        }
+        if (isExternalIntegration(request.getIntegrationType())
+                && !externalValidationService.validate(request.toValidateRequest())) {
+            throw new CustomException(400, "External integration validation failed");
+        }
         IntegrationSetting setting = settingRepository.findByCompanyIdAndIntegrationType(companyId, request.getIntegrationType())
                 .orElse(new IntegrationSetting(companyId, request.getIntegrationType()));
 
@@ -376,6 +409,22 @@ public class IntegrationSettingService {
 
     private boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
+    }
+
+    private boolean isExternalIntegration(IntegrationType integrationType) {
+        return integrationType == IntegrationType.NAVER_SEARCH
+                || integrationType == IntegrationType.NAVER_BLOG
+                || integrationType == IntegrationType.NAVER_AD
+                || integrationType == IntegrationType.META_ADS
+                || integrationType == IntegrationType.DAOU_MAIL;
+    }
+
+    private boolean isMarketplaceIntegration(IntegrationType integrationType) {
+        return integrationType == IntegrationType.NAVER_SMARTSTORE
+                || integrationType == IntegrationType.COUPANG
+                || integrationType == IntegrationType.ELEVEN_STREET
+                || integrationType == IntegrationType.AUCTION
+                || integrationType == IntegrationType.GMARKET;
     }
 
     public record PlayAutoCredentials(String apiKey, String accessToken) {}

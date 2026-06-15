@@ -53,6 +53,44 @@ public class AuthService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
+    public AuthUser platformLogin(String username, String password) {
+        String normalizedUsername = required(username, "아이디를 입력하세요.").trim();
+        AuthUser user = findPlatformUser(normalizedUsername)
+                .orElseGet(() -> tryCreateBootstrapExecutive(1L, normalizedUsername, password));
+        if (!"PLATFORM".equals(user.accountScope())) {
+            throw new CustomException(401, "아이디 또는 비밀번호가 올바르지 않습니다.");
+        }
+        return verifySeparatedLogin(user, password);
+    }
+
+    public AuthUser tenantLogin(String companyCode, String username, String password) {
+        String normalizedUsername = required(username, "아이디를 입력하세요.").trim();
+        Long companyId = findCompanyIdByCode(companyCode)
+                .orElseThrow(() -> new CustomException(400, "회사 코드를 입력하세요."));
+        AuthUser user = findTenantUser(companyId, normalizedUsername)
+                .orElseThrow(() -> new CustomException(401, "회사 코드, 아이디 또는 비밀번호가 올바르지 않습니다."));
+        return verifySeparatedLogin(user, password);
+    }
+
+    private AuthUser verifySeparatedLogin(AuthUser user, String password) {
+        if (!"ACTIVE".equals(user.status())) {
+            throw new CustomException(403, "비활성화된 계정입니다. 관리자에게 문의하세요.");
+        }
+
+        String passwordHash = jdbcTemplate.queryForObject(
+                "SELECT password_hash FROM dashboard_user WHERE id = ?",
+                String.class,
+                user.id()
+        );
+        if (!verifyPassword(password, passwordHash)) {
+            throw new CustomException(401, "아이디 또는 비밀번호가 올바르지 않습니다.");
+        }
+
+        jdbcTemplate.update("UPDATE dashboard_user SET last_login_at = NOW(), updated_at = NOW() WHERE id = ?", user.id());
+        return findUserById(user.id()).orElse(user);
+    }
+
+    @Deprecated
     public AuthUser login(String companyCode, String username, String password) {
         String normalizedUsername = required(username, "아이디를 입력하세요.").trim();
         Long companyId = findCompanyIdByCode(companyCode)
@@ -387,9 +425,9 @@ public class AuthService {
                     account_scope, account_level, password_hash, status
                 )
                 VALUES (?, ?, '대표 관리자', '경영', '대표', 'EXECUTIVE', 'PLATFORM', 'ADMIN', ?, 'ACTIVE')
-                ON CONFLICT (company_id, username) DO NOTHING
+                ON CONFLICT (company_id, account_scope, username) DO NOTHING
                 """, companyId, username, passwordHash);
-        return findUser(companyId, username).orElseThrow();
+        return findPlatformUser(username).orElseThrow();
     }
 
     private Optional<AuthUser> findActiveUserById(Long userId) {
@@ -452,8 +490,31 @@ public class AuthService {
                     SELECT id, company_id, username, display_name, department, position_name, role,
                            account_scope, account_level, status, allowed_menu_sections
                     FROM dashboard_user
-                    WHERE company_id = ? AND username = ?
+                    WHERE company_id = ? AND username = ? AND account_scope = 'TENANT'
                     """, this::mapAuthUser, companyId, username));
+        } catch (EmptyResultDataAccessException exception) {
+            return Optional.empty();
+        }
+    }
+
+    private Optional<AuthUser> findTenantUser(Long companyId, String username) {
+        return findUser(companyId, username)
+                .filter(user -> "TENANT".equals(user.accountScope()));
+    }
+
+    private Optional<AuthUser> findPlatformUser(String username) {
+        if (username == null || username.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.ofNullable(jdbcTemplate.queryForObject("""
+                    SELECT id, company_id, username, display_name, department, position_name, role,
+                           account_scope, account_level, status, allowed_menu_sections
+                    FROM dashboard_user
+                    WHERE username = ? AND account_scope = 'PLATFORM'
+                    ORDER BY id
+                    LIMIT 1
+                    """, this::mapAuthUser, username));
         } catch (EmptyResultDataAccessException exception) {
             return Optional.empty();
         }

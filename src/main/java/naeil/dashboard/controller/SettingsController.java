@@ -7,6 +7,7 @@ import naeil.dashboard.dto.IntegrationSettingDto;
 import naeil.dashboard.enums.IntegrationType;
 import naeil.dashboard.service.IntegrationSettingService;
 import naeil.dashboard.service.PlayAutoCollectionService;
+import naeil.dashboard.service.ExternalIntegrationValidationService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -81,13 +82,13 @@ public class SettingsController {
 
     @PostMapping("/validate")
     public ResponseEntity<?> validateApiKey(@RequestBody IntegrationSettingDto.ValidateRequest request) {
-        boolean isValid = settingService.validateApiKey(request);
-        if (isValid) {
-            return ResponseEntity.ok(Map.of("message", "Validation successful"));
+        ExternalIntegrationValidationService.ValidationResult result = settingService.validateApiKeyWithResult(request);
+        if (result.success()) {
+            return ResponseEntity.ok(Map.of("message", result.message()));
         }
 
         return ResponseEntity.badRequest()
-                .body(Map.of("message", "Validation failed. Check the credentials and try again."));
+                .body(Map.of("message", result.message()));
     }
 
     @PostMapping

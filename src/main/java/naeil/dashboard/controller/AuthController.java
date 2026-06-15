@@ -36,12 +36,16 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<AuthSessionResponse> platformLogin(@RequestBody LoginRequest request) {
-        return loginWithRequest(request);
+        return loginWithUser(authService.platformLogin(request.resolvedLoginId(), request.password()));
     }
 
     @PostMapping({"/tenant-login", "/tenent-login"})
     public ResponseEntity<AuthSessionResponse> tenantLogin(@RequestBody LoginRequest request) {
-        return loginWithRequest(request);
+        return loginWithUser(authService.tenantLogin(
+                request.resolvedCompanyCode(),
+                request.resolvedLoginId(),
+                request.password()
+        ));
     }
 
     @GetMapping("/session")
@@ -175,8 +179,7 @@ public class AuthController {
         return ResponseEntity.ok(authService.savePositionPermissionTemplate(body, actor));
     }
 
-    private ResponseEntity<AuthSessionResponse> loginWithRequest(LoginRequest request) {
-        AuthUser user = authService.login(request.resolvedCompanyCode(), request.resolvedLoginId(), request.password());
+    private ResponseEntity<AuthSessionResponse> loginWithUser(AuthUser user) {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(
                         user.username(),

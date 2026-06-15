@@ -59,11 +59,14 @@ authApi.interceptors.response.use(
 )
 
 export const loginWithMode = async (companyCode, username, password, mode = LOGIN_MODES.TENANT) => {
+  const payload = mode === LOGIN_MODES.PLATFORM
+    ? { loginId: username, password }
+    : { companyCode, loginId: username, password }
   const response = await fetch(buildApiUrl(getLoginEndpoint(mode)), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ companyCode, loginId: username, password }),
+    body: JSON.stringify(payload),
   })
 
   const body = await response.json().catch(() => ({}))
@@ -76,7 +79,7 @@ export const loginWithMode = async (companyCode, username, password, mode = LOGI
 }
 
 export const tenantLogin = (companyCode, username, password) => loginWithMode(companyCode, username, password, LOGIN_MODES.TENANT)
-export const adminLogin = (companyCode, username, password) => loginWithMode(companyCode, username, password, LOGIN_MODES.PLATFORM)
+export const adminLogin = (username, password) => loginWithMode('', username, password, LOGIN_MODES.PLATFORM)
 export const login = tenantLogin
 
 export const registerWithInvite = async ({ inviteCode, username, password }) => {
