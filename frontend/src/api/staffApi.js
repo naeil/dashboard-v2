@@ -40,3 +40,15 @@ export const clockStaffAttendance = (action) =>
 
 export const updateStaffAttendanceLocation = (id, payload) =>
   api.put(`/staff/attendance/admin/${id}/location`, payload, { params: companyParams })
+
+export const getWorkReportFeedback = (reportId) =>
+  api.get(`/staff/work-reports/${reportId}/feedback`)
+
+export const createWorkReportFeedback = (reportId, payload) =>
+  api.post(`/staff/work-reports/${reportId}/feedback`, payload)
+
+export const updateWorkReportFeedback = (id, payload) =>
+  api.put(`/staff/work-reports/feedback/${id}`, payload)
+
+export const deleteWorkReportFeedback = (id) =>
+  api.delete(`/staff/work-reports/feedback/${id}`)
