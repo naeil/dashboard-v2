@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
-import { createStaffWorkReport, deleteStaffWorkReport, getStaffWorkReports, updateStaffWorkReport } from '../../api/staffApi'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createStaffWorkReport, deleteStaffWorkReport, getStaffWorkReports, updateStaffWorkReport, getWorkReportFeedback, createWorkReportFeedback, updateWorkReportFeedback, deleteWorkReportFeedback } from '../../api/staffApi'
 import { getExecutiveWorkTasks } from '../../api/executiveApi'
+import { getUsers } from '../../api/authApi'
 
 const todayText = () => new Date().toISOString().slice(0, 10)
 
@@ -37,26 +38,235 @@ function statusBadge(status) {
     : 'border-emerald-200 bg-emerald-50 text-emerald-700'
 }
 
+function formatTime(isoString) {
+  if (!isoString) return ''
+  try {
+    return new Date(isoString).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  } catch {
+    return ''
+  }
+}
+
+function FeedbackSection({ reportId, currentUser, allUsers }) {
+  const [feedbacks, setFeedbacks] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [inputText, setInputText] = useState('')
+  const [editingFeedbackId, setEditingFeedbackId] = useState(null)
+  const [editingText, setEditingText] = useState('')
+  const [mentionQuery, setMentionQuery] = useState(null)
+  const [mentionIndex, setMentionIndex] = useState(0)
+  const [cursorPos, setCursorPos] = useState(0)
+  const textareaRef = useRef(null)
+
+  const loadFeedbacks = useCallback(async () => {
+    try {
+      const res = await getWorkReportFeedback(reportId)
+      setFeedbacks(res.data || [])
+    } catch {}
+  }, [reportId])
+
+  useEffect(() => { loadFeedbacks() }, [loadFeedbacks])
+
+  const filteredUsers = useMemo(() => {
+    if (mentionQuery === null) return []
+    const q = mentionQuery.toLowerCase()
+    return allUsers.filter(u =>
+      (u.display_name || u.username || '').toLowerCase().includes(q) ||
+      (u.username || '').toLowerCase().includes(q)
+    ).slice(0, 6)
+  }, [mentionQuery, allUsers])
+
+  const handleInputChange = (e) => {
+    const val = e.target.value
+    const pos = e.target.selectionStart
+    setInputText(val)
+    setCursorPos(pos)
+    const textBefore = val.slice(0, pos)
+    const atMatch = textBefore.match(/@([\w가-힣]*)$/)
+    if (atMatch) {
+      setMentionQuery(atMatch[1])
+      setMentionIndex(0)
+    } else {
+      setMentionQuery(null)
+    }
+  }
+
+  const insertMention = (user) => {
+    const textBefore = inputText.slice(0, cursorPos)
+    const atMatch = textBefore.match(/@([\w가-힣]*)$/)
+    if (!atMatch) return
+    const start = cursorPos - atMatch[0].length
+    const mention = '@' + (user.display_name || user.username)
+    const newText = inputText.slice(0, start) + mention + ' ' + inputText.slice(cursorPos)
+    setInputText(newText)
+    setMentionQuery(null)
+    setTimeout(() => {
+      const newPos = start + mention.length + 1
+      textareaRef.current?.setSelectionRange(newPos, newPos)
+      textareaRef.current?.focus()
+    }, 0)
+  }
+
+  const handleKeyDown = (e) => {
+    if (mentionQuery !== null && filteredUsers.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex(i => Math.min(i + 1, filteredUsers.length - 1)); return }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIndex(i => Math.max(i - 1, 0)); return }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertMention(filteredUsers[mentionIndex]); return }
+      if (e.key === 'Escape') { setMentionQuery(null); return }
+    }
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault()
+      submitFeedback()
+    }
+  }
+
+  const submitFeedback = async () => {
+    if (!inputText.trim()) return
+    setLoading(true)
+    try {
+      await createWorkReportFeedback(reportId, { content: inputText.trim() })
+      setInputText('')
+      setMentionQuery(null)
+      await loadFeedbacks()
+    } catch {} finally { setLoading(false) }
+  }
+
+  const startEdit = (fb) => {
+    setEditingFeedbackId(fb.id)
+    setEditingText(fb.content || '')
+  }
+
+  const saveEdit = async (id) => {
+    if (!editingText.trim()) return
+    try {
+      await updateWorkReportFeedback(id, { content: editingText.trim() })
+      setEditingFeedbackId(null)
+      await loadFeedbacks()
+    } catch {}
+  }
+
+  const removeFeedback = async (id) => {
+    try {
+      await deleteWorkReportFeedback(id)
+      await loadFeedbacks()
+    } catch {}
+  }
+
+  const renderContent = (text) => {
+    if (!text) return null
+    const parts = text.split(/(@[\w가-힣]+)/g)
+    return parts.map((part, i) =>
+      part.startsWith('@')
+        ? <span key={i} className="font-black text-sky-600 bg-sky-50 rounded px-1">{part}</span>
+        : <span key={i}>{part}</span>
+    )
+  }
+
+  return (
+    <div className="mt-4 border-t border-slate-100 pt-4">
+      <p className="mb-3 text-xs font-black text-slate-500">피드백 ({feedbacks.length})</p>
+      <div className="space-y-3 mb-3">
+        {feedbacks.map(fb => (
+          <div key={fb.id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <span className="text-xs font-black text-slate-600">{fb.author_display_name || fb.author_username}</span>
+              <span className="text-[11px] text-slate-400">{formatTime(fb.created_at)}</span>
+            </div>
+            {editingFeedbackId === fb.id ? (
+              <div className="flex gap-2 mt-1">
+                <textarea
+                  value={editingText}
+                  onChange={e => setEditingText(e.target.value)}
+                  rows={2}
+                  className="flex-1 rounded border border-slate-200 px-2 py-1 text-sm font-bold outline-none focus:border-sky-400"
+                />
+                <div className="flex flex-col gap-1">
+                  <button type="button" onClick={() => saveEdit(fb.id)} className="h-7 rounded bg-sky-500 px-2 text-[11px] font-black text-white hover:bg-sky-600">저장</button>
+                  <button type="button" onClick={() => setEditingFeedbackId(null)} className="h-7 rounded border border-slate-300 px-2 text-[11px] font-black text-slate-600">취소</button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm font-bold text-slate-700 whitespace-pre-wrap leading-5">{renderContent(fb.content)}</p>
+                {(currentUser === fb.author_username || currentUser === 'admin') && (
+                  <div className="flex gap-1 shrink-0">
+                    <button type="button" onClick={() => startEdit(fb)} className="text-[11px] font-black text-slate-400 hover:text-sky-500">수정</button>
+                    <button type="button" onClick={() => removeFeedback(fb.id)} className="text-[11px] font-black text-slate-400 hover:text-rose-500">삭제</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+        {feedbacks.length === 0 && <p className="text-xs font-bold text-slate-400 text-center py-2">아직 피드백이 없습니다.</p>}
+      </div>
+      <div className="relative">
+        <textarea
+          ref={textareaRef}
+          value={inputText}
+          onChange={handleInputChange}
+          onKeyDown={handleKeyDown}
+          placeholder="피드백을 입력하세요. @이름 으로 담당자를 태그하세요. (Ctrl+Enter로 전송)"
+          rows={2}
+          className="w-full rounded border border-slate-200 px-3 py-2 text-sm font-bold outline-none focus:border-sky-400 resize-none"
+        />
+        {mentionQuery !== null && filteredUsers.length > 0 && (
+          <div className="absolute bottom-full left-0 mb-1 w-56 rounded-lg border border-slate-200 bg-white shadow-lg z-50 overflow-hidden">
+            {filteredUsers.map((u, i) => (
+              <button
+                key={u.id}
+                type="button"
+                onMouseDown={e => { e.preventDefault(); insertMention(u); }}
+                className={`flex w-full items-center gap-2 px-3 py-2 text-sm font-bold text-left hover:bg-sky-50 ${i === mentionIndex ? 'bg-sky-50 text-sky-700' : 'text-slate-700'}`}
+              >
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs font-black">
+                  {(u.display_name || u.username || '?')[0]}
+                </span>
+                <span>{u.display_name || u.username}</span>
+                {u.position_name && <span className="text-[11px] text-slate-400 ml-auto">{u.position_name}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex justify-end mt-1.5">
+          <button
+            type="button"
+            onClick={submitFeedback}
+            disabled={loading || !inputText.trim()}
+            className="h-8 rounded bg-sky-500 px-4 text-xs font-black text-white hover:bg-sky-600 disabled:opacity-50"
+          >
+            {loading ? '전송 중...' : '피드백 전송'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function StaffWorkReportPage({ username, displayName, onNavigate }) {
   const [reports, setReports] = useState([])
   const [workTasks, setWorkTasks] = useState([])
+  const [allUsers, setAllUsers] = useState([])
   const [filter, setFilter] = useState('ALL')
   const [form, setForm] = useState(emptyForm)
   const [editingId, setEditingId] = useState(null)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
+  const [expandedFeedback, setExpandedFeedback] = useState(new Set())
 
   const ownerLabel = displayName || username || '실무진'
 
   const load = async () => {
     setLoading(true)
     try {
-      const [response, taskResponse] = await Promise.all([
+      const [response, taskResponse, usersResponse] = await Promise.all([
         getStaffWorkReports(filter === 'ALL' ? {} : { reportType: filter }),
         getExecutiveWorkTasks(),
+        getUsers().catch(() => ({ data: [] })),
       ])
       setReports(response.data || [])
       setWorkTasks(taskResponse.data || [])
+      setAllUsers(usersResponse.data || [])
     } finally {
       setLoading(false)
     }
@@ -152,6 +362,14 @@ export default function StaffWorkReportPage({ username, displayName, onNavigate 
     await deleteStaffWorkReport(report.id)
     if (editingId === report.id) resetForm()
     await load()
+  }
+
+  const toggleFeedback = (reportId) => {
+    setExpandedFeedback(prev => {
+      const next = new Set(prev)
+      if (next.has(reportId)) { next.delete(reportId) } else { next.add(reportId) }
+      return next
+    })
   }
 
   return (
@@ -328,11 +546,14 @@ export default function StaffWorkReportPage({ username, displayName, onNavigate 
             {reports.map((report) => (
               <article key={report.id} className="p-5 hover:bg-slate-50">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0">
+                  <div className="min-w-0 w-full">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-black text-slate-600">{reportTypeLabels[report.report_type] || report.report_type}</span>
                       <span className={`rounded-full border px-2.5 py-1 text-[11px] font-black ${statusBadge(report.status)}`}>{report.status === 'DRAFT' ? '임시저장' : '제출'}</span>
                       <span className="text-xs font-bold text-slate-400">{String(report.report_date).slice(0, 10)}</span>
+                      {report.display_name && report.display_name !== (displayName || username) && (
+                        <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-black text-violet-700">{report.display_name}</span>
+                      )}
                     </div>
                     <h3 className="mt-3 text-base font-black text-slate-950">{report.title}</h3>
                     {report.linked_project_name && (
@@ -374,6 +595,23 @@ export default function StaffWorkReportPage({ username, displayName, onNavigate 
                         <p className="mt-2 text-sm font-bold text-slate-400">내용 없음</p>
                       )}
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => toggleFeedback(report.id)}
+                      className="mt-3 inline-flex items-center gap-1 text-xs font-black text-slate-500 hover:text-sky-600"
+                    >
+                      <span className="material-symbols-outlined text-sm">{expandedFeedback.has(report.id) ? 'expand_less' : 'chat_bubble_outline'}</span>
+                      {expandedFeedback.has(report.id) ? '피드백 접기' : '피드백 보기 / 작성'}
+                    </button>
+
+                    {expandedFeedback.has(report.id) && (
+                      <FeedbackSection
+                        reportId={report.id}
+                        currentUser={username}
+                        allUsers={allUsers}
+                      />
+                    )}
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <button type="button" onClick={() => editReport(report)} className="h-9 rounded border border-slate-300 px-3 text-xs font-black text-slate-600 hover:bg-white">
