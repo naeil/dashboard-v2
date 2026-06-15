@@ -305,7 +305,7 @@ public class ExecutiveDashboardService {
                     consulting_sales.expected_operating_profit AS consulting_expected_month_operating_profit,
                     channel_sales.ad_cost AS channel_month_ad_cost
                 FROM channel_sales, consulting_sales
-                """, companyId, companyId);
+                """, companyId, startDate, startDate, endDate, endDate, companyId);
 
         Map<String, Object> advertising = jdbcTemplate.queryForMap("""
                 WITH ad_performance AS (
@@ -1960,7 +1960,7 @@ public class ExecutiveDashboardService {
                     COALESCE(SUM(order_count), 0) AS total_orders,
                     COALESCE(SUM(total_purchase_amount), 0) AS total_purchase_amount
                 FROM scored
-                """, companyId, companyId);
+                """, companyId, startDate, startDate, endDate, endDate, companyId);
 
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 WITH valid_orders AS (
