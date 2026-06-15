@@ -2060,7 +2060,7 @@ public class ExecutiveDashboardService {
                     END,
                     total_purchase_amount DESC,
                     last_order_at DESC
-                """, companyId, companyId, startDate, startDate, endDate, endDate, companyId, companyId);
+                """, companyId, companyId);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("summary", summary);
