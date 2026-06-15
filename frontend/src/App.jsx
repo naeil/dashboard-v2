@@ -183,7 +183,13 @@ export default function App() {
   const isMobile = useIsMobile()
 
   useEffect(() => {
-    getSession()
+  const token = getAuthToken()
+            if (!token) {
+                        setSession(null)
+                                setAuthLoading(false)
+                                        return
+            }
+        getSession()
       .then((data) => {
         if (data?.authenticated) {
           setSession(data)
@@ -193,13 +199,12 @@ export default function App() {
       })
       .catch(() => setSession(null))
       .finally(() => setAuthLoading(false))
+    const handleUnauthorized = () => { setSession(null); setAuthLoading(false) }
+    window.addEventListener('auth:unauthorized', handleUnauthorized)
+    return () => window.removeEventListener('auth:unauthorized', handleUnauthorized)
   }, [])
 
-  useEffect(() => {
-    const token = getAuthToken()
-    if (!token && !authLoading) setSession(null)
-  }, [authLoading])
-
+  
   useEffect(() => {
     const openDatePicker = (event) => {
       const input = event.target?.closest?.('[data-date-trigger]')?.querySelector?.('input[type="date"]')
