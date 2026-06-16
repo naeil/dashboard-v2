@@ -55,7 +55,7 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<AuthSessionResponse> register(@RequestBody RegisterRequest request) {
-        AuthUser user = authService.registerWithInvite(request);
+                AuthUser user = authService.register(request);
         return ResponseEntity.ok(toSession(user, authService.createToken(user)));
     }
 
