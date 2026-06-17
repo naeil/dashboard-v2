@@ -97,7 +97,16 @@ export const defaultMenuSections = [
       { id: 'incentive-clients', icon: 'handshake', label: '거래처 성과', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'incentive-summary', icon: 'payments', label: '직원별 예상 인센티브', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
     ],
+  },  {
+    id: 'settings',
+    title: '설정',
+    group: 'staff',
+    departments: ['all'],
+    items: [
+      { id: 'channel-api-settings', icon: 'api', label: '채널 API 관리', roles: ['EXECUTIVE', 'MANAGER'] },
+    ],
   },
+
   {
     id: 'marketing',
     title: '마케팅',
