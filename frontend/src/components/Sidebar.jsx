@@ -88,6 +88,17 @@ export const defaultMenuSections = [
     ],
   },
   {
+    id: 'performance-incentive',
+    title: '성과 · 인센티브 관리',
+    group: 'staff',
+    departments: ['all'],
+    items: [
+      { id: 'incentive-online', icon: 'bar_chart', label: '온라인 성과', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'incentive-clients', icon: 'handshake', label: '거래처 성과', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'incentive-summary', icon: 'payments', label: '직원별 예상 인센티브', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+    ],
+  },
+  {
     id: 'marketing',
     title: '마케팅',
     group: 'staff',
