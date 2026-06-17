@@ -11,6 +11,8 @@ public interface OnlineChannelPerformanceRepository extends JpaRepository<Online
 
     List<OnlineChannelPerformance> findByPerformanceMonthOrderByChannelNameAsc(String performanceMonth);
 
+    List<OnlineChannelPerformance> findByPerformanceMonthAndChannelName(String performanceMonth, String channelName);
+
     @Query("SELECT COALESCE(SUM(o.operatingProfit), 0) FROM OnlineChannelPerformance o WHERE o.performanceMonth = :month AND o.incentiveEligible = true")
     Long sumOperatingProfitByMonth(@Param("month") String month);
 

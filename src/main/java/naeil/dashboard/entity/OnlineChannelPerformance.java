@@ -61,6 +61,10 @@ public class OnlineChannelPerformance {
     @Builder.Default
     private Boolean incentiveEligible = true;
 
+    @Column(name = "sync_source", length = 50)
+    @Builder.Default
+    private String syncSource = "MANUAL";
+
     @Column(name = "memo", columnDefinition = "TEXT")
     private String memo;
 
