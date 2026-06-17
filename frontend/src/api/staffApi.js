@@ -50,5 +50,8 @@ export const createWorkReportFeedback = (reportId, payload) =>
 export const updateWorkReportFeedback = (id, payload) =>
   api.put(`/staff/work-reports/feedback/${id}`, payload)
 
+export const patchWorkReportFeedbackStatus = (id, status) =>
+  api.patch(`/staff/work-reports/feedback/${id}/status`, { status })
+
 export const deleteWorkReportFeedback = (id) =>
   api.delete(`/staff/work-reports/feedback/${id}`)

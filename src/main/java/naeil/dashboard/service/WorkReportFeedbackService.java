@@ -27,11 +27,20 @@ public class WorkReportFeedbackService {
     public Map<String, Object> createFeedback(Long reportId, AuthUser user, Map<String, Object> payload) {
         String content = blankToNull(payload.get("content"));
         if (content == null) throw new CustomException(400, "피드백 내용을 입력하세요.");
+        String feedbackType = blankToNull(payload.get("feedbackType"));
+        if (feedbackType == null) feedbackType = "CHECK_REQUEST";
+        String assigneeName = blankToNull(payload.get("assigneeName"));
+        String dueDateStr = blankToNull(payload.get("dueDate"));
+        String status = blankToNull(payload.get("status"));
+        if (status == null) status = "PENDING";
         String mentionedUsernames = extractMentions(content);
         jdbcTemplate.update(
-            "INSERT INTO work_report_feedback (report_id, company_id, author_username, author_display_name, content, mentioned_usernames) " +
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            reportId, 1L, user.username(), user.displayName(), content, mentionedUsernames);
+            "INSERT INTO work_report_feedback (report_id, company_id, author_username, author_display_name, content, mentioned_usernames, feedback_type, assignee_name, due_date, status) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            reportId, 1L, user.username(), user.displayName(), content, mentionedUsernames,
+            feedbackType, assigneeName,
+            (dueDateStr != null ? java.sql.Date.valueOf(dueDateStr) : null),
+            status);
         Long id = jdbcTemplate.queryForObject(
             "SELECT id FROM work_report_feedback WHERE report_id = ? AND author_username = ? ORDER BY id DESC LIMIT 1",
             Long.class, reportId, user.username());
@@ -42,10 +51,30 @@ public class WorkReportFeedbackService {
         ensureAccess(id, user);
         String content = blankToNull(payload.get("content"));
         if (content == null) throw new CustomException(400, "피드백 내용을 입력하세요.");
+        String feedbackType = blankToNull(payload.get("feedbackType"));
+        if (feedbackType == null) feedbackType = "CHECK_REQUEST";
+        String assigneeName = blankToNull(payload.get("assigneeName"));
+        String dueDateStr = blankToNull(payload.get("dueDate"));
+        String status = blankToNull(payload.get("status"));
+        if (status == null) status = "PENDING";
         String mentionedUsernames = extractMentions(content);
         jdbcTemplate.update(
-            "UPDATE work_report_feedback SET content = ?, mentioned_usernames = ?, updated_at = now() WHERE id = ?",
-            content, mentionedUsernames, id);
+            "UPDATE work_report_feedback SET content = ?, mentioned_usernames = ?, feedback_type = ?, assignee_name = ?, due_date = ?, status = ?, updated_at = now() WHERE id = ?",
+            content, mentionedUsernames, feedbackType, assigneeName,
+            (dueDateStr != null ? java.sql.Date.valueOf(dueDateStr) : null),
+            status, id);
+        return getFeedback(id);
+    }
+
+    public Map<String, Object> updateFeedbackStatus(Long id, AuthUser user, String status) {
+        if (status == null || status.isBlank()) throw new CustomException(400, "상태값을 입력하세요.");
+        String normalizedStatus = status.trim().toUpperCase();
+        if (!normalizedStatus.equals("PENDING") && !normalizedStatus.equals("IN_PROGRESS") && !normalizedStatus.equals("DONE")) {
+            throw new CustomException(400, "유효하지 않은 상태값입니다. PENDING, IN_PROGRESS, DONE 중 하나여야 합니다.");
+        }
+        jdbcTemplate.update(
+            "UPDATE work_report_feedback SET status = ?, updated_at = now() WHERE id = ?",
+            normalizedStatus, id);
         return getFeedback(id);
     }
 
@@ -82,4 +111,4 @@ public class WorkReportFeedbackService {
         String text = value.toString().trim();
         return text.isEmpty() ? null : text;
     }
-}
+                 }

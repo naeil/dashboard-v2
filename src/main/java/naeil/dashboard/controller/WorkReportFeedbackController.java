@@ -10,6 +10,7 @@ import naeil.dashboard.service.WorkReportFeedbackService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -18,53 +19,63 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-    @RequestMapping("/api/staff/work-reports")
-    @RequiredArgsConstructor
-    public class WorkReportFeedbackController {
+@RequestMapping("/api/staff/work-reports")
+@RequiredArgsConstructor
+public class WorkReportFeedbackController {
 
     private final WorkReportFeedbackService workReportFeedbackService;
-            private final AuthService authService;
+    private final AuthService authService;
 
     @GetMapping("/{reportId}/feedback")
-            public ResponseEntity<List<Map<String, Object>>> listFeedbacks(
-                            @PathVariable Long reportId,
-                            HttpServletRequest request) {
-                        return ResponseEntity.ok(workReportFeedbackService.listFeedbacks(reportId));
-            }
+    public ResponseEntity<List<Map<String, Object>>> listFeedbacks(
+            @PathVariable Long reportId,
+            HttpServletRequest request) {
+        return ResponseEntity.ok(workReportFeedbackService.listFeedbacks(reportId));
+    }
 
     @PostMapping("/{reportId}/feedback")
-            public ResponseEntity<Map<String, Object>> createFeedback(
-                            @PathVariable Long reportId,
-                            @RequestBody Map<String, Object> payload,
-                            HttpServletRequest request) {
-                        AuthUser user = requireUser(request);
-                        return ResponseEntity.status(201).body(
-                                            workReportFeedbackService.createFeedback(reportId, user, payload));
-            }
+    public ResponseEntity<Map<String, Object>> createFeedback(
+            @PathVariable Long reportId,
+            @RequestBody Map<String, Object> payload,
+            HttpServletRequest request) {
+        AuthUser user = requireUser(request);
+        return ResponseEntity.status(201).body(
+            workReportFeedbackService.createFeedback(reportId, user, payload));
+    }
 
     @PutMapping("/feedback/{id}")
-            public ResponseEntity<Map<String, Object>> updateFeedback(
-                            @PathVariable Long id,
-                            @RequestBody Map<String, Object> payload,
-                            HttpServletRequest request) {
-                        AuthUser user = requireUser(request);
-                        return ResponseEntity.ok(workReportFeedbackService.updateFeedback(id, user, payload));
-            }
+    public ResponseEntity<Map<String, Object>> updateFeedback(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> payload,
+            HttpServletRequest request) {
+        AuthUser user = requireUser(request);
+        return ResponseEntity.ok(workReportFeedbackService.updateFeedback(id, user, payload));
+    }
+
+    @PatchMapping("/feedback/{id}/status")
+    public ResponseEntity<Map<String, Object>> updateFeedbackStatus(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> payload,
+            HttpServletRequest request) {
+        AuthUser user = requireUser(request);
+        String status = payload.get("status") != null ? payload.get("status").toString() : null;
+        return ResponseEntity.ok(workReportFeedbackService.updateFeedbackStatus(id, user, status));
+    }
 
     @DeleteMapping("/feedback/{id}")
-            public ResponseEntity<Map<String, String>> deleteFeedback(
-                            @PathVariable Long id,
-                            HttpServletRequest request) {
-                        AuthUser user = requireUser(request);
-                        workReportFeedbackService.deleteFeedback(id, user);
-                        return ResponseEntity.ok(Map.of("message", "삭제되었습니다."));
-            }
+    public ResponseEntity<Map<String, String>> deleteFeedback(
+            @PathVariable Long id,
+            HttpServletRequest request) {
+        AuthUser user = requireUser(request);
+        workReportFeedbackService.deleteFeedback(id, user);
+        return ResponseEntity.ok(Map.of("message", "삭제되었습니다."));
+    }
 
     private AuthUser requireUser(HttpServletRequest request) {
-                AuthUser user = (AuthUser) request.getAttribute(AuthService.AUTHENTICATED_USER_ATTR);
-                if (user == null) {
-                                throw new naeil.dashboard.common.exception.CustomException(401, "로그인이 필요합니다.");
-                }
-                return user;
+        AuthUser user = (AuthUser) request.getAttribute(AuthService.AUTHENTICATED_USER_ATTR);
+        if (user == null) {
+            throw new naeil.dashboard.common.exception.CustomException(401, "로그인이 필요합니다.");
+        }
+        return user;
     }
-    }
+}
