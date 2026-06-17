@@ -43,6 +43,14 @@ const EXTERNAL_ID_BY_TYPE = {
   DAOU_MAIL: 'daou-mail',
 }
 
+const EXTERNAL_REQUIRED_SECRET_FIELDS = {
+  'naver-search': ['apiKey', 'password'],
+  'naver-blog': ['apiKey', 'password', 'email', 'extraValue'],
+  'naver-ad': ['apiKey', 'email', 'password'],
+  'meta-ad': ['apiKey', 'email'],
+  'daou-mail': ['apiKey', 'email', 'password'],
+}
+
 const createExternalState = (value) => Object.fromEntries(
   EXTERNAL_INTEGRATION_IDS.map((id) => [id, value]),
 )
@@ -64,6 +72,10 @@ const toSecretState = (source) => ({
 const createExternalSecretState = () => Object.fromEntries(
   EXTERNAL_INTEGRATION_IDS.map((id) => [id, createSecretState()]),
 )
+
+const isExternalSecretComplete = (integrationId, savedSecrets, typedValues = {}) => (
+  EXTERNAL_REQUIRED_SECRET_FIELDS[integrationId] || []
+).every((field) => hasSavedSecret({ ...savedSecrets, ...typedValues }, field))
 
 const HISTORY_STATUS_LABELS = {
   RUNNING: '실행 중',
@@ -260,6 +272,8 @@ export default function Settings({ isExpanded }) {
       const daouMail = settings.find((item) => item.integrationType === 'DAOU_MAIL')
 
       setExternalSavedSecrets(createExternalSecretState())
+      setExternalValidationStatus(createExternalState('idle'))
+      setExternalValidationMessage(createExternalState(''))
       setPlayautoSavedSecrets(createSecretState())
       setOpenMarketSavedSecrets(createSecretState())
 
@@ -292,13 +306,19 @@ export default function Settings({ isExpanded }) {
       }
 
       if (naverSearch) {
-        setExternalSavedSecrets((current) => ({ ...current, [EXTERNAL_ID_BY_TYPE.NAVER_SEARCH]: toSecretState(naverSearch) }))
+        const secrets = toSecretState(naverSearch)
+        const integrationId = EXTERNAL_ID_BY_TYPE.NAVER_SEARCH
+        setExternalSavedSecrets((current) => ({ ...current, [integrationId]: secrets }))
+        setExternalValidationStatus((current) => ({ ...current, [integrationId]: isExternalSecretComplete(integrationId, secrets) ? 'success' : 'idle' }))
         setNaverSearchClientId('')
         setNaverSearchClientSecret('')
       }
 
       if (naverBlog) {
-        setExternalSavedSecrets((current) => ({ ...current, [EXTERNAL_ID_BY_TYPE.NAVER_BLOG]: toSecretState(naverBlog) }))
+        const secrets = toSecretState(naverBlog)
+        const integrationId = EXTERNAL_ID_BY_TYPE.NAVER_BLOG
+        setExternalSavedSecrets((current) => ({ ...current, [integrationId]: secrets }))
+        setExternalValidationStatus((current) => ({ ...current, [integrationId]: isExternalSecretComplete(integrationId, secrets) ? 'success' : 'idle' }))
         setNaverBlogClientId('')
         setNaverBlogClientSecret('')
         setNaverBlogAccessToken('')
@@ -306,20 +326,29 @@ export default function Settings({ isExpanded }) {
       }
 
       if (naverAd) {
-        setExternalSavedSecrets((current) => ({ ...current, [EXTERNAL_ID_BY_TYPE.NAVER_AD]: toSecretState(naverAd) }))
+        const secrets = toSecretState(naverAd)
+        const integrationId = EXTERNAL_ID_BY_TYPE.NAVER_AD
+        setExternalSavedSecrets((current) => ({ ...current, [integrationId]: secrets }))
+        setExternalValidationStatus((current) => ({ ...current, [integrationId]: isExternalSecretComplete(integrationId, secrets) ? 'success' : 'idle' }))
         setNaverAdCustomerId('')
         setNaverAdAccessLicense('')
         setNaverAdSecretKey('')
       }
 
       if (metaAds) {
-        setExternalSavedSecrets((current) => ({ ...current, [EXTERNAL_ID_BY_TYPE.META_ADS]: toSecretState(metaAds) }))
+        const secrets = toSecretState(metaAds)
+        const integrationId = EXTERNAL_ID_BY_TYPE.META_ADS
+        setExternalSavedSecrets((current) => ({ ...current, [integrationId]: secrets }))
+        setExternalValidationStatus((current) => ({ ...current, [integrationId]: isExternalSecretComplete(integrationId, secrets) ? 'success' : 'idle' }))
         setMetaAccessToken('')
         setMetaAdAccountId('')
       }
 
       if (daouMail) {
-        setExternalSavedSecrets((current) => ({ ...current, [EXTERNAL_ID_BY_TYPE.DAOU_MAIL]: toSecretState(daouMail) }))
+        const secrets = toSecretState(daouMail)
+        const integrationId = EXTERNAL_ID_BY_TYPE.DAOU_MAIL
+        setExternalSavedSecrets((current) => ({ ...current, [integrationId]: secrets }))
+        setExternalValidationStatus((current) => ({ ...current, [integrationId]: isExternalSecretComplete(integrationId, secrets) ? 'success' : 'idle' }))
         setDaouMailHost('')
         setDaouMailUsername('')
         setDaouMailPassword('')
@@ -416,7 +445,7 @@ export default function Settings({ isExpanded }) {
     const externalId = EXTERNAL_ID_BY_TYPE[responseBody.integrationType]
     if (externalId) {
       setExternalSavedSecrets((current) => ({ ...current, [externalId]: secretState }))
-      setExternalValidationStatus((current) => ({ ...current, [externalId]: 'idle' }))
+      setExternalValidationStatus((current) => ({ ...current, [externalId]: isExternalSecretComplete(externalId, secretState) ? 'success' : 'idle' }))
       setExternalValidationMessage((current) => ({ ...current, [externalId]: '' }))
     }
 
@@ -895,10 +924,10 @@ export default function Settings({ isExpanded }) {
       name: '검색 API',
       description: '검색 결과와 키워드 데이터를 조회합니다.',
       icon: 'search',
-      configured: Boolean(
-        hasSavedSecret({ ...externalSavedSecrets['naver-search'], apiKey: naverSearchClientId }, 'apiKey')
-        && hasSavedSecret({ ...externalSavedSecrets['naver-search'], password: naverSearchClientSecret }, 'password')
-      ),
+      configured: isExternalSecretComplete('naver-search', externalSavedSecrets['naver-search'], {
+        apiKey: naverSearchClientId,
+        password: naverSearchClientSecret,
+      }),
     },
     {
       id: 'naver-blog',
@@ -907,12 +936,12 @@ export default function Settings({ isExpanded }) {
       name: '블로그 API',
       description: 'NAVER 공식 글쓰기 API 지원이 종료되어 현재 인증 테스트와 자동 발행을 사용할 수 없습니다.',
       icon: 'article',
-      configured: Boolean(
-        hasSavedSecret({ ...externalSavedSecrets['naver-blog'], apiKey: naverBlogClientId }, 'apiKey')
-        && hasSavedSecret({ ...externalSavedSecrets['naver-blog'], password: naverBlogClientSecret }, 'password')
-        && hasSavedSecret({ ...externalSavedSecrets['naver-blog'], email: naverBlogAccessToken }, 'email')
-        && hasSavedSecret({ ...externalSavedSecrets['naver-blog'], extraValue: naverBlogId }, 'extraValue')
-      ),
+      configured: isExternalSecretComplete('naver-blog', externalSavedSecrets['naver-blog'], {
+        apiKey: naverBlogClientId,
+        password: naverBlogClientSecret,
+        email: naverBlogAccessToken,
+        extraValue: naverBlogId,
+      }),
     },
     {
       id: 'naver-ad',
@@ -921,11 +950,11 @@ export default function Settings({ isExpanded }) {
       name: '검색 광고 API',
       description: '네이버 광고 계정과 성과 데이터를 연결합니다.',
       icon: 'campaign',
-      configured: Boolean(
-        hasSavedSecret({ ...externalSavedSecrets['naver-ad'], apiKey: naverAdCustomerId }, 'apiKey')
-        && hasSavedSecret({ ...externalSavedSecrets['naver-ad'], email: naverAdAccessLicense }, 'email')
-        && hasSavedSecret({ ...externalSavedSecrets['naver-ad'], password: naverAdSecretKey }, 'password')
-      ),
+      configured: isExternalSecretComplete('naver-ad', externalSavedSecrets['naver-ad'], {
+        apiKey: naverAdCustomerId,
+        email: naverAdAccessLicense,
+        password: naverAdSecretKey,
+      }),
     },
     {
       id: 'meta-ad',
@@ -934,10 +963,10 @@ export default function Settings({ isExpanded }) {
       name: '광고 API',
       description: 'Meta 광고 계정과 캠페인 데이터를 연결합니다.',
       icon: 'ads_click',
-      configured: Boolean(
-        hasSavedSecret({ ...externalSavedSecrets['meta-ad'], apiKey: metaAccessToken }, 'apiKey')
-        && hasSavedSecret({ ...externalSavedSecrets['meta-ad'], email: metaAdAccountId }, 'email')
-      ),
+      configured: isExternalSecretComplete('meta-ad', externalSavedSecrets['meta-ad'], {
+        apiKey: metaAccessToken,
+        email: metaAdAccountId,
+      }),
     },
     {
       id: 'daou-mail',
@@ -946,11 +975,11 @@ export default function Settings({ isExpanded }) {
       name: '다우오피스 메일',
       description: '업무 메일을 수신하고 대시보드에 표시합니다.',
       icon: 'mail',
-      configured: Boolean(
-        hasSavedSecret({ ...externalSavedSecrets['daou-mail'], apiKey: daouMailHost }, 'apiKey')
-        && hasSavedSecret({ ...externalSavedSecrets['daou-mail'], email: daouMailUsername }, 'email')
-        && hasSavedSecret({ ...externalSavedSecrets['daou-mail'], password: daouMailPassword }, 'password')
-      ),
+      configured: isExternalSecretComplete('daou-mail', externalSavedSecrets['daou-mail'], {
+        apiKey: daouMailHost,
+        email: daouMailUsername,
+        password: daouMailPassword,
+      }),
     },
   ]
   const groupedExternalIntegrations = groupExternalIntegrations(externalIntegrations)
