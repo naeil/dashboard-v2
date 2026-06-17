@@ -12,6 +12,7 @@ import {
   patchIncentiveSummaryStatus,
   getIncentiveKpi,
 } from '../../api/incentiveApi'
+import { syncAllChannels, syncChannel } from '../../api/channelSyncApi'
 
 const CHANNELS = ['스마트스토어', '자사몰', '쿠팡', '카카오톡스토어', '11번가', '옥션', '지마켓', '기타']
 const EMPLOYEES = ['이재연', '정아름']
@@ -32,6 +33,12 @@ const CLIENT_STATUS_COLORS = {
   '첫발주': 'bg-orange-100 text-orange-700',
   '거래중': 'bg-green-100 text-green-700',
   '종료': 'bg-red-100 text-red-700',
+}
+const SYNC_SOURCE_BADGE = {
+  'MANUAL': { label: '수동', cls: 'bg-slate-100 text-slate-500' },
+  'SMARTSTORE': { label: '스마트스토어', cls: 'bg-green-100 text-green-700' },
+  'COUPANG': { label: '쿠팡', cls: 'bg-yellow-100 text-yellow-700' },
+  'IMWEB': { label: '자사몰', cls: 'bg-blue-100 text-blue-700' },
 }
 
 function fmt(n) {
@@ -79,6 +86,23 @@ function OnlinePerformanceTab({ month }) {
     logisticsCost: '', otherCost: '', incentiveEligible: true, memo: '',
   })
   const [saving, setSaving] = useState(false)
+  const [syncing, setSyncing] = useState(null)
+  const [syncResult, setSyncResult] = useState(null)
+
+  async function handleSync(channelType) {
+    setSyncing(channelType || 'ALL')
+    setSyncResult(null)
+    try {
+      const result = channelType ? await syncChannel(channelType, month) : await syncAllChannels(month)
+      setSyncResult(result)
+      load()
+    } catch (e) {
+      setSyncResult({ success: false, message: e.message })
+    } finally {
+      setSyncing(null)
+    }
+  }
+
 
   const load = useCallback(() => {
     setLoading(true)
@@ -162,6 +186,10 @@ function OnlinePerformanceTab({ month }) {
           <span className="font-bold text-slate-600">전체 영업이익: <span className="text-slate-900">{fmt(totalEligibleProfit)}</span></span>
           <span className="font-bold text-sky-600">온라인 인센티브 풀: <span className="text-sky-700">{fmt(pool)}</span></span>
         </div>
+        <button onClick={() => handleSync(null)} disabled={syncing !== null} className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-50">
+          <span className={`material-symbols-outlined text-sm${syncing === 'ALL' ? ' animate-spin' : ''}`}>{syncing === 'ALL' ? 'refresh' : 'sync'}</span>
+          {syncing === 'ALL' ? '동기화 중...' : '전체 동기화'}
+        </button>
         <button onClick={openCreate} className="flex items-center gap-1.5 rounded-lg bg-sky-500 px-4 py-2 text-sm font-bold text-white hover:bg-sky-600">
           <span className="material-symbols-outlined text-sm">add</span>등록
         </button>
@@ -228,7 +256,7 @@ function OnlinePerformanceTab({ month }) {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-xs font-bold text-slate-500">
             <tr>
-              {['채널', '담당자', '매출', '제조원가', '광고비', '수수료', '물류비', '기타', '영업이익', '대상', '예상 인센티브', '메모', ''].map(h => (
+              {['수집', '채널', '담당자', '매출', '제조원가', '광고비', '수수료', '물류비', '기타', '영업이익', '대상', '예상 인센티브', '메모', ''].map(h => (
                 <th key={h} className="px-3 py-3 text-left">{h}</th>
               ))}
             </tr>
@@ -240,6 +268,9 @@ function OnlinePerformanceTab({ month }) {
               <tr><td colSpan={13} className="py-10 text-center text-slate-400">등록된 데이터가 없습니다.</td></tr>
             ) : list.map(item => (
               <tr key={item.id} className="hover:bg-slate-50">
+                <td className="px-3 py-3">
+                  {(() => { const s = SYNC_SOURCE_BADGE[item.syncSource || 'MANUAL']; return s ? <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${s.cls}`}>{s.label}</span> : null })()}
+                </td>
                 <td className="px-3 py-3 font-bold">{item.channelName}</td>
                 <td className="px-3 py-3">{item.assigneeName || '-'}</td>
                 <td className="px-3 py-3 text-right">{fmtNum(item.salesAmount)}</td>
