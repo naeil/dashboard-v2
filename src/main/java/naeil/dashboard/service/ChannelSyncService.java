@@ -257,7 +257,7 @@ public class ChannelSyncService {
 
         // Step 1: Get access token from Imweb
         String tokenUrl = "https://api.imweb.me/v2/auth";
-        String tokenBody = "{"key":"" + apiKey + "","secret":"" + (cred.getCredentialKey2() != null ? cred.getCredentialKey2() : "") + ""}";
+        String tokenBody = "{\"key\":\"" + apiKey + "\",\"secret\":\"" + (cred.getCredentialKey2() != null ? cred.getCredentialKey2() : "") + "\"}";
 
         HttpRequest tokenRequest = HttpRequest.newBuilder()
                 .uri(URI.create(tokenUrl))
