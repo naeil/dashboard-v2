@@ -13,6 +13,7 @@ import ConsultingRevenuePage from './pages/executive/ConsultingRevenuePage'
 import CustomerDatabasePage from './pages/executive/CustomerDatabasePage'
 import CustomerIntelligencePage from './pages/executive/CustomerIntelligencePage'
 import SettlementSchedulePage from './pages/executive/SettlementSchedulePage'
+import IncentiveManagementPage from './pages/executive/IncentiveManagementPage'
 import DebtPage from './pages/executive/DebtPage'
 import EmployeeManagementPage from './pages/executive/EmployeeManagementPage'
 import EmployeePerformancePage from './pages/executive/EmployeePerformancePage'
@@ -102,6 +103,9 @@ const pages = {
   partners: PartnerManagementPage,
   'partner-payment': PartnerPaymentLedgerPage,
   'settlement-schedule': SettlementSchedulePage,
+  'incentive-online': IncentiveManagementPage,
+  'incentive-clients': IncentiveManagementPage,
+  'incentive-summary': IncentiveManagementPage,
   payroll: PayrollPage,
   'quotation': QuotationPage,
   'profit-management': ProfitManagementPage,
