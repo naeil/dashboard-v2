@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -37,14 +39,12 @@ public class IncentiveService {
         String targetMonth = resolveMonth(month);
         List<OnlineChannelPerformance> list = onlineRepo.findByPerformanceMonthOrderByChannelNameAsc(targetMonth);
 
-        // Calculate incentive pool for this month
         long totalProfit = list.stream()
                 .filter(o -> Boolean.TRUE.equals(o.getIncentiveEligible()))
                 .mapToLong(o -> o.getOperatingProfit() == null ? 0 : o.getOperatingProfit())
                 .sum();
         long pool = calculateOnlinePool(totalProfit);
 
-        // Calculate per-assignee share
         Map<String, Long> assigneeProfit = new HashMap<>();
         for (OnlineChannelPerformance o : list) {
             if (Boolean.TRUE.equals(o.getIncentiveEligible()) && o.getAssigneeName() != null) {
@@ -174,11 +174,10 @@ public class IncentiveService {
 
     // ==================== 직원별 예상 인센티브 요약 ====================
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<IncentiveDto.IncentiveSummaryResponse> getIncentiveSummary(String month) {
         String targetMonth = resolveMonth(month);
 
-        // Calculate online incentive per assignee
         List<OnlineChannelPerformance> onlineList = onlineRepo.findByPerformanceMonthOrderByChannelNameAsc(targetMonth);
         long totalOnlineProfit = onlineList.stream()
                 .filter(o -> Boolean.TRUE.equals(o.getIncentiveEligible()))
@@ -201,25 +200,21 @@ public class IncentiveService {
             }
         }
 
-        // Calculate client incentive per assignee
         List<ClientPerformance> clientList = clientRepo.findAllByOrderByCreatedAtDesc();
         Map<String, Long> clientIncentiveByAssignee = new HashMap<>();
         for (ClientPerformance c : clientList) {
             if (c.getAssigneeName() != null) {
-                long clientIncentive = calculateFirstOrderIncentive(c.getFirstOrderAmount())
-                        + calculateCumulativeSalesIncentive(c.getCumulativeSales());
+                long clientIncentive = calculateFirstOrderIncentive(c.getFirstOrderAmount() == null ? 0 : c.getFirstOrderAmount())
+                        + calculateCumulativeSalesIncentive(c.getCumulativeSales() == null ? 0 : c.getCumulativeSales());
                 clientIncentiveByAssignee.merge(c.getAssigneeName(), clientIncentive, Long::sum);
             }
         }
 
-        // Merge all assignees
-        List<String> allEmployees = new ArrayList<>();
-        allEmployees.addAll(onlineIncentiveByAssignee.keySet());
+        List<String> allEmployees = new ArrayList<>(onlineIncentiveByAssignee.keySet());
         for (String k : clientIncentiveByAssignee.keySet()) {
             if (!allEmployees.contains(k)) allEmployees.add(k);
         }
 
-        // Get or create summary records
         List<IncentiveDto.IncentiveSummaryResponse> result = new ArrayList<>();
         for (String emp : allEmployees) {
             long online = onlineIncentiveByAssignee.getOrDefault(emp, 0L);
@@ -262,19 +257,24 @@ public class IncentiveService {
 
     // ==================== KPI ====================
 
-    @Transactional(readOnly = true)
+    @Transactional
     public IncentiveDto.IncentiveKpiResponse getKpi(String month) {
         String targetMonth = resolveMonth(month);
+
+        YearMonth ym = YearMonth.parse(targetMonth);
+        LocalDateTime startDt = ym.atDay(1).atStartOfDay();
+        LocalDateTime endDt = ym.atEndOfMonth().plusDays(1).atStartOfDay();
+        LocalDate startDate = ym.atDay(1);
+        LocalDate endDate = ym.atEndOfMonth().plusDays(1);
 
         long monthlyOnlineSales = onlineRepo.sumSalesByMonth(targetMonth);
         long monthlyOnlineProfit = onlineRepo.sumOperatingProfitByMonth(targetMonth);
         long pool = calculateOnlinePool(monthlyOnlineProfit);
 
-        long newClientCount = clientRepo.countNewClientsByMonth(targetMonth);
-        long firstOrderClientCount = clientRepo.countFirstOrderClientsByMonth(targetMonth);
+        long newClientCount = clientRepo.countNewClientsByDateRange(startDt, endDt);
+        long firstOrderClientCount = clientRepo.countFirstOrderClientsByDateRange(startDate, endDate);
         long clientCumulativeSales = clientRepo.sumAllCumulativeSales();
 
-        // Total expected incentive = sum of all employee incentives for this month
         List<IncentiveDto.IncentiveSummaryResponse> summaries = getIncentiveSummary(targetMonth);
         long totalExpected = summaries.stream().mapToLong(s -> s.getTotalIncentive() == null ? 0 : s.getTotalIncentive()).sum();
 
