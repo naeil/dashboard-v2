@@ -1,3 +1,43 @@
+ALTER TABLE dashboard_user
+    ADD COLUMN IF NOT EXISTS account_scope VARCHAR(20) NOT NULL DEFAULT 'TENANT';
+
+ALTER TABLE dashboard_user
+    ADD COLUMN IF NOT EXISTS account_level VARCHAR(20) NOT NULL DEFAULT 'EMPLOYEE';
+
+UPDATE dashboard_user
+SET account_scope = CASE
+        WHEN username = 'admin' AND role = 'EXECUTIVE' THEN 'PLATFORM'
+        ELSE COALESCE(account_scope, 'TENANT')
+    END,
+    account_level = CASE
+        WHEN account_level IS NOT NULL THEN account_level
+        WHEN role = 'EXECUTIVE' THEN 'ADMIN'
+        WHEN role = 'MANAGER' THEN 'MANAGER'
+        ELSE 'EMPLOYEE'
+    END
+WHERE account_scope IS NULL
+   OR account_level IS NULL;
+
+ALTER TABLE dashboard_user
+    DROP CONSTRAINT IF EXISTS dashboard_user_username_key;
+
+ALTER TABLE dashboard_user
+    DROP CONSTRAINT IF EXISTS uq_dashboard_user_company_username;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'uq_dashboard_user_company_scope_username'
+    ) THEN
+        ALTER TABLE dashboard_user
+            ADD CONSTRAINT uq_dashboard_user_company_scope_username
+            UNIQUE (company_id, account_scope, username);
+    END IF;
+END;
+$$;
+
 UPDATE company
 SET company_code = generate_company_code()
 WHERE id <> 1
