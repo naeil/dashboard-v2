@@ -75,7 +75,11 @@ public class EncryptionUtil {
 
             return decryptLegacy(encryptedValue);
         } catch (Exception e) {
-            throw new RuntimeException("Error decrypting value", e);
+            if (encryptedValue.startsWith(CIPHERTEXT_PREFIX)) {
+                return "";
+            }
+
+            return encryptedValue;
         }
     }
 
