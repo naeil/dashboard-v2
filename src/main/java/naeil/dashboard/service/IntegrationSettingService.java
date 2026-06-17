@@ -133,16 +133,20 @@ public class IntegrationSettingService {
                 );
     }
 
+    public ExternalIntegrationValidationService.ValidationResult validateApiKeyWithResult(
+            Long companyId,
+            IntegrationSettingDto.ValidateRequest request
+    ) {
+        IntegrationSettingDto.ValidateRequest validationRequest = mergeValidateRequest(companyId, request);
+        return validateApiKeyWithResult(validationRequest);
+    }
+
     @Transactional
     public IntegrationSettingDto.Response saveSetting(Long companyId, IntegrationSettingDto.SaveRequest request) {
         IntegrationSetting setting = settingRepository.findByCompanyIdAndIntegrationType(companyId, request.getIntegrationType())
                 .orElse(new IntegrationSetting(companyId, request.getIntegrationType()));
 
-        setting.setApiKey(request.getApiKey());
-        setting.setApiEmail(request.getEmail());
-        setting.setApiPassword(request.getPassword());
-        setting.setApiExtra(request.getExtraValue());
-        setting.setAuthUpdatedAt(LocalDateTime.now());
+        applySecretPatch(setting, request.getApiKey(), request.getEmail(), request.getPassword(), request.getExtraValue());
         validateCollectionSettings(
                 request.getCollectionUnit(),
                 request.getCollectionValue(),
@@ -154,9 +158,9 @@ public class IntegrationSettingService {
 
         if (request.getIntegrationType() == IntegrationType.PLAYAUTO) {
             TokenIssueResult tokenIssueResult = issuePlayAutoToken(
-                    request.getApiKey(),
-                    request.getEmail(),
-                    request.getPassword()
+                    setting.getApiKey(),
+                    setting.getApiEmail(),
+                    setting.getApiPassword()
             );
             applyPlayAutoToken(setting, tokenIssueResult);
         }
@@ -167,31 +171,47 @@ public class IntegrationSettingService {
 
     @Transactional
     public IntegrationSettingDto.Response saveAuthSetting(Long companyId, IntegrationSettingDto.SaveAuthRequest request) {
+        IntegrationSetting setting = settingRepository.findByCompanyIdAndIntegrationType(companyId, request.getIntegrationType())
+                .orElse(new IntegrationSetting(companyId, request.getIntegrationType()));
+        IntegrationSettingDto.ValidateRequest validationRequest = mergeValidateRequest(companyId, request.toValidateRequest(), setting);
+
         if (isMarketplaceIntegration(request.getIntegrationType())
-                && !validateApiKey(request.toValidateRequest())) {
+                && !validateApiKey(validationRequest)) {
             throw new CustomException(400, "Marketplace integration validation failed");
         }
         if (isExternalIntegration(request.getIntegrationType())
-                && !externalValidationService.validate(request.toValidateRequest())) {
+                && !externalValidationService.validate(validationRequest)) {
             throw new CustomException(400, "External integration validation failed");
         }
-        IntegrationSetting setting = settingRepository.findByCompanyIdAndIntegrationType(companyId, request.getIntegrationType())
-                .orElse(new IntegrationSetting(companyId, request.getIntegrationType()));
 
-        setting.setApiKey(request.getApiKey());
-        setting.setApiEmail(request.getEmail());
-        setting.setApiPassword(request.getPassword());
-        setting.setApiExtra(request.getExtraValue());
-        setting.setAuthUpdatedAt(LocalDateTime.now());
+        applySecretPatch(setting, request.getApiKey(), request.getEmail(), request.getPassword(), request.getExtraValue());
 
         if (request.getIntegrationType() == IntegrationType.PLAYAUTO) {
             TokenIssueResult tokenIssueResult = issuePlayAutoToken(
-                    request.getApiKey(),
-                    request.getEmail(),
-                    request.getPassword()
+                    setting.getApiKey(),
+                    setting.getApiEmail(),
+                    setting.getApiPassword()
             );
             applyPlayAutoToken(setting, tokenIssueResult);
         }
+
+        IntegrationSetting saved = settingRepository.save(setting);
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public IntegrationSettingDto.Response clearAuthSetting(Long companyId, IntegrationType integrationType) {
+        IntegrationSetting setting = settingRepository.findByCompanyIdAndIntegrationType(companyId, integrationType)
+                .orElse(new IntegrationSetting(companyId, integrationType));
+
+        setting.setApiKey(null);
+        setting.setApiEmail(null);
+        setting.setApiPassword(null);
+        setting.setApiExtra(null);
+        setting.setAccessToken(null);
+        setting.setTokenExpiresAt(null);
+        setting.setIsActive(false);
+        setting.setAuthUpdatedAt(LocalDateTime.now());
 
         IntegrationSetting saved = settingRepository.save(setting);
         return toResponse(saved);
@@ -299,6 +319,72 @@ public class IntegrationSettingService {
         history.setFinishedAt(finishedAt);
         history.setMessage(message);
         collectionExecutionHistoryRepository.save(history);
+    }
+
+    private IntegrationSettingDto.ValidateRequest mergeValidateRequest(
+            Long companyId,
+            IntegrationSettingDto.ValidateRequest request
+    ) {
+        if (companyId == null || request == null || request.getIntegrationType() == null) {
+            return request;
+        }
+
+        IntegrationSetting setting = settingRepository
+                .findByCompanyIdAndIntegrationType(companyId, request.getIntegrationType())
+                .orElse(null);
+        return mergeValidateRequest(companyId, request, setting);
+    }
+
+    private IntegrationSettingDto.ValidateRequest mergeValidateRequest(
+            Long companyId,
+            IntegrationSettingDto.ValidateRequest request,
+            IntegrationSetting setting
+    ) {
+        if (request == null || request.getIntegrationType() == null || setting == null) {
+            return request;
+        }
+
+        IntegrationSettingDto.ValidateRequest merged = new IntegrationSettingDto.ValidateRequest();
+        merged.setIntegrationType(request.getIntegrationType());
+        merged.setApiKey(resolveSecretInput(request.getApiKey(), setting.getApiKey()));
+        merged.setEmail(resolveSecretInput(request.getEmail(), setting.getApiEmail()));
+        merged.setPassword(resolveSecretInput(request.getPassword(), setting.getApiPassword()));
+        merged.setExtraValue(resolveSecretInput(request.getExtraValue(), setting.getApiExtra()));
+        return merged;
+    }
+
+    private String resolveSecretInput(String inputValue, String savedValue) {
+        return isBlank(inputValue) ? savedValue : inputValue;
+    }
+
+    private void applySecretPatch(
+            IntegrationSetting setting,
+            String apiKey,
+            String email,
+            String password,
+            String extraValue
+    ) {
+        boolean updated = false;
+        if (!isBlank(apiKey)) {
+            setting.setApiKey(apiKey);
+            updated = true;
+        }
+        if (!isBlank(email)) {
+            setting.setApiEmail(email);
+            updated = true;
+        }
+        if (!isBlank(password)) {
+            setting.setApiPassword(password);
+            updated = true;
+        }
+        if (!isBlank(extraValue)) {
+            setting.setApiExtra(extraValue);
+            updated = true;
+        }
+        if (updated) {
+            setting.setIsActive(true);
+            setting.setAuthUpdatedAt(LocalDateTime.now());
+        }
     }
 
     private IntegrationSetting getPlayAutoSetting(Long companyId) {

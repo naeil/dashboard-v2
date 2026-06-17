@@ -10,7 +10,9 @@ import naeil.dashboard.service.PlayAutoCollectionService;
 import naeil.dashboard.service.ExternalIntegrationValidationService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -82,7 +84,7 @@ public class SettingsController {
 
     @PostMapping("/validate")
     public ResponseEntity<?> validateApiKey(@RequestBody IntegrationSettingDto.ValidateRequest request) {
-        ExternalIntegrationValidationService.ValidationResult result = settingService.validateApiKeyWithResult(request);
+        ExternalIntegrationValidationService.ValidationResult result = settingService.validateApiKeyWithResult(DEFAULT_COMPANY_ID, request);
         if (result.success()) {
             return ResponseEntity.ok(Map.of("message", result.message()));
         }
@@ -99,6 +101,11 @@ public class SettingsController {
     @PostMapping("/auth")
     public ResponseEntity<IntegrationSettingDto.Response> saveAuthSetting(@RequestBody IntegrationSettingDto.SaveAuthRequest request) {
         return ResponseEntity.ok(settingService.saveAuthSetting(DEFAULT_COMPANY_ID, request));
+    }
+
+    @DeleteMapping("/{integrationType}/auth")
+    public ResponseEntity<IntegrationSettingDto.Response> clearAuthSetting(@PathVariable IntegrationType integrationType) {
+        return ResponseEntity.ok(settingService.clearAuthSetting(DEFAULT_COMPANY_ID, integrationType));
     }
 
     @PostMapping("/collection")

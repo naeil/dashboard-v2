@@ -113,6 +113,10 @@ public class IntegrationSettingDto {
         private String email;
         private String password;
         private String extraValue;
+        private Boolean hasApiKey;
+        private Boolean hasEmail;
+        private Boolean hasPassword;
+        private Boolean hasExtraValue;
         private Boolean isActive;
         private CollectionUnit collectionUnit;
         private Integer collectionValue;
@@ -144,10 +148,14 @@ public class IntegrationSettingDto {
                 LocalDateTime collectionUpdatedAt
         ) {
             this.integrationType = type;
-            this.apiKey = apiKey == null ? "" : apiKey;
-            this.email = email == null ? "" : email;
-            this.password = password == null ? "" : password;
-            this.extraValue = extraValue == null ? "" : extraValue;
+            this.hasApiKey = hasText(apiKey);
+            this.hasEmail = hasText(email);
+            this.hasPassword = hasText(password);
+            this.hasExtraValue = hasText(extraValue);
+            this.apiKey = "";
+            this.email = "";
+            this.password = "";
+            this.extraValue = "";
             this.isActive = isActive;
             this.collectionUnit = collectionUnit;
             this.collectionValue = collectionValue;
@@ -171,6 +179,14 @@ public class IntegrationSettingDto {
         public void setPassword(String password) { this.password = password; }
         public String getExtraValue() { return extraValue; }
         public void setExtraValue(String extraValue) { this.extraValue = extraValue; }
+        public Boolean getHasApiKey() { return hasApiKey; }
+        public void setHasApiKey(Boolean hasApiKey) { this.hasApiKey = hasApiKey; }
+        public Boolean getHasEmail() { return hasEmail; }
+        public void setHasEmail(Boolean hasEmail) { this.hasEmail = hasEmail; }
+        public Boolean getHasPassword() { return hasPassword; }
+        public void setHasPassword(Boolean hasPassword) { this.hasPassword = hasPassword; }
+        public Boolean getHasExtraValue() { return hasExtraValue; }
+        public void setHasExtraValue(Boolean hasExtraValue) { this.hasExtraValue = hasExtraValue; }
         public Boolean getIsActive() { return isActive; }
         public void setIsActive(Boolean isActive) { this.isActive = isActive; }
         public CollectionUnit getCollectionUnit() { return collectionUnit; }
@@ -193,5 +209,9 @@ public class IntegrationSettingDto {
         public void setAuthUpdatedAt(LocalDateTime authUpdatedAt) { this.authUpdatedAt = authUpdatedAt; }
         public LocalDateTime getCollectionUpdatedAt() { return collectionUpdatedAt; }
         public void setCollectionUpdatedAt(LocalDateTime collectionUpdatedAt) { this.collectionUpdatedAt = collectionUpdatedAt; }
+
+        private static boolean hasText(String value) {
+            return value != null && !value.trim().isEmpty();
+        }
     }
 }
