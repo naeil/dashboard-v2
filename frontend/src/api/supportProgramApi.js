@@ -1,6 +1,6 @@
 import { authApi as api } from './authApi'
 
-const BASE = '/api/support-programs'
+const BASE = '/support-programs'
 const companyId = 1
 
 export const getSupportProgramList = () =>
