@@ -13,8 +13,9 @@ import java.util.List;
 /**
  * 프로모션 내역 DTO
    * - 서식 저장(submit) 시 promotion_history 테이블에 연동된 데이터
-              * - 채널별(online/offline/export) 목표 매출, 실시간 매출, 실시간 영업이익 포함
- */
+              * - 채널별 목표 매출, 실시간 매출, 실시간 영업이익 포함
+   * - createdByName: dashboard_user.display_name JOIN으로 등록자 실명 반환
+   */
 public class PromotionHistoryDTO {
 
     /** 실적 업데이트 요청 (실시간 매출/수량 갱신) */
@@ -23,8 +24,8 @@ public class PromotionHistoryDTO {
       @NoArgsConstructor
       @AllArgsConstructor
       public static class ActualUpdateRequest {
-                private Long       id;
-                private Integer    actualQty;
+                private Long id;
+                private Integer actualQty;
                 private BigDecimal actualRevenue;
                 private BigDecimal actualCogs;
                 private BigDecimal actualLogistics;
@@ -39,24 +40,28 @@ public class PromotionHistoryDTO {
       @NoArgsConstructor
       @AllArgsConstructor
       public static class Response {
-                private Long       id;
-                private Long       companyId;
-                private Long       formId;
-                private String     createdBy;
+                private Long id;
+                private Long companyId;
+                private Long formId;
+                private String createdBy;       // 등록자 username
+          private String createdByName;   // 등록자 실명 (dashboard_user.display_name)
 
-          /** online | offline | export */
-          private String     channel;
-                private String     promotionType;
-                private String     productName;
-                private String     skuCode;
+          /** 프로모션명 (promotion_margin_form.form_name) */
+          private String promoName;
+
+          /** 채널 (스마트스토어, 쿠팡 등 세분화 채널 또는 online/offline/export) */
+          private String channel;
+                private String promotionType;
+                private String productName;
+                private String skuCode;
 
           // ── 목표 ──────────────────────────────
           private BigDecimal targetRevenue;
-                private Integer    targetQty;
+                private Integer targetQty;
                 private BigDecimal targetOperatingProfit;
 
           // ── 실적 (실시간) ──────────────────────
-          private Integer    actualQty;
+          private Integer actualQty;
                 private BigDecimal actualRevenue;
                 private BigDecimal actualCogs;
                 private BigDecimal actualLogistics;
@@ -71,16 +76,16 @@ public class PromotionHistoryDTO {
           private BigDecimal revenueAchievementRate;
 
           @JsonFormat(pattern = "yyyy-MM-dd")
-                private LocalDate  promoStartDate;
+                private LocalDate promoStartDate;
                 @JsonFormat(pattern = "yyyy-MM-dd")
-                private LocalDate  promoEndDate;
+                private LocalDate promoEndDate;
 
           @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX")
                 private OffsetDateTime submittedAt;
                 @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX")
                 private OffsetDateTime lastSyncedAt;
 
-          private String     memo;
+          private String memo;
 
           @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ssXXX")
                 private OffsetDateTime createdAt;
@@ -94,9 +99,8 @@ public class PromotionHistoryDTO {
       @NoArgsConstructor
       @AllArgsConstructor
       public static class ChannelSummary {
-                /** online | offline | export */
-          private String     channel;
-                private int        promotionCount;
+                private String channel;
+                private int promotionCount;
 
           private BigDecimal totalTargetRevenue;
                 private BigDecimal totalActualRevenue;
