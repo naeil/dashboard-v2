@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createStaffWorkReport, deleteStaffWorkReport, getStaffWorkReports, updateStaffWorkReport, getWorkReportFeedback, createWorkReportFeedback, updateWorkReportFeedback, deleteWorkReportFeedback } from '../../api/staffApi'
+import { createStaffWorkReport, deleteStaffWorkReport, getStaffWorkReports, updateStaffWorkReport, getWorkReportFeedback, createWorkReportFeedback, updateWorkReportFeedback, deleteWorkReportFeedback, patchWorkReportFeedbackStatus } from '../../api/staffApi'
 import { getExecutiveWorkTasks } from '../../api/executiveApi'
 import { getUsers } from '../../api/authApi'
 
@@ -32,6 +32,45 @@ const reportTypeLabels = {
   WEEKLY: '주간 업무',
 }
 
+const FEEDBACK_TYPES = [
+  { value: 'CHECK_REQUEST', label: '확인 요청', color: 'bg-blue-100 text-blue-700 border-blue-200' },
+  { value: 'REVISION_REQUEST', label: '수정 요청', color: 'bg-orange-100 text-orange-700 border-orange-200' },
+  { value: 'DECISION', label: '의사결정', color: 'bg-purple-100 text-purple-700 border-purple-200' },
+  { value: 'PRAISE', label: '칭찬', color: 'bg-green-100 text-green-700 border-green-200' },
+  { value: 'WARNING', label: '주의', color: 'bg-red-100 text-red-700 border-red-200' },
+]
+
+const FEEDBACK_STATUSES = [
+  { value: 'PENDING', label: '대기', color: 'bg-gray-100 text-gray-600 border-gray-200' },
+  { value: 'IN_PROGRESS', label: '진행중', color: 'bg-blue-100 text-blue-700 border-blue-200' },
+  { value: 'DONE', label: '완료', color: 'bg-green-100 text-green-700 border-green-200' },
+]
+
+const FEEDBACK_TYPE_PLACEHOLDERS = {
+  CHECK_REQUEST: '단백깡 포케스트 근거가 부족합니다.\n채널별 예상 판매수량, 광고비 산출 근거, 월별 목표 판매량을 정리 후 공유 바랍니다.',
+  REVISION_REQUEST: '현재 포케스트는 광고비와 영업이익률이 12개월 동일하게 작성되어 있습니다.\n실제 사업 흐름에 맞춰 월별 광고 집행 계획, 채널 확장 일정, 재구매 반영 기준으로 재작성 바랍니다.',
+  DECISION: '단백깡 유통 우선순위는 폐쇄몰, 온라인, 오프라인 순으로 진행합니다.\n트레이더스는 브랜딩 목적 채널로 판단합니다.',
+  PRAISE: '판교 프로모션 진행은 좋았습니다.\n다음부터는 시식 인원, QR 참여율, 구매 전환율까지 함께 기록 바랍니다.',
+  WARNING: '"되어 있을 것 같습니다"와 같은 추정 보고는 지양 바랍니다.\n확인 후 근거자료와 함께 보고 부탁드립니다.',
+}
+
+function getFeedbackTypeInfo(value) {
+  return FEEDBACK_TYPES.find(t => t.value === value) || FEEDBACK_TYPES[0]
+}
+
+function getFeedbackStatusInfo(value) {
+  return FEEDBACK_STATUSES.find(s => s.value === value) || FEEDBACK_STATUSES[0]
+}
+
+function isOverdue(fb) {
+  if (!fb.due_date) return false
+  if (fb.status === 'DONE') return false
+  const due = new Date(fb.due_date)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return due < today
+}
+
 function statusBadge(status) {
   return status === 'DRAFT'
     ? 'border-amber-200 bg-amber-50 text-amber-700'
@@ -47,22 +86,40 @@ function formatTime(isoString) {
   }
 }
 
+function formatDate(dateStr) {
+  if (!dateStr) return ''
+  try {
+    return new Date(dateStr).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })
+  } catch {
+    return dateStr
+  }
+   }
+
 function FeedbackSection({ reportId, currentUser, allUsers }) {
   const [feedbacks, setFeedbacks] = useState([])
   const [loading, setLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const [feedbackType, setFeedbackType] = useState('CHECK_REQUEST')
+  const [assigneeName, setAssigneeName] = useState('')
+  const [dueDate, setDueDate] = useState('')
+  const [feedbackStatus, setFeedbackStatus] = useState('PENDING')
   const [inputText, setInputText] = useState('')
   const [editingFeedbackId, setEditingFeedbackId] = useState(null)
-  const [editingText, setEditingText] = useState('')
+  const [editingData, setEditingData] = useState({})
   const [mentionQuery, setMentionQuery] = useState(null)
   const [mentionIndex, setMentionIndex] = useState(0)
   const [cursorPos, setCursorPos] = useState(0)
   const textareaRef = useRef(null)
 
   const loadFeedbacks = useCallback(async () => {
+    setLoading(true)
     try {
       const res = await getWorkReportFeedback(reportId)
       setFeedbacks(res.data || [])
-    } catch {}
+    } catch {} finally {
+      setLoading(false)
+    }
   }, [reportId])
 
   useEffect(() => { loadFeedbacks() }, [loadFeedbacks])
@@ -82,7 +139,7 @@ function FeedbackSection({ reportId, currentUser, allUsers }) {
     setInputText(val)
     setCursorPos(pos)
     const textBefore = val.slice(0, pos)
-    const atMatch = textBefore.match(/@([\w가-힣]*)$/)
+    const atMatch = textBefore.match(/@([w가-힣]*)$/)
     if (atMatch) {
       setMentionQuery(atMatch[1])
       setMentionIndex(0)
@@ -93,7 +150,7 @@ function FeedbackSection({ reportId, currentUser, allUsers }) {
 
   const insertMention = (user) => {
     const textBefore = inputText.slice(0, cursorPos)
-    const atMatch = textBefore.match(/@([\w가-힣]*)$/)
+    const atMatch = textBefore.match(/@([w가-힣]*)$/)
     if (!atMatch) return
     const start = cursorPos - atMatch[0].length
     const mention = '@' + (user.display_name || user.username)
@@ -121,26 +178,60 @@ function FeedbackSection({ reportId, currentUser, allUsers }) {
   }
 
   const submitFeedback = async () => {
-    if (!inputText.trim()) return
-    setLoading(true)
+    if (!inputText.trim()) { setError('피드백 내용을 입력하세요.'); return }
+    setError('')
+    setSubmitting(true)
     try {
-      await createWorkReportFeedback(reportId, { content: inputText.trim() })
+      await createWorkReportFeedback(reportId, {
+        feedbackType,
+        assigneeName: assigneeName.trim() || null,
+        dueDate: dueDate || null,
+        status: feedbackStatus,
+        content: inputText.trim(),
+      })
       setInputText('')
+      setAssigneeName('')
+      setDueDate('')
+      setFeedbackType('CHECK_REQUEST')
+      setFeedbackStatus('PENDING')
       setMentionQuery(null)
       await loadFeedbacks()
-    } catch {} finally { setLoading(false) }
+    } catch (e) {
+      setError(e?.response?.data?.message || '저장에 실패했습니다.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const startEdit = (fb) => {
     setEditingFeedbackId(fb.id)
-    setEditingText(fb.content || '')
+    setEditingData({
+      content: fb.content || '',
+      feedbackType: fb.feedback_type || 'CHECK_REQUEST',
+      assigneeName: fb.assignee_name || '',
+      dueDate: fb.due_date ? String(fb.due_date).slice(0, 10) : '',
+      status: fb.status || 'PENDING',
+    })
   }
 
   const saveEdit = async (id) => {
-    if (!editingText.trim()) return
+    if (!editingData.content?.trim()) return
     try {
-      await updateWorkReportFeedback(id, { content: editingText.trim() })
+      await updateWorkReportFeedback(id, {
+        feedbackType: editingData.feedbackType,
+        assigneeName: editingData.assigneeName || null,
+        dueDate: editingData.dueDate || null,
+        status: editingData.status,
+        content: editingData.content.trim(),
+      })
       setEditingFeedbackId(null)
+      await loadFeedbacks()
+    } catch {}
+  }
+
+  const handleStatusChange = async (id, newStatus) => {
+    try {
+      await patchWorkReportFeedbackStatus(id, newStatus)
       await loadFeedbacks()
     } catch {}
   }
@@ -152,90 +243,149 @@ function FeedbackSection({ reportId, currentUser, allUsers }) {
     } catch {}
   }
 
-  const renderContent = (text) => {
-    if (!text) return null
-    const parts = text.split(/(@[\w가-힣]+)/g)
-    return parts.map((part, i) =>
-      part.startsWith('@')
-        ? <span key={i} className="font-black text-sky-600 bg-sky-50 rounded px-1">{part}</span>
-        : <span key={i}>{part}</span>
-    )
-  }
+  const needsDueDate = ['CHECK_REQUEST', 'REVISION_REQUEST', 'WARNING'].includes(feedbackType)
 
   return (
     <div className="mt-4 border-t border-slate-100 pt-4">
-      <p className="mb-3 text-xs font-black text-slate-500">피드백 ({feedbacks.length})</p>
-      <div className="space-y-3 mb-3">
-        {feedbacks.map(fb => (
-          <div key={fb.id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-            <div className="flex items-center justify-between gap-2 mb-1">
-              <span className="text-xs font-black text-slate-600">{fb.author_display_name || fb.author_username}</span>
-              <span className="text-[11px] text-slate-400">{formatTime(fb.created_at)}</span>
-            </div>
-            {editingFeedbackId === fb.id ? (
-              <div className="flex gap-2 mt-1">
-                <textarea
-                  value={editingText}
-                  onChange={e => setEditingText(e.target.value)}
-                  rows={2}
-                  className="flex-1 rounded border border-slate-200 px-2 py-1 text-sm font-bold outline-none focus:border-sky-400"
-                />
-                <div className="flex flex-col gap-1">
-                  <button type="button" onClick={() => saveEdit(fb.id)} className="h-7 rounded bg-sky-500 px-2 text-[11px] font-black text-white hover:bg-sky-600">저장</button>
-                  <button type="button" onClick={() => setEditingFeedbackId(null)} className="h-7 rounded border border-slate-300 px-2 text-[11px] font-black text-slate-600">취소</button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-bold text-slate-700 whitespace-pre-wrap leading-5">{renderContent(fb.content)}</p>
-                {(currentUser === fb.author_username || currentUser === 'admin') && (
-                  <div className="flex gap-1 shrink-0">
-                    <button type="button" onClick={() => startEdit(fb)} className="text-[11px] font-black text-slate-400 hover:text-sky-500">수정</button>
-                    <button type="button" onClick={() => removeFeedback(fb.id)} className="text-[11px] font-black text-slate-400 hover:text-rose-500">삭제</button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
-        {feedbacks.length === 0 && <p className="text-xs font-bold text-slate-400 text-center py-2">아직 피드백이 없습니다.</p>}
-      </div>
-      <div className="relative">
-        <textarea
-          ref={textareaRef}
-          value={inputText}
-          onChange={handleInputChange}
-          onKeyDown={handleKeyDown}
-          placeholder="피드백을 입력하세요. @이름 으로 담당자를 태그하세요. (Ctrl+Enter로 전송)"
-          rows={2}
-          className="w-full rounded border border-slate-200 px-3 py-2 text-sm font-bold outline-none focus:border-sky-400 resize-none"
-        />
-        {mentionQuery !== null && filteredUsers.length > 0 && (
-          <div className="absolute bottom-full left-0 mb-1 w-56 rounded-lg border border-slate-200 bg-white shadow-lg z-50 overflow-hidden">
-            {filteredUsers.map((u, i) => (
-              <button
-                key={u.id}
-                type="button"
-                onMouseDown={e => { e.preventDefault(); insertMention(u); }}
-                className={`flex w-full items-center gap-2 px-3 py-2 text-sm font-bold text-left hover:bg-sky-50 ${i === mentionIndex ? 'bg-sky-50 text-sky-700' : 'text-slate-700'}`}
-              >
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs font-black">
-                  {(u.display_name || u.username || '?')[0]}
-                </span>
-                <span>{u.display_name || u.username}</span>
-                {u.position_name && <span className="text-[11px] text-slate-400 ml-auto">{u.position_name}</span>}
-              </button>
-            ))}
-          </div>
+      <p className="mb-3 text-xs font-black text-slate-500">업무 지시 / 피드백 ({feedbacks.length})</p>
+
+      <div className="space-y-3 mb-4">
+        {feedbacks.length === 0 && !loading && (
+          <p className="text-xs font-bold text-slate-400 text-center py-3">아직 등록된 피드백이 없습니다.</p>
         )}
-        <div className="flex justify-end mt-1.5">
-          <button
-            type="button"
-            onClick={submitFeedback}
-            disabled={loading || !inputText.trim()}
-            className="h-8 rounded bg-sky-500 px-4 text-xs font-black text-white hover:bg-sky-600 disabled:opacity-50"
-          >
-            {loading ? '전송 중...' : '피드백 전송'}
+        {feedbacks.map(fb => {
+          const typeInfo = getFeedbackTypeInfo(fb.feedback_type)
+          const statusInfo = getFeedbackStatusInfo(fb.status)
+          const overdue = isOverdue(fb)
+          return (
+            <div key={fb.id} className={`rounded-lg border px-3 py-2.5 ${overdue ? 'border-red-200 bg-red-50' : 'border-slate-100 bg-slate-50'}`}>
+              {editingFeedbackId === fb.id ? (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-[10px] font-black text-slate-500 mb-1">피드백 유형</p>
+                      <select value={editingData.feedbackType} onChange={e => setEditingData(p => ({...p, feedbackType: e.target.value}))} className="w-full h-8 rounded border border-slate-200 px-2 text-xs font-bold outline-none">
+                        {FEEDBACK_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-slate-500 mb-1">상태</p>
+                      <select value={editingData.status} onChange={e => setEditingData(p => ({...p, status: e.target.value}))} className="w-full h-8 rounded border border-slate-200 px-2 text-xs font-bold outline-none">
+                        {FEEDBACK_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-[10px] font-black text-slate-500 mb-1">담당자</p>
+                      <input value={editingData.assigneeName} onChange={e => setEditingData(p => ({...p, assigneeName: e.target.value}))} className="w-full h-8 rounded border border-slate-200 px-2 text-xs font-bold outline-none" placeholder="담당자 이름" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-slate-500 mb-1">마감일</p>
+                      <input type="date" value={editingData.dueDate} onChange={e => setEditingData(p => ({...p, dueDate: e.target.value}))} className="w-full h-8 rounded border border-slate-200 px-2 text-xs font-bold outline-none" />
+                    </div>
+                  </div>
+                  <textarea value={editingData.content} onChange={e => setEditingData(p => ({...p, content: e.target.value}))} rows={3} className="w-full rounded border border-slate-200 px-2 py-1.5 text-sm font-bold outline-none focus:border-sky-400 resize-none" />
+                  <div className="flex gap-2 justify-end">
+                    <button type="button" onClick={() => setEditingFeedbackId(null)} className="h-7 rounded border border-slate-300 px-3 text-[11px] font-black text-slate-600">취소</button>
+                    <button type="button" onClick={() => saveEdit(fb.id)} className="h-7 rounded bg-sky-500 px-3 text-[11px] font-black text-white hover:bg-sky-600">저장</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                    <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-black ${typeInfo.color}`}>{typeInfo.label}</span>
+                    <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-black ${statusInfo.color}`}>{statusInfo.label}</span>
+                    {overdue && <span className="inline-flex items-center rounded border border-red-300 bg-red-100 px-2 py-0.5 text-[11px] font-black text-red-700">⚠ 지연</span>}
+                    {fb.assignee_name && <span className="text-[11px] font-bold text-slate-600">→ {fb.assignee_name}</span>}
+                    {fb.due_date && <span className={`text-[11px] font-bold ${overdue ? 'text-red-600' : 'text-slate-500'}`}>마감: {formatDate(fb.due_date)}</span>}
+                    <span className="ml-auto text-[11px] text-slate-400">{fb.author_display_name || fb.author_username} · {formatTime(fb.created_at)}</span>
+                  </div>
+                  <p className="text-sm font-bold text-slate-700 whitespace-pre-wrap leading-5 mb-2">{fb.content}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <select
+                      value={fb.status}
+                      onChange={e => handleStatusChange(fb.id, e.target.value)}
+                      className="h-7 rounded border border-slate-200 px-2 text-[11px] font-black text-slate-600 outline-none hover:border-sky-300 bg-white"
+                    >
+                      {FEEDBACK_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                    {(currentUser === fb.author_username || currentUser === 'admin') && (
+                      <>
+                        <button type="button" onClick={() => startEdit(fb)} className="text-[11px] font-black text-slate-400 hover:text-sky-500">수정</button>
+                        <button type="button" onClick={() => removeFeedback(fb.id)} className="text-[11px] font-black text-slate-400 hover:text-rose-500">삭제</button>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-2.5">
+        <p className="text-xs font-black text-slate-600">업무 지시 작성</p>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <p className="text-[10px] font-black text-slate-500 mb-1">피드백 유형 *</p>
+            <select value={feedbackType} onChange={e => setFeedbackType(e.target.value)} className="w-full h-9 rounded border border-slate-200 px-2 text-xs font-bold outline-none focus:border-sky-400">
+              {FEEDBACK_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <p className="text-[10px] font-black text-slate-500 mb-1">상태</p>
+            <select value={feedbackStatus} onChange={e => setFeedbackStatus(e.target.value)} className="w-full h-9 rounded border border-slate-200 px-2 text-xs font-bold outline-none focus:border-sky-400">
+              {FEEDBACK_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <p className="text-[10px] font-black text-slate-500 mb-1">담당자</p>
+            <input value={assigneeName} onChange={e => setAssigneeName(e.target.value)} placeholder="담당자 이름 입력" className="w-full h-9 rounded border border-slate-200 px-2 text-xs font-bold outline-none focus:border-sky-400" />
+          </div>
+          <div>
+            <p className="text-[10px] font-black text-slate-500 mb-1">
+              마감일 {needsDueDate && <span className="text-orange-500 font-black">(권장)</span>}
+            </p>
+            <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="w-full h-9 rounded border border-slate-200 px-2 text-xs font-bold outline-none focus:border-sky-400" />
+          </div>
+        </div>
+
+        <div className="relative">
+          <textarea
+            ref={textareaRef}
+            value={inputText}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            placeholder={FEEDBACK_TYPE_PLACEHOLDERS[feedbackType]}
+            rows={3}
+            className="w-full rounded border border-slate-200 px-3 py-2 text-sm font-bold outline-none focus:border-sky-400 resize-none"
+          />
+          {mentionQuery !== null && filteredUsers.length > 0 && (
+            <div className="absolute bottom-full left-0 mb-1 w-56 rounded-lg border border-slate-200 bg-white shadow-lg z-50 overflow-hidden">
+              {filteredUsers.map((u, i) => (
+                <button key={u.id} type="button" onMouseDown={e => { e.preventDefault(); insertMention(u); }}
+                  className={`flex w-full items-center gap-2 px-3 py-2 text-sm font-bold text-left hover:bg-sky-50 ${i === mentionIndex ? 'bg-sky-50 text-sky-700' : 'text-slate-700'}`}>
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs font-black">
+                    {(u.display_name || u.username || '?')[0]}
+                  </span>
+                  <span>{u.display_name || u.username}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {error && <p className="text-xs font-black text-red-600">{error}</p>}
+
+        <div className="flex justify-end">
+          <button type="button" onClick={submitFeedback} disabled={submitting || !inputText.trim()}
+            className="h-8 rounded bg-sky-500 px-4 text-xs font-black text-white hover:bg-sky-600 disabled:opacity-50">
+            {submitting ? '전송 중...' : '피드백 전송'}
           </button>
         </div>
       </div>
@@ -601,8 +751,8 @@ export default function StaffWorkReportPage({ username, displayName, onNavigate 
                       onClick={() => toggleFeedback(report.id)}
                       className="mt-3 inline-flex items-center gap-1 text-xs font-black text-slate-500 hover:text-sky-600"
                     >
-                      <span className="material-symbols-outlined text-sm">{expandedFeedback.has(report.id) ? 'expand_less' : 'chat_bubble_outline'}</span>
-                      {expandedFeedback.has(report.id) ? '피드백 접기' : '피드백 보기 / 작성'}
+                      <span className="material-symbols-outlined text-sm">{expandedFeedback.has(report.id) ? 'expand_less' : 'assignment'}</span>
+                      {expandedFeedback.has(report.id) ? '업무지시 접기' : '업무지시 보기 / 작성'}
                     </button>
 
                     {expandedFeedback.has(report.id) && (
@@ -630,4 +780,4 @@ export default function StaffWorkReportPage({ username, displayName, onNavigate 
       </section>
     </main>
   )
-}
+                         }
