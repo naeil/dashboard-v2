@@ -6,8 +6,10 @@ import naeil.dashboard.service.ChannelSyncService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/channel-sync")
@@ -16,21 +18,34 @@ public class ChannelSyncController {
 
     private final ChannelSyncService channelSyncService;
 
-    // ==================== 자격증명 조회 ====================
+    // ==================== 자격증명 조회 (마스킹) ====================
 
     @GetMapping("/credentials")
-    public ResponseEntity<List<ChannelApiCredential>> getAllCredentials() {
+    public ResponseEntity<List<Map<String, Object>>> getAllCredentials() {
         List<ChannelApiCredential> creds = channelSyncService.getAllCredentials();
-        // Mask sensitive keys before returning
-        creds.forEach(c -> {
-            if (c.getCredentialKey1() != null && c.getCredentialKey1().length() > 4) {
-                c.setCredentialKey1(c.getCredentialKey1().substring(0, 4) + "****");
-            }
-            if (c.getCredentialKey2() != null) {
-                c.setCredentialKey2("****");
-            }
-        });
-        return ResponseEntity.ok(creds);
+        List<Map<String, Object>> result = creds.stream().map(c -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", c.getId());
+            m.put("channelType", c.getChannelType());
+            // key1: null이면 null, 있으면 앞 4자만 + ****
+            m.put("credentialKey1", maskKey(c.getCredentialKey1()));
+            // key2: 있으면 **** 없으면 null
+            m.put("credentialKey2", c.getCredentialKey2() != null ? "****" : null);
+            m.put("isActive", c.getIsActive());
+            m.put("lastSyncAt", c.getLastSyncAt());
+            m.put("lastSyncStatus", c.getLastSyncStatus());
+            m.put("lastSyncMessage", c.getLastSyncMessage());
+            m.put("hasKey1", c.getCredentialKey1() != null && !c.getCredentialKey1().isBlank());
+            m.put("hasKey2", c.getCredentialKey2() != null && !c.getCredentialKey2().isBlank());
+            return m;
+        }).collect(Collectors.toList());
+        return ResponseEntity.ok(result);
+    }
+
+    private String maskKey(String key) {
+        if (key == null || key.isBlank()) return null;
+        if (key.length() <= 4) return "****";
+        return key.substring(0, 4) + "****";
     }
 
     // ==================== 자격증명 저장 ====================
@@ -38,18 +53,18 @@ public class ChannelSyncController {
     @PutMapping("/credentials/{channelType}")
     public ResponseEntity<Map<String, Object>> saveCredentials(
             @PathVariable String channelType,
-            @RequestBody Map<String, String> payload) {
-        String key1 = payload.get("key1");
-        String key2 = payload.get("key2");
-        String key3 = payload.get("key3");
-        String key4 = payload.get("key4");
-        Boolean isActive = payload.containsKey("isActive") ? Boolean.parseBoolean(payload.get("isActive")) : null;
+            @RequestBody Map<String, Object> payload) {
+        String key1 = (String) payload.get("key1");
+        String key2 = (String) payload.get("key2");
+        Boolean isActive = payload.get("isActive") instanceof Boolean
+                ? (Boolean) payload.get("isActive")
+                : (payload.get("isActive") != null ? Boolean.valueOf(payload.get("isActive").toString()) : null);
 
-        // Don't overwrite with masked values
+        // 마스킹된 값이 오면 저장하지 않음 (null 전달)
         if (key1 != null && key1.contains("****")) key1 = null;
         if (key2 != null && key2.contains("****")) key2 = null;
 
-        channelSyncService.saveCredentials(channelType, key1, key2, key3, key4, isActive);
+        channelSyncService.saveCredentials(channelType, key1, key2, null, null, isActive);
         return ResponseEntity.ok(Map.of("success", true, "message", channelType + " credentials saved"));
     }
 
@@ -59,7 +74,9 @@ public class ChannelSyncController {
     public ResponseEntity<Map<String, Object>> syncAll(
             @RequestParam(required = false) String month) {
         Map<String, Object> results = channelSyncService.syncAllChannels(month);
-        return ResponseEntity.ok(Map.of("success", true, "results", results));
+        boolean anySuccess = results.values().stream()
+                .anyMatch(v -> v instanceof Map && Boolean.TRUE.equals(((Map<?, ?>) v).get("success")));
+        return ResponseEntity.ok(Map.of("success", true, "results", results, "anySuccess", anySuccess));
     }
 
     // ==================== 채널별 동기화 ====================
