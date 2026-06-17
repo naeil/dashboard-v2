@@ -188,7 +188,6 @@ export default function Settings({ isExpanded }) {
   const [aiApiKey, setAiApiKey] = useState('')
   const [aiOrganizationId, setAiOrganizationId] = useState('')
   const [aiProjectId, setAiProjectId] = useState('')
-  const [aiModelName, setAiModelName] = useState(getAiProviderConfig('OPENAI').models[0])
   const [aiValidationStatus, setAiValidationStatus] = useState('idle')
   const [aiValidationMessage, setAiValidationMessage] = useState('')
   const [aiDirty, setAiDirty] = useState(false)
@@ -319,7 +318,6 @@ export default function Settings({ isExpanded }) {
     const provider = getAiProviderConfig(selectedAiProvider)
     const saved = aiSettings.find((setting) => setting.provider === selectedAiProvider)
     setAiDisplayName(saved?.displayName || `${provider.label} 기본`)
-    setAiModelName(saved?.modelName || provider.models[0])
     setAiApiKey('')
     setAiOrganizationId('')
     setAiProjectId('')
@@ -404,7 +402,6 @@ export default function Settings({ isExpanded }) {
   const getAiValidationPayload = () => ({
     provider: selectedAiProvider,
     displayName: aiDisplayName,
-    modelName: aiModelName,
     apiKey: aiApiKey,
     organizationId: aiOrganizationId,
     projectId: aiProjectId,
@@ -827,7 +824,7 @@ export default function Settings({ isExpanded }) {
   const selectedExternalMessage = externalValidationMessage[selectedExternalIntegration]
   const selectedAiConfig = getAiProviderConfig(selectedAiProvider)
   const selectedSavedAiSetting = aiSettings.find((setting) => setting.provider === selectedAiProvider)
-  const aiCanValidate = isAiProviderReady(selectedAiProvider, { apiKey: aiApiKey }) && Boolean(aiModelName)
+  const aiCanValidate = isAiProviderReady(selectedAiProvider, { apiKey: aiApiKey })
   const aiCanSave = aiValidationStatus === 'success' && aiDirty && !isSavingAi
   const hasDirtyExternalIntegration = EXTERNAL_INTEGRATION_IDS.some((id) => externalDirty[id])
   const hasUnvalidatedExternalChange = EXTERNAL_INTEGRATION_IDS.some(
@@ -1053,9 +1050,9 @@ export default function Settings({ isExpanded }) {
               <div className="rounded-lg border border-slate-200 bg-white">
                 <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-5 md:flex-row md:items-start md:justify-between">
                   <div>
-                    <h3 className="text-xl font-black text-slate-950">AI 모델 설정</h3>
+                    <h3 className="text-xl font-black text-slate-950">AI 인증 정보</h3>
                     <p className="mt-1 text-sm font-medium text-slate-500">
-                      OpenAI, Claude, Gemini 인증 정보를 검증한 뒤 사용할 모델을 저장합니다.
+                      OpenAI, Claude, Gemini 인증 정보를 검증한 뒤 저장합니다.
                     </p>
                   </div>
                   <div className="flex items-center gap-2 text-sm font-bold">
@@ -1106,9 +1103,7 @@ export default function Settings({ isExpanded }) {
                   <div className="p-6">
                     <div className="mb-6 flex items-start justify-between gap-4 border-b border-slate-100 pb-5">
                       <div>
-                        <p className="text-xs font-black tracking-[0.16em] text-sky-600">AI</p>
                         <h4 className="mt-2 text-2xl font-black text-slate-950">{selectedAiConfig.label}</h4>
-                        <p className="mt-2 text-sm font-medium text-slate-500">{selectedAiConfig.description}</p>
                       </div>
                       <span className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-black ${
                         aiValidationStatus === 'success' || aiValidationStatus === 'saved'
@@ -1143,21 +1138,6 @@ export default function Settings({ isExpanded }) {
                         />
                       </label>
 
-                      <label>
-                        <span className="mb-2 block text-sm font-bold text-slate-700">모델</span>
-                        <SelectField
-                          value={aiModelName}
-                          onChange={(event) => markAiChanged(setAiModelName, event.target.value)}
-                          className="w-full"
-                        >
-                          {selectedAiConfig.models.map((model) => (
-                            <option key={model} value={model}>
-                              {model}
-                            </option>
-                          ))}
-                        </SelectField>
-                      </label>
-
                       <label className="md:col-span-2">
                         <span className="mb-2 block text-sm font-bold text-slate-700">API Key</span>
                         <input
@@ -1172,7 +1152,7 @@ export default function Settings({ isExpanded }) {
                       {selectedAiProvider === 'OPENAI' && (
                         <>
                           <label>
-                            <span className="mb-2 block text-sm font-bold text-slate-700">Organization ID 선택</span>
+                            <span className="mb-2 block text-sm font-bold text-slate-700">Organization ID(Optional)</span>
                             <input
                               type="text"
                               value={aiOrganizationId}
@@ -1182,7 +1162,7 @@ export default function Settings({ isExpanded }) {
                             />
                           </label>
                           <label>
-                            <span className="mb-2 block text-sm font-bold text-slate-700">Project ID 선택</span>
+                            <span className="mb-2 block text-sm font-bold text-slate-700">Project ID(Optional)</span>
                             <input
                               type="text"
                               value={aiProjectId}
@@ -1194,11 +1174,6 @@ export default function Settings({ isExpanded }) {
                         </>
                       )}
 
-                      {selectedAiProvider === 'CLAUDE' && (
-                        <div className="md:col-span-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-600">
-                          Claude API 버전은 백엔드에서 {selectedAiConfig.apiVersion} 값으로 고정합니다.
-                        </div>
-                      )}
                     </div>
 
                     <div className="mt-8 flex flex-col gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
@@ -1436,17 +1411,19 @@ export default function Settings({ isExpanded }) {
                           : selectedExternalStatus === 'error'
                             ? 'text-rose-600'
                             : 'text-slate-400'
-                      }`}>
+                      } min-w-0 flex-1`}>
                         {selectedExternalMessage && (
                           <>
-                            <span className="material-symbols-outlined text-lg">
+                            <span className="material-symbols-outlined shrink-0 text-lg">
                               {selectedExternalStatus === 'success'
                                 ? 'check_circle'
                                 : selectedExternalStatus === 'error'
                                   ? 'error'
                                   : 'hourglass_top'}
                             </span>
-                            <span>{selectedExternalMessage}</span>
+                            <span className="min-w-0 whitespace-pre-wrap break-all leading-6">
+                              {selectedExternalMessage}
+                            </span>
                           </>
                         )}
                       </div>

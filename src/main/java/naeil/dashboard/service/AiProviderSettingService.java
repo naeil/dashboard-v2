@@ -39,29 +39,26 @@ public class AiProviderSettingService {
                 new AiProviderSettingDto.ProviderConfig(
                         AiProvider.OPENAI,
                         "OpenAI",
-                        "OpenAI API Key로 GPT 계열 모델을 연결합니다.",
+                        "OpenAI API Key로 OpenAI API를 연결합니다.",
                         List.of("apiKey"),
                         List.of("organizationId", "projectId"),
-                        null,
-                        List.of("gpt-4o", "gpt-4o-mini")
+                        null
                 ),
                 new AiProviderSettingDto.ProviderConfig(
                         AiProvider.CLAUDE,
                         "Claude",
-                        "Anthropic API Key로 Claude 모델을 연결합니다.",
+                        "Anthropic API Key로 Claude API를 연결합니다.",
                         List.of("apiKey"),
                         List.of(),
-                        CLAUDE_API_VERSION,
-                        List.of("claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022")
+                        CLAUDE_API_VERSION
                 ),
                 new AiProviderSettingDto.ProviderConfig(
                         AiProvider.GEMINI,
                         "Gemini",
-                        "Google AI Studio API Key로 Gemini 모델을 연결합니다.",
+                        "Google AI Studio API Key로 Gemini API를 연결합니다.",
                         List.of("apiKey"),
                         List.of(),
-                        null,
-                        List.of("gemini-1.5-pro", "gemini-1.5-flash")
+                        null
                 )
         );
     }
@@ -80,10 +77,6 @@ public class AiProviderSettingService {
         if (isBlank(request.apiKey())) {
             return ValidationResult.failure("API Key를 입력해주세요.");
         }
-        if (isBlank(request.modelName())) {
-            return ValidationResult.failure("사용할 모델을 선택해주세요.");
-        }
-
         try {
             switch (request.provider()) {
                 case OPENAI -> validateOpenAi(request);
@@ -111,7 +104,6 @@ public class AiProviderSettingService {
         AiProviderSetting setting = repository.findByCompanyIdAndProvider(companyId, request.provider())
                 .orElse(new AiProviderSetting(companyId, request.provider()));
         setting.setDisplayName(firstText(request.displayName(), defaultDisplayName(request.provider())));
-        setting.setModelName(request.modelName().trim());
         setting.setApiKey(request.apiKey().trim());
         setting.setOrganizationId(trimToNull(request.organizationId()));
         setting.setProjectId(trimToNull(request.projectId()));

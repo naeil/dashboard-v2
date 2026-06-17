@@ -8,7 +8,7 @@ import {
   maskAiSecret,
 } from './aiProviderCatalog.js'
 
-test('defines required credential fields and default models for supported AI providers', () => {
+test('defines credential fields for supported AI providers without requiring model selection', () => {
   assert.deepEqual(
     AI_PROVIDER_CONFIGS.map((provider) => provider.id),
     ['OPENAI', 'CLAUDE', 'GEMINI'],
@@ -16,14 +16,14 @@ test('defines required credential fields and default models for supported AI pro
 
   assert.deepEqual(getAiProviderConfig('OPENAI').requiredFields, ['apiKey'])
   assert.deepEqual(getAiProviderConfig('OPENAI').optionalFields, ['organizationId', 'projectId'])
-  assert.ok(getAiProviderConfig('OPENAI').models.includes('gpt-4o'))
+  assert.equal('models' in getAiProviderConfig('OPENAI'), false)
 
   assert.deepEqual(getAiProviderConfig('CLAUDE').requiredFields, ['apiKey'])
   assert.equal(getAiProviderConfig('CLAUDE').apiVersion, '2023-06-01')
-  assert.ok(getAiProviderConfig('CLAUDE').models.includes('claude-3-5-sonnet-20241022'))
+  assert.equal('models' in getAiProviderConfig('CLAUDE'), false)
 
   assert.deepEqual(getAiProviderConfig('GEMINI').requiredFields, ['apiKey'])
-  assert.ok(getAiProviderConfig('GEMINI').models.includes('gemini-1.5-pro'))
+  assert.equal('models' in getAiProviderConfig('GEMINI'), false)
 })
 
 test('checks whether entered credentials are ready for validation', () => {

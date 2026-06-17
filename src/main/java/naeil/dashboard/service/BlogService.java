@@ -8,6 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 import naeil.dashboard.common.exception.CustomException;
 import naeil.dashboard.dto.BlogGenerateRequest;
 import naeil.dashboard.dto.BlogGenerateResponse;
+import naeil.dashboard.entity.AiProviderSetting;
+import naeil.dashboard.enums.AiProvider;
+import naeil.dashboard.repository.AiProviderSettingRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -16,7 +19,10 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 public class BlogService {
 
-    private final ClaudeApiClient claudeApiClient;
+    private static final Long DEFAULT_COMPANY_ID = 1L;
+
+    private final AiApiClient aiApiClient;
+    private final AiProviderSettingRepository aiProviderSettingRepository;
     private final NaverBlogPublisher naverBlogPublisher;
     private final ObjectMapper objectMapper;
 
@@ -40,7 +46,13 @@ public class BlogService {
 
     public BlogGenerateResponse generate(BlogGenerateRequest request) {
         String userMessage = buildUserMessage(request);
-        String rawResponse = claudeApiClient.complete(SYSTEM_PROMPT, userMessage);
+        AiProvider provider = resolveProvider(request.aiProvider());
+        String model = requireModel(request.aiModel());
+        AiProviderSetting setting = aiProviderSettingRepository
+                .findByCompanyIdAndProvider(DEFAULT_COMPANY_ID, provider)
+                .filter(item -> Boolean.TRUE.equals(item.getIsActive()))
+                .orElseThrow(() -> new CustomException(400, providerLabel(provider) + " 인증 정보를 먼저 설정해주세요."));
+        String rawResponse = aiApiClient.complete(setting, model, SYSTEM_PROMPT, userMessage);
 
         try {
             String json = rawResponse.trim();
@@ -88,5 +100,31 @@ public class BlogService {
         };
         sb.append("본문 길이: ").append(lengthGuide);
         return sb.toString();
+    }
+
+    private AiProvider resolveProvider(String value) {
+        if (value == null || value.isBlank()) {
+            throw new CustomException(400, "AI 제공사를 선택해주세요.");
+        }
+        try {
+            return AiProvider.valueOf(value.trim().toUpperCase());
+        } catch (IllegalArgumentException exception) {
+            throw new CustomException(400, "지원하지 않는 AI 제공사입니다.");
+        }
+    }
+
+    private String requireModel(String value) {
+        if (value == null || value.isBlank()) {
+            throw new CustomException(400, "AI 모델을 선택해주세요.");
+        }
+        return value.trim();
+    }
+
+    private String providerLabel(AiProvider provider) {
+        return switch (provider) {
+            case OPENAI -> "OpenAI";
+            case CLAUDE -> "Claude";
+            case GEMINI -> "Gemini";
+        };
     }
 }

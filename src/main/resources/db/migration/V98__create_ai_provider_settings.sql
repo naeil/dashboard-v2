@@ -3,7 +3,6 @@ CREATE TABLE IF NOT EXISTS ai_provider_settings (
     company_id BIGINT NOT NULL,
     provider VARCHAR(30) NOT NULL,
     display_name VARCHAR(100) NOT NULL,
-    model_name VARCHAR(120) NOT NULL,
     api_key TEXT NOT NULL,
     organization_id TEXT,
     project_id TEXT,

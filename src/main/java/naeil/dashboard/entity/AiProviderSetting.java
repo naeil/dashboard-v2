@@ -37,9 +37,6 @@ public class AiProviderSetting {
     @Column(name = "display_name", nullable = false, length = 100)
     private String displayName;
 
-    @Column(name = "model_name", nullable = false, length = 120)
-    private String modelName;
-
     @Convert(converter = EncryptConverter.class)
     @Column(name = "api_key", nullable = false, columnDefinition = "TEXT")
     private String apiKey;
@@ -80,8 +77,6 @@ public class AiProviderSetting {
     public void setProvider(AiProvider provider) { this.provider = provider; }
     public String getDisplayName() { return displayName; }
     public void setDisplayName(String displayName) { this.displayName = displayName; }
-    public String getModelName() { return modelName; }
-    public void setModelName(String modelName) { this.modelName = modelName; }
     public String getApiKey() { return apiKey; }
     public void setApiKey(String apiKey) { this.apiKey = apiKey; }
     public String getOrganizationId() { return organizationId; }

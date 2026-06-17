@@ -36,7 +36,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 public class MarketingService {
 
     private static final String NAVER_SEARCH_BASE_URL = "https://openapi.naver.com/v1/search";
-    private static final String META_GRAPH_BASE_URL = "https://graph.facebook.com/v19.0";
+    private static final String META_GRAPH_BASE_URL = "https://graph.facebook.com/v25.0";
     private static final int DISPLAY_COUNT = 10;
     private static final int RECENT_POSTING_DISPLAY_COUNT = 100;
     private static final Long DEFAULT_COMPANY_ID = 1L;

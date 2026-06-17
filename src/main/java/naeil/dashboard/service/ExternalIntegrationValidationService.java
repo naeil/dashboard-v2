@@ -23,7 +23,7 @@ public class ExternalIntegrationValidationService {
 
     private static final String NAVER_SEARCH_URL = "https://openapi.naver.com/v1/search/blog.json";
     private static final String NAVER_AD_BASE_URL = "https://api.searchad.naver.com";
-    private static final String META_GRAPH_BASE_URL = "https://graph.facebook.com";
+    private static final String META_GRAPH_BASE_URL = "https://graph.facebook.com/v25.0";
 
     private final RestTemplate restTemplate;
 

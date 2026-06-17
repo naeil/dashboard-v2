@@ -13,13 +13,11 @@ public class AiProviderSettingDto {
             String description,
             List<String> requiredFields,
             List<String> optionalFields,
-            String apiVersion,
-            List<String> models
+            String apiVersion
     ) {}
 
     public record ValidateRequest(
             AiProvider provider,
-            String modelName,
             String apiKey,
             String organizationId,
             String projectId
@@ -28,13 +26,12 @@ public class AiProviderSettingDto {
     public record SaveRequest(
             AiProvider provider,
             String displayName,
-            String modelName,
             String apiKey,
             String organizationId,
             String projectId
     ) {
         public ValidateRequest toValidateRequest() {
-            return new ValidateRequest(provider, modelName, apiKey, organizationId, projectId);
+            return new ValidateRequest(provider, apiKey, organizationId, projectId);
         }
     }
 
@@ -42,7 +39,6 @@ public class AiProviderSettingDto {
             Long id,
             AiProvider provider,
             String displayName,
-            String modelName,
             String apiKeyMasked,
             String organizationIdMasked,
             String projectIdMasked,
@@ -55,7 +51,6 @@ public class AiProviderSettingDto {
                     setting.getId(),
                     setting.getProvider(),
                     setting.getDisplayName(),
-                    setting.getModelName(),
                     mask(setting.getApiKey()),
                     mask(setting.getOrganizationId()),
                     mask(setting.getProjectId()),

@@ -5,5 +5,7 @@ public record BlogGenerateRequest(
         String keywords,
         String tone,
         String length,
-        String category
+        String category,
+        String aiProvider,
+        String aiModel
 ) {}

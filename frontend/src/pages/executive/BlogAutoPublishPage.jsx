@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { authorizedFetch } from '../../api/authApi'
 import { buildApiUrl } from '../../api/apiBase'
 import { PageHeader, Panel } from './ExecutiveComponents'
@@ -24,6 +24,24 @@ const LENGTH_OPTIONS = [
   { value: 'medium', label: '보통 (800~1200자)' },
   { value: 'long', label: '길게 (1500자+)' },
 ]
+
+const AI_MODEL_OPTIONS = {
+  OPENAI: [
+    { value: 'gpt-4o', label: 'gpt-4o' },
+    { value: 'gpt-4o-mini', label: 'gpt-4o-mini' },
+    { value: 'gpt-4.1', label: 'gpt-4.1' },
+    { value: 'gpt-4.1-mini', label: 'gpt-4.1-mini' },
+  ],
+  CLAUDE: [
+    { value: 'claude-3-5-sonnet-20241022', label: 'claude-3-5-sonnet' },
+    { value: 'claude-3-5-haiku-20241022', label: 'claude-3-5-haiku' },
+  ],
+  GEMINI: [
+    { value: 'gemini-1.5-pro', label: 'gemini-1.5-pro' },
+    { value: 'gemini-1.5-flash', label: 'gemini-1.5-flash' },
+    { value: 'gemini-2.5-flash', label: 'gemini-2.5-flash' },
+  ],
+}
 
 const STATUS = {
   IDLE: 'idle',
@@ -68,11 +86,16 @@ export default function BlogAutoPublishPage() {
     tone: '친근하고 따뜻한',
     category: '제품 소개',
     length: 'medium',
+    aiProvider: '',
+    aiModel: '',
   })
 
   const [result, setResult] = useState({ title: '', content: '', hashtags: '' })
   const [status, setStatus] = useState(STATUS.IDLE)
   const [error, setError] = useState('')
+  const [aiSettings, setAiSettings] = useState([])
+  const [aiSettingsLoading, setAiSettingsLoading] = useState(true)
+  const [aiSettingsError, setAiSettingsError] = useState('')
   const [showAccountModal, setShowAccountModal] = useState(false)
   const [naverAccount, setNaverAccount] = useState({ username: '', password: '' })
   const [attachments, setAttachments] = useState([])
@@ -82,6 +105,51 @@ export default function BlogAutoPublishPage() {
   const videoInputRef = useRef(null)
 
   const set = (key, value) => setForm((prev) => ({ ...prev, [key]: value }))
+  const availableAiSettings = aiSettings.filter((setting) => setting.isActive !== false && setting.validatedAt)
+  const selectedModelOptions = AI_MODEL_OPTIONS[form.aiProvider] || []
+
+  useEffect(() => {
+    let active = true
+
+    const loadAiSettings = async () => {
+      setAiSettingsLoading(true)
+      setAiSettingsError('')
+      try {
+        const res = await authorizedFetch(buildApiUrl('/settings/ai'))
+        const body = await res.json().catch(() => [])
+        if (!res.ok) throw new Error(body.message || 'AI 설정 정보를 불러오지 못했습니다.')
+        const settings = Array.isArray(body) ? body : []
+        if (!active) return
+        setAiSettings(settings)
+        const firstSetting = settings.find((setting) => setting.isActive !== false && setting.validatedAt)
+        if (firstSetting) {
+          const models = AI_MODEL_OPTIONS[firstSetting.provider] || []
+          setForm((prev) => ({
+            ...prev,
+            aiProvider: prev.aiProvider || firstSetting.provider,
+            aiModel: prev.aiModel || models[0]?.value || '',
+          }))
+        }
+      } catch (err) {
+        if (!active) return
+        setAiSettingsError(err.message || 'AI 설정 정보를 불러오지 못했습니다.')
+      } finally {
+        if (active) setAiSettingsLoading(false)
+      }
+    }
+
+    loadAiSettings()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    const models = AI_MODEL_OPTIONS[form.aiProvider] || []
+    if (form.aiProvider && !models.some((model) => model.value === form.aiModel)) {
+      set('aiModel', models[0]?.value || '')
+    }
+  }, [form.aiProvider, form.aiModel])
 
   const addFiles = (files) => {
     const newItems = Array.from(files).map((file) => {
@@ -228,6 +296,54 @@ export default function BlogAutoPublishPage() {
         <div className="space-y-6">
           <Panel title="글 생성 설정">
             <div className="space-y-4">
+              <div className="rounded-xl border border-white/10 bg-slate-950/50 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <span className="text-xs font-black text-slate-400">AI / 모델</span>
+                  {aiSettingsLoading && <span className="text-[11px] font-black text-slate-500">불러오는 중...</span>}
+                </div>
+                {availableAiSettings.length > 0 ? (
+                  <div className="grid gap-3">
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-black text-slate-500">AI 인증 정보</span>
+                      <select
+                        value={form.aiProvider}
+                        onChange={(e) => {
+                          const provider = e.target.value
+                          setForm((prev) => ({
+                            ...prev,
+                            aiProvider: provider,
+                            aiModel: AI_MODEL_OPTIONS[provider]?.[0]?.value || '',
+                          }))
+                        }}
+                        className="h-11 w-full rounded-lg border border-white/10 bg-slate-950 px-3 text-sm font-bold text-white outline-none focus:border-sky-400"
+                      >
+                        {availableAiSettings.map((setting) => (
+                          <option key={setting.provider} value={setting.provider}>
+                            {setting.displayName || setting.provider}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-black text-slate-500">모델</span>
+                      <select
+                        value={form.aiModel}
+                        onChange={(e) => set('aiModel', e.target.value)}
+                        className="h-11 w-full rounded-lg border border-white/10 bg-slate-950 px-3 text-sm font-bold text-white outline-none focus:border-sky-400"
+                      >
+                        {selectedModelOptions.map((model) => (
+                          <option key={model.value} value={model.value}>{model.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                ) : (
+                  <p className="text-xs font-bold leading-5 text-slate-500">
+                    {aiSettingsError || '설정 화면에서 AI 인증 정보를 검증 후 저장하면 여기에서 선택할 수 있습니다.'}
+                  </p>
+                )}
+              </div>
+
               <label className="block">
                 <span className="mb-2 block text-xs font-black text-slate-400">
                   주제 <span className="text-rose-400">*</span>
@@ -306,7 +422,7 @@ export default function BlogAutoPublishPage() {
               <button
                 type="button"
                 onClick={generate}
-                disabled={!form.topic.trim() || isGenerating || isPublishing}
+                disabled={!form.topic.trim() || !form.aiProvider || !form.aiModel || isGenerating || isPublishing}
                 className="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-sky-500 text-sm font-black text-white transition-colors hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isGenerating ? (

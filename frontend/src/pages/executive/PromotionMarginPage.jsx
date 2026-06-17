@@ -31,7 +31,17 @@ const promoTypes = [
   { id: 'offlineEvent', label: '오프라인 행사' },
 ]
 
-const channelOptions = ['온라인', '국내 오프라인', '해외 수출', 'B2B/납품']
+const channelOptions = [
+  '스마트스토어',
+  '쿠팡',
+  '카카오쇼핑',
+  '자사몰',
+  '오프라인 행사',
+  '국내 오프라인 유통',
+  '해외 수출',
+  'B2B/납품',
+  '기타',
+]
 
 function flattenCostRows(data) {
   return Object.entries(data?.channels || {}).flatMap(([channelName, rows]) =>
@@ -64,7 +74,7 @@ function matchSalesProduct(costRow, products) {
 function deriveInitialForm(row) {
   const basePrice = num(row?.consumer_price) || num(row?.list_price)
   return {
-    channel: '온라인',
+    channel: '스마트스토어',
     promoType: 'discount',
     promoName: '',
     expectedOrders: 100,
@@ -78,6 +88,9 @@ function deriveInitialForm(row) {
     logisticsPerOrder: num(row?.consumer_ship_fee) + num(row?.storage_fee_unit),
     extraSupportPerUnit: 0,
     fixedEventCost: 0,
+    promoStartDate: firstDay,
+    promoEndDate: todayText,
+    status: '신청',
   }
 }
 
@@ -100,19 +113,8 @@ function calculateScenario(row, form) {
   const profitPerOrder = expectedOrders > 0 ? (revenue - variableCost) / expectedOrders : 0
   const breakEvenOrders = profitPerOrder > 0 ? Math.ceil(fixedEventCost / profitPerOrder) : null
   return {
-    unitsPerOrder,
-    expectedOrders,
-    revenue,
-    productionCost,
-    logisticsCost,
-    channelFee,
-    marketingCost,
-    adCost,
-    opexCost,
-    supportCost,
-    fixedEventCost,
-    grossProfit,
-    operatingProfit,
+    unitsPerOrder, expectedOrders, revenue, productionCost, logisticsCost, channelFee,
+    marketingCost, adCost, opexCost, supportCost, fixedEventCost, grossProfit, operatingProfit,
     grossMargin: revenue > 0 ? (grossProfit / revenue) * 100 : null,
     operatingMargin: revenue > 0 ? (operatingProfit / revenue) * 100 : null,
     breakEvenOrders,
@@ -169,23 +171,17 @@ export default function PromotionMarginPage() {
   const matchedSales = useMemo(() => matchSalesProduct(selectedRow, analytics.products), [selectedRow, analytics.products])
   const result = useMemo(() => calculateScenario(selectedRow, form), [selectedRow, form])
   const decision = decisionFor(result)
-
   const updateForm = (key, value) => setForm((prev) => ({ ...prev, [key]: value }))
 
   const load = async () => {
     setLoading(true)
     try {
-      const [costRes, salesRes] = await Promise.all([
-        getAllCostData(),
-        getExecutiveChannelSalesAnalytics({ startDate, endDate }),
-      ])
+      const [costRes, salesRes] = await Promise.all([getAllCostData(), getExecutiveChannelSalesAnalytics({ startDate, endDate })])
       setCostData(costRes.data || { channels: {} })
       setAnalytics(salesRes.data || { summary: {}, products: [] })
     } catch (err) {
       setMessage(err?.response?.data?.message || '프로모션 데이터를 불러오지 못했습니다.')
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
   useEffect(() => {
@@ -193,9 +189,7 @@ export default function PromotionMarginPage() {
     try {
       const saved = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '[]')
       if (Array.isArray(saved)) setPlans(saved)
-    } catch {
-      setPlans([])
-    }
+    } catch { setPlans([]) }
   }, [])
 
   useEffect(() => {
@@ -207,45 +201,58 @@ export default function PromotionMarginPage() {
       promoType: prev.promoType,
       expectedOrders: prev.expectedOrders,
       unitsPerOrder: prev.unitsPerOrder,
+      promoStartDate: prev.promoStartDate,
+      promoEndDate: prev.promoEndDate,
+      status: prev.status,
     }))
   }, [selectedRow?.rowKey])
 
-  useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(plans))
-  }, [plans])
+  useEffect(() => { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(plans)) }, [plans])
 
   const refreshSales = async () => {
-    setSyncing(true)
-    setMessage('')
+    setSyncing(true); setMessage('')
     try {
       await importPlayAutoChannelSales({ startDate, endDate })
       const res = await getExecutiveChannelSalesAnalytics({ startDate, endDate })
       setAnalytics(res.data || { summary: {}, products: [] })
       setMessage('실시간 판매 현황을 갱신했습니다.')
-    } catch (err) {
-      setMessage(err?.response?.data?.message || '실시간 판매 현황 갱신에 실패했습니다.')
-    } finally {
-      setSyncing(false)
-    }
+    } catch (err) { setMessage(err?.response?.data?.message || '실시간 판매 현황 갱신에 실패했습니다.') }
+    finally { setSyncing(false) }
   }
 
   const savePlan = () => {
     if (!selectedRow) return
+    const currentUser = (() => {
+      try {
+        const s = JSON.parse(window.localStorage.getItem('naeil.session') || '{}')
+        return s.username || s.name || s.displayName || '작성자'
+      } catch { return '작성자' }
+    })()
     const plan = {
       id: `${Date.now()}`,
       createdAt: new Date().toISOString(),
+      createdBy: currentUser,
       productName: selectedRow.product_name || '상품명 없음',
       productCode: selectedRow.product_code || '',
       skuCode: selectedRow.sku_code || '',
       sourceChannel: selectedRow.channelName || '',
       channel: form.channel,
       promoType: promoTypes.find((item) => item.id === form.promoType)?.label || form.promoType,
+      promoTypeId: form.promoType,
       promoName: form.promoName || `${selectedRow.product_name || '상품'} 프로모션`,
-      startDate,
-      endDate,
+      startDate: form.promoStartDate || startDate,
+      endDate: form.promoEndDate || endDate,
       expectedOrders: result.expectedOrders,
       unitsPerOrder: result.unitsPerOrder,
       promoPrice: num(form.promoPrice),
+      basePrice: num(form.basePrice),
+      channelFeeRate: num(form.channelFeeRate),
+      adRate: num(form.adRate),
+      marketingRate: num(form.marketingRate),
+      opexRate: num(form.opexRate),
+      logisticsPerOrder: num(form.logisticsPerOrder),
+      fixedEventCost: num(form.fixedEventCost),
+      extraSupportPerUnit: num(form.extraSupportPerUnit),
       targetRevenue: result.revenue,
       revenue: result.revenue,
       grossProfit: result.grossProfit,
@@ -254,8 +261,9 @@ export default function PromotionMarginPage() {
       operatingProfit: result.operatingProfit,
       breakEvenOrders: result.breakEvenOrders,
       decision: decision.label,
+      status: form.status || '신청',
     }
-    setPlans((prev) => [plan, ...prev].slice(0, 50))
+    setPlans((prev) => [plan, ...prev].slice(0, 100))
     setMessage('프로모션 마진 서식을 저장했고, 프로모션 내역에 연동했습니다.')
   }
 
@@ -275,16 +283,13 @@ export default function PromotionMarginPage() {
           <button onClick={refreshSales} disabled={syncing} className="h-10 rounded bg-blue-600 px-4 text-sm font-black text-white disabled:opacity-50">{syncing ? '갱신 중' : '실시간 판매 업데이트'}</button>
         </div>
       </header>
-
       {message && <div className="rounded border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-black text-blue-700">{message}</div>}
-
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-4">
         <div className="rounded border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs font-black text-slate-500">기간 실시간 매출</p><strong className="mt-4 block text-2xl font-black">{won(analytics.summary?.salesAmount)}</strong><p className="mt-2 text-xs font-bold text-slate-500">PlayAuto 주문 현황 기준</p></div>
         <div className="rounded border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs font-black text-slate-500">기간 주문수</p><strong className="mt-4 block text-2xl font-black">{count(analytics.summary?.orderCount)}건</strong><p className="mt-2 text-xs font-bold text-slate-500">선택 기간 합계</p></div>
         <div className="rounded border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs font-black text-slate-500">예상 행사 매출</p><strong className="mt-4 block text-2xl font-black">{won(result.revenue)}</strong><p className="mt-2 text-xs font-bold text-slate-500">{count(result.expectedOrders)}건 기준</p></div>
         <div className={`rounded border p-5 shadow-sm ${decision.className}`}><p className="text-xs font-black">행사 판단</p><strong className="mt-4 block text-2xl font-black">{decision.label}</strong><p className="mt-2 text-xs font-black">영업이익률 {pct(result.operatingMargin)}</p></div>
       </section>
-
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-[420px_1fr]">
         <aside className="rounded border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-xl font-black">프로모션 서식</h2>
@@ -293,7 +298,11 @@ export default function PromotionMarginPage() {
             <Field label="상품 선택"><select value={selectedRow?.rowKey || ''} onChange={(e) => setSelectedRowKey(e.target.value)} className="h-11 w-full rounded border border-slate-300 px-3 text-sm font-black outline-none">{filteredCostRows.map((row) => <option key={row.rowKey} value={row.rowKey}>{productLabel(row)}</option>)}</select></Field>
             <Field label="행사명"><input value={form.promoName} onChange={(e) => updateForm('promoName', e.target.value)} placeholder="예: 쿠팡 1+1 주말 특가" className="h-10 w-full rounded border border-slate-300 px-3 text-sm font-bold outline-none" /></Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="채널"><select value={form.channel} onChange={(e) => updateForm('channel', e.target.value)} className="h-10 w-full rounded border border-slate-300 px-3 text-sm font-black outline-none">{channelOptions.map((item) => <option key={item}>{item}</option>)}</select></Field>
+              <Field label="채널">
+                <select value={form.channel} onChange={(e) => updateForm('channel', e.target.value)} className="h-10 w-full rounded border border-slate-300 px-3 text-sm font-black outline-none">
+                  {channelOptions.map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </Field>
               <Field label="행사 유형"><select value={form.promoType} onChange={(e) => updateForm('promoType', e.target.value)} className="h-10 w-full rounded border border-slate-300 px-3 text-sm font-black outline-none">{promoTypes.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></Field>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -311,10 +320,24 @@ export default function PromotionMarginPage() {
               <Field label="행사 고정비"><NumberInput value={form.fixedEventCost} onChange={(v) => updateForm('fixedEventCost', v)} suffix="원" /></Field>
               <Field label="개당 쿠폰/지원금"><NumberInput value={form.extraSupportPerUnit} onChange={(v) => updateForm('extraSupportPerUnit', v)} suffix="원" /></Field>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="행사 시작일"><input type="date" value={form.promoStartDate || startDate} onChange={(e) => updateForm('promoStartDate', e.target.value)} className="h-10 w-full rounded border border-slate-300 px-3 text-sm font-black outline-none" /></Field>
+              <Field label="행사 종료일"><input type="date" value={form.promoEndDate || endDate} onChange={(e) => updateForm('promoEndDate', e.target.value)} className="h-10 w-full rounded border border-slate-300 px-3 text-sm font-black outline-none" /></Field>
+            </div>
+            <Field label="상태">
+              <select value={form.status || '신청'} onChange={(e) => updateForm('status', e.target.value)} className="h-10 w-full rounded border border-slate-300 px-3 text-sm font-black outline-none">
+                <option>신청</option>
+                <option>진행 가능</option>
+                <option>조건 확인</option>
+                <option>손실 위험</option>
+                <option>진행중</option>
+                <option>완료</option>
+                <option>취소</option>
+              </select>
+            </Field>
             <button onClick={savePlan} className="h-11 w-full rounded bg-slate-950 text-sm font-black text-white">서식 저장</button>
           </div>
         </aside>
-
         <main className="space-y-5">
           <section className="rounded border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -328,7 +351,6 @@ export default function PromotionMarginPage() {
               <div className="rounded bg-slate-50 p-4"><p className="text-xs font-black text-slate-500">손익분기 주문</p><b className="mt-2 block text-xl">{result.breakEvenOrders == null ? '-' : `${count(result.breakEvenOrders)}건`}</b><span className="text-xs font-bold text-slate-500">행사 고정비 기준</span></div>
             </div>
           </section>
-
           <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             <div className="rounded border border-slate-200 bg-white p-5 shadow-sm">
               <h2 className="text-xl font-black">선택 상품 실시간 판매</h2>
