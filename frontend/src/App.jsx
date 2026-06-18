@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+himport { useEffect, useState } from 'react'
 import ExecutiveHeader from './components/ExecutiveHeader'
 import Sidebar from './components/Sidebar'
 import AccountSecurityPage from './pages/executive/AccountSecurityPage'
@@ -40,6 +40,7 @@ import PromotionHistoryPage from './pages/executive/PromotionHistoryPage'
 import PromotionMarginPage from './pages/executive/PromotionMarginPage'
 import SupportProgramPage from './pages/executive/SupportProgramPage'
 import BlogAutoPublishPage from './pages/executive/BlogAutoPublishPage'
+import AIReviewCenterPage from './pages/executive/AIReviewCenterPage'
 import PaymentApprovalPage from './pages/executive/PaymentApprovalPage'
 import PaymentRequestPage from './pages/executive/PaymentRequestPage'
 import PlatformOverviewPage from './pages/executive/PlatformOverviewPage'
@@ -112,7 +113,7 @@ const pages = {
   'quotation': QuotationPage,
   'profit-management': ProfitManagementPage,
   'product-cost': ProductCostPage,
-  'blog-auto-publish': BlogAutoPublishPage,
+  'blog-auto-publish': BlogAutoPublishPage,  'ai-review-center': AIReviewCenterPage,
   'support-programs': SupportProgramPage,
   'brand-health': BrandHealthPage,
   settings: Settings,
