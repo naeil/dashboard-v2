@@ -5,6 +5,7 @@ import {
   getSettlementDepositCalendar,
   getSettlementRealtimeSales,
   getSettlementChannelIntegrationStatus,
+  getSettlementExpected,
 } from '../../api/executiveApi'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://naeil-dashboard.onrender.com'
@@ -590,7 +591,7 @@ export default function SettlementSchedulePage() {
 
   async function load() {
     setLoading(true)
-    try { const res = await api.get('/executive/settlement-schedules', { params: { companyId: 1 } }); setItems(Array.isArray(res.data) ? res.data : (res.data?.data||[])) }
+    try { const res = await getSettlementExpected(); setItems(Array.isArray(res.data) ? res.data : (res.data?.data||[])) }
     catch { setItems([]) }
     finally { setLoading(false) }
   }
