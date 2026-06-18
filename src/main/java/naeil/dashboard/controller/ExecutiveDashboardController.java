@@ -319,6 +319,41 @@ public class ExecutiveDashboardController {
     private AuthUser requireUser(HttpServletRequest request) {
         return (AuthUser) request.getAttribute(AuthService.AUTHENTICATED_USER_ATTR);
     }
+        // ── 채널별·제품별 판매 상세 분석 API ──────────────────────────────────────
+
+        @GetMapping("/analytics/sales-detail")
+        public ResponseEntity<List<Map<String, Object>>> getSalesDetail(
+                        @RequestParam(defaultValue = "1") Long companyId,
+                        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+                        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+                        @RequestParam(required = false) String channel,
+                        @RequestParam(required = false) Long productId,
+                        @RequestParam(required = false, defaultValue = "revenue") String sortBy
+                ) {
+                    return ResponseEntity.ok(executiveDashboardService.getSalesDetail(companyId, startDate, endDate, channel, productId, sortBy));
+        }
+
+        @GetMapping("/analytics/repurchase-by-product")
+        public ResponseEntity<List<Map<String, Object>>> getRepurchaseByProduct(
+                        @RequestParam(defaultValue = "1") Long companyId,
+                        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+                        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+                        @RequestParam(required = false) Long productId,
+                        @RequestParam(required = false) String channel
+                ) {
+                    return ResponseEntity.ok(executiveDashboardService.getRepurchaseByProduct(companyId, startDate, endDate, productId, channel));
+        }
+
+        @GetMapping("/analytics/channel-product-matrix")
+        public ResponseEntity<List<Map<String, Object>>> getChannelProductMatrix(
+                        @RequestParam(defaultValue = "1") Long companyId,
+                        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+                        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate
+                ) {
+                    return ResponseEntity.ok(executiveDashboardService.getChannelProductMatrix(companyId, startDate, endDate));
+        }
+
+    
 
     private void requireManagerOrExecutive(AuthUser user) {
         if (user == null) {
