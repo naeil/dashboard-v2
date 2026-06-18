@@ -89,3 +89,13 @@ export const getEmployeeAnalysisHistory = (username) =>
 
 export const saveEmployeeFeedback = (analysisId, feedback) =>
   api.put(`/employee-analysis/${analysisId}/feedback`, { feedback })
+
+// ── 채널별·제품별 판매 상세 분석 API ─────────────────────────────────────────
+export const getSalesDetail = (params = {}) =>
+  api.get('/executive/analytics/sales-detail', { params: { ...companyParams, ...params } })
+
+export const getRepurchaseByProduct = (params = {}) =>
+  api.get('/executive/analytics/repurchase-by-product', { params: { ...companyParams, ...params } })
+
+export const getChannelProductMatrix = (params = {}) =>
+  api.get('/executive/analytics/channel-product-matrix', { params: { ...companyParams, ...params } })
