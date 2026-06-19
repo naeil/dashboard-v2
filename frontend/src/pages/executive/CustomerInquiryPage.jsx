@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getExecutiveCustomerInquiries, updateExecutiveRecord } from '../../api/executiveApi'
+import { getExecutiveCustomerInquiries } from '../../api/executiveApi'
+import { buildApiUrl } from '../../api/apiBase'
+import { getAuthToken } from '../../api/authApi'
 
 const channelLabels = {
   KAKAO: '카카오톡',
@@ -29,20 +31,30 @@ const statusClasses = {
 function count(value, unit = '건') {
   return String(Number(value || 0).toLocaleString('ko-KR')) + unit
 }
-
-function channelLabel(value) {
-  return channelLabels[value] || value || '기타'
-}
-
-function statusLabel(value) {
-  return statusLabels[value] || value || '확인 필요'
-}
-
+function channelLabel(value) { return channelLabels[value] || value || '기타' }
+function statusLabel(value) { return statusLabels[value] || value || '확인 필요' }
 function formatTime(value) {
   if (!value) return '시간 미정'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return String(value)
   return date.toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+async function postAnswer(inquiryId, content) {
+  const token = getAuthToken()
+  const res = await fetch(buildApiUrl('/channel-sync/inquiries/' + inquiryId + '/answer'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: 'Bearer ' + token } : {}),
+    },
+    body: JSON.stringify({ content }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.message || '답변 등록 실패')
+  }
+  return res.json()
 }
 
 export default function CustomerInquiryPage() {
@@ -51,6 +63,11 @@ export default function CustomerInquiryPage() {
   const [message, setMessage] = useState('')
   const [filterStatus, setFilterStatus] = useState('ALL')
   const [filterChannel, setFilterChannel] = useState('ALL')
+  // 답변 폼 상태: { [inquiryId]: string }
+  const [answerTexts, setAnswerTexts] = useState({})
+  const [answerOpen, setAnswerOpen] = useState({})
+  const [answerLoading, setAnswerLoading] = useState({})
+  const [answerMsg, setAnswerMsg] = useState({})
 
   const load = async () => {
     setLoading(true)
@@ -82,14 +99,32 @@ export default function CustomerInquiryPage() {
     })
   }, [rows, filterStatus, filterChannel])
 
-  const markInProgress = async (row) => {
-    await updateExecutiveRecord('customer-inquiries', row.id, { status: 'IN_PROGRESS' })
-    await load()
+  const toggleAnswerForm = (id) => {
+    setAnswerOpen(prev => ({ ...prev, [id]: !prev[id] }))
+    setAnswerMsg(prev => ({ ...prev, [id]: '' }))
   }
 
-  const markDone = async (row) => {
-    await updateExecutiveRecord('customer-inquiries', row.id, { status: 'DONE', answered_at: new Date().toISOString() })
-    await load()
+  const handleAnswer = async (item) => {
+    const content = (answerTexts[item.id] || '').trim()
+    if (!content) {
+      setAnswerMsg(prev => ({ ...prev, [item.id]: '답변 내용을 입력해주세요.' }))
+      return
+    }
+    setAnswerLoading(prev => ({ ...prev, [item.id]: true }))
+    setAnswerMsg(prev => ({ ...prev, [item.id]: '' }))
+    try {
+      await postAnswer(item.id, content)
+      setAnswerMsg(prev => ({ ...prev, [item.id]: '✅ 답변이 등록되었습니다.' }))
+      setAnswerTexts(prev => ({ ...prev, [item.id]: '' }))
+      await load()
+      setTimeout(() => {
+        setAnswerOpen(prev => ({ ...prev, [item.id]: false }))
+      }, 1500)
+    } catch (e) {
+      setAnswerMsg(prev => ({ ...prev, [item.id]: '❌ ' + e.message }))
+    } finally {
+      setAnswerLoading(prev => ({ ...prev, [item.id]: false }))
+    }
   }
 
   return (
@@ -196,15 +231,52 @@ export default function CustomerInquiryPage() {
                       {item.source_url && (
                         <a href={item.source_url} target="_blank" rel="noreferrer" className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 hover:bg-slate-50">채널 열기</a>
                       )}
-                      {item.status === 'UNANSWERED' && (
-                        <button type="button" onClick={() => markInProgress(item)} className="rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-black text-sky-700 hover:bg-sky-100">처리 시작</button>
-                      )}
                       {item.status !== 'DONE' && (
-                        <button type="button" onClick={() => markDone(item)} className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700 hover:bg-emerald-100">완료</button>
+                        <button
+                          type="button"
+                          onClick={() => toggleAnswerForm(item.id)}
+                          className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-black text-indigo-700 hover:bg-indigo-100"
+                        >
+                          {answerOpen[item.id] ? '닫기' : '답변하기'}
+                        </button>
                       )}
                     </div>
                   </div>
                 </div>
+
+                {/* 답변 입력 폼 */}
+                {answerOpen[item.id] && (
+                  <div className="mt-4 rounded-lg border border-indigo-100 bg-indigo-50 p-4">
+                    <p className="mb-2 text-xs font-black text-indigo-700">답변 작성</p>
+                    <textarea
+                      rows={4}
+                      value={answerTexts[item.id] || ''}
+                      onChange={(e) => setAnswerTexts(prev => ({ ...prev, [item.id]: e.target.value }))}
+                      placeholder="고객에게 전달할 답변을 입력해주세요..."
+                      className="w-full rounded-md border border-indigo-200 bg-white px-3 py-2 text-sm font-bold text-slate-800 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    />
+                    {answerMsg[item.id] && (
+                      <p className="mt-1 text-xs font-bold text-slate-600">{answerMsg[item.id]}</p>
+                    )}
+                    <div className="mt-2 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleAnswerForm(item.id)}
+                        className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 hover:bg-slate-50"
+                      >
+                        취소
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAnswer(item)}
+                        disabled={answerLoading[item.id]}
+                        className="rounded-md border border-indigo-300 bg-indigo-600 px-4 py-1.5 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50"
+                      >
+                        {answerLoading[item.id] ? '등록 중...' : '답변 등록'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </article>
             ))}
           </div>
