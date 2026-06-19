@@ -35,6 +35,91 @@ function formatClockTime(value) {
   return timeFormatter.format(new Date(value))
 }
 
+
+// ── 분야별 현황 신호등 ──────────────────────────────────────
+const domainSignals = [
+  { name: '매출·MD',        status: 'warn',   good: ['채널별 수익 분석', '쿠팡/카카오 할인 운영중'],    issues: ['일별·전주대비 미확인'] },
+  { name: '성과관리',        status: 'danger', good: [],                                              issues: ['KPI 미설정', '성과 데이터 없음'] },
+  { name: 'CRM',            status: 'danger', good: [],                                              issues: ['재구매 식별 없음', '리텐션 0', '고객 문의 3건 미답변'] },
+  { name: '콘텐츠',          status: 'warn',   good: ['홈페이지 배너 리뉴얼', '숏폼 제작 의뢰'],         issues: ['리뷰 관리 없음'] },
+  { name: '퍼포먼스',        status: 'warn',   good: ['네이버쇼핑 광고 셋팅'],                          issues: ['광고 소재 미교체', '전브랜드 미적용'] },
+  { name: '재고·물류',       status: 'danger', good: ['생산 입고 6/29 진행중'],                         issues: ['등심돈가스 D-12 소진 위험', '동판·필름지 인쇄 지연'] },
+  { name: '정산·재무',       status: 'danger', good: [],                                              issues: ['부흥사 미수금 미회수', '정산 자동화 0', '현금 위험 상태'] },
+  { name: '정부지원',        status: 'warn',   good: ['식품클러스터 진행중'],                            issues: ['재료비 집행 마감 D-10'] },
+  { name: '인플루언서·제휴', status: 'danger', good: [],                                              issues: ['5월 제휴 공백', '제휴 데이터 없음'] },
+]
+
+const urgentItems = [
+  { name: '단백깡 동판·필름지 인쇄',      dday: 'D-4',   level: 'orange' },
+  { name: '단백깡 생산 (입고목표일 6/29)', dday: 'D-10',  level: 'orange' },
+  { name: '식품클러스터 재료비 집행',       dday: 'D-10',  level: 'orange' },
+  { name: '등심돈가스 소진 (436개)',        dday: 'D-12',  level: 'red' },
+  { name: '부흥사 미수금 회수',             dday: '지연',  level: 'red' },
+  { name: '네이버 광고 소재 미교체',        dday: '확인필요', level: 'yellow' },
+]
+
+const signalConfig = {
+  good:   { bg: 'bg-green-50',  border: 'border-green-200',  badge: 'bg-white border border-green-300 text-green-700',   label: '잘됨' },
+  warn:   { bg: 'bg-yellow-50', border: 'border-yellow-200', badge: 'bg-white border border-yellow-300 text-yellow-700', label: '보완' },
+  danger: { bg: 'bg-red-50',    border: 'border-red-200',    badge: 'bg-white border border-red-300 text-red-700',       label: '빵꾸' },
+}
+
+const ddayConfig = {
+  orange: 'bg-orange-500 text-white',
+  red:    'bg-red-500 text-white',
+  yellow: 'bg-yellow-400 text-slate-900',
+}
+
+function SignalBoardSection() {
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-base">🗺️</span>
+          <h2 className="text-lg font-black text-slate-950">분야별 현황 신호등</h2>
+        </div>
+        <span className="text-xs font-bold text-slate-400">오늘 기준 · 업무 데이터 반영</span>
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {domainSignals.map((domain) => {
+          const cfg = signalConfig[domain.status]
+          return (
+            <article key={domain.name} className={`rounded-lg border p-4 ${cfg.bg} ${cfg.border}`}>
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-sm font-black text-slate-950">{domain.name}</span>
+                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-black ${cfg.badge}`}>{cfg.label}</span>
+              </div>
+              {domain.good.map((item) => (
+                <p key={item} className="mb-1 text-[11px] font-bold text-green-700">✓ {item}</p>
+              ))}
+              {domain.issues.map((item) => (
+                <p key={item} className="mb-1 text-[11px] font-bold text-red-600">△ {item}</p>
+              ))}
+            </article>
+          )
+        })}
+      </div>
+
+      <div className="border-t border-slate-100 pt-4">
+        <div className="mb-3 flex items-center gap-2">
+          <span className="text-sm">🔴</span>
+          <h3 className="text-sm font-black text-slate-950">긴급 업무</h3>
+        </div>
+        <div className="space-y-2">
+          {urgentItems.map((item) => (
+            <div key={item.name} className="flex items-center justify-between border-b border-slate-50 py-1.5">
+              <span className="text-sm font-bold text-slate-700">{item.name}</span>
+              <span className={`rounded-full px-3 py-0.5 text-[11px] font-black ${ddayConfig[item.level]}`}>{item.dday}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+// ────────────────────────────────────────────────────────────
+
 function StatCard({ label, value, helper, icon, tone = 'sky', onClick }) {
   const tones = {
     sky: 'border-sky-400/20 bg-sky-400/10 text-sky-100',
@@ -423,6 +508,8 @@ export default function PlatformOverviewPage({ onNavigate, username = 'admin', r
           </button>
         ))}
       </section>
+      <SignalBoardSection />
+
 
       <MailWidget />
 
