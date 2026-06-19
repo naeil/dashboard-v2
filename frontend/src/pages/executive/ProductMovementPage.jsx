@@ -47,28 +47,103 @@ function stockCoverDays(row) {
   return numberValue(row.real_stock) / average
 }
 
-function rankRows(rows, valueGetter, limit = 5) {
-  return [...rows]
-    .filter((row) => valueGetter(row) > 0)
-    .sort((a, b) => valueGetter(b) - valueGetter(a))
-    .slice(0, limit)
+function reorderInfo(row) {
+  const coverDays = stockCoverDays(row)
+  const safeStock = numberValue(row.safe_stock)
+  const realStock = numberValue(row.real_stock)
+  const dailyAvg = avgDailyOutbound(row)
+
+  if (row.stock_status === 'OUT_OF_STOCK') {
+    return { urgency: 'critical', daysLeft: 0, message: '즉시 발주 필요', sub: '현재 재고 0개 · 즉시 품절' }
+  }
+  if (row.stock_status === 'LOW_STOCK') {
+    const daysToSafe = dailyAvg > 0 ? Math.round((realStock - safeStock) / dailyAvg) : null
+    return {
+      urgency: 'high',
+      daysLeft: daysToSafe,
+      message: '재발주 시점 도달',
+      sub: daysToSafe !== null ? `약 ${daysToSafe}일 후 안전재고 이하` : '안전재고 이하 상태',
+    }
+  }
+  if (coverDays !== null && coverDays <= 7) {
+    return {
+      urgency: 'critical',
+      daysLeft: Math.round(coverDays),
+      message: `${Math.round(coverDays)}일 내 품절 예상`,
+      sub: '즉시 발주 권장',
+    }
+  }
+  if (coverDays !== null && coverDays <= 14) {
+    return {
+      urgency: 'high',
+      daysLeft: Math.round(coverDays),
+      message: `${Math.round(coverDays)}일 내 소진 가능`,
+      sub: '재발주 검토 권장',
+    }
+  }
+  if (coverDays !== null && coverDays <= 30) {
+    return {
+      urgency: 'medium',
+      daysLeft: Math.round(coverDays),
+      message: `${Math.round(coverDays)}일 분량 재고 보유`,
+      sub: '30일 내 재발주 계획 수립',
+    }
+  }
+  if (numberValue(row.last_7_days_outbound_count) === 0) {
+    return { urgency: 'none', daysLeft: null, message: '최근 출고 없음', sub: '판매 현황 확인 필요' }
+  }
+  if (coverDays !== null) {
+    return {
+      urgency: 'ok',
+      daysLeft: Math.round(coverDays),
+      message: '정상 회전',
+      sub: `약 ${Math.round(coverDays)}일 분량 재고`,
+    }
+  }
+  return { urgency: 'ok', daysLeft: null, message: '정상 회전', sub: '-' }
 }
 
 function RiskSignal({ row }) {
-  const coverDays = stockCoverDays(row)
-  if (row.stock_status === 'OUT_OF_STOCK') {
-    return <span className="font-black text-rose-600">즉시 품절 대응</span>
+  const info = reorderInfo(row)
+
+  if (info.urgency === 'critical') {
+    return (
+      <div className="flex flex-col gap-0.5">
+        <span className="font-black text-rose-600">{info.message}</span>
+        <span className="text-[11px] font-bold text-rose-400">{info.sub}</span>
+      </div>
+    )
   }
-  if (row.stock_status === 'LOW_STOCK') {
-    return <span className="font-black text-amber-600">재입고 필요</span>
+  if (info.urgency === 'high') {
+    return (
+      <div className="flex flex-col gap-0.5">
+        <span className="font-black text-amber-600">{info.message}</span>
+        <span className="text-[11px] font-bold text-amber-400">{info.sub}</span>
+      </div>
+    )
   }
-  if (coverDays !== null && coverDays <= 14) {
-    return <span className="font-black text-amber-600">{Math.round(coverDays)}일 내 소진 가능</span>
+  if (info.urgency === 'medium') {
+    return (
+      <div className="flex flex-col gap-0.5">
+        <span className="font-black text-yellow-600">{info.message}</span>
+        <span className="text-[11px] font-bold text-yellow-400">{info.sub}</span>
+      </div>
+    )
   }
-  if (numberValue(row.last_7_days_outbound_count) === 0) {
-    return <span className="font-black text-slate-500">최근 출고 없음</span>
+  if (info.urgency === 'none') {
+    return (
+      <div className="flex flex-col gap-0.5">
+        <span className="font-black text-slate-500">{info.message}</span>
+        <span className="text-[11px] font-bold text-slate-400">{info.sub}</span>
+      </div>
+    )
   }
-  return <span className="font-black text-emerald-600">정상 회전</span>
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="font-black text-emerald-600">{info.message}</span>
+      <span className="text-[11px] font-bold text-emerald-400">{info.sub}</span>
+    </div>
+  )
 }
 
 function RankingPanel({ title, rows, metricLabel, metricGetter, emptyMessage }) {
@@ -128,6 +203,35 @@ function RiskPanel({ rows }) {
   )
 }
 
+function ReorderBadge({ row }) {
+  const info = reorderInfo(row)
+  if (info.urgency === 'critical') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-rose-300 bg-rose-100 px-2 py-0.5 text-[10px] font-black text-rose-700">
+        <span className="material-symbols-outlined text-[12px]">emergency</span>
+        즉시 발주
+      </span>
+    )
+  }
+  if (info.urgency === 'high') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-700">
+        <span className="material-symbols-outlined text-[12px]">warning</span>
+        발주 시점
+      </span>
+    )
+  }
+  if (info.urgency === 'medium') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-yellow-300 bg-yellow-100 px-2 py-0.5 text-[10px] font-black text-yellow-700">
+        <span className="material-symbols-outlined text-[12px]">schedule</span>
+        발주 계획
+      </span>
+    )
+  }
+  return null
+}
+
 function ProductMovementTable({ rows }) {
   const [query, setQuery] = useState('')
   const [sortMode, setSortMode] = useState('recentDesc')
@@ -136,10 +240,10 @@ function ProductMovementTable({ rows }) {
     const normalized = query.trim().toLowerCase()
     const searched = normalized
       ? rows.filter((row) => (
-        [row.product_name, row.brand_name, row.sku_cd, row.prod_no]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(normalized))
-      ))
+          [row.product_name, row.brand_name, row.sku_cd, row.prod_no]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(normalized))
+        ))
       : rows
 
     return [...searched].sort((a, b) => {
@@ -189,7 +293,7 @@ function ProductMovementTable({ rows }) {
         <table className="min-w-full divide-y divide-slate-200 text-left">
           <thead className="bg-slate-50">
             <tr>
-              {['상태', '제품명', '브랜드', 'SKU', '현재 재고', '안전 재고', '오늘 출고', '최근 7일 출고', '누적 출고', '재고 회전 신호', '수집 시각'].map((label) => (
+              {['상태', '제품명', '브랜드', 'SKU', '현재 재고', '안전 재고', '오늘 출고', '최근 7일 출고', '누적 출고', '재고 회전 신호 · 재발주 시점', '수집 시각'].map((label) => (
                 <th key={label} className="whitespace-nowrap px-4 py-3 text-xs font-black text-slate-500">{label}</th>
               ))}
             </tr>
@@ -206,7 +310,12 @@ function ProductMovementTable({ rows }) {
                 <td className="whitespace-nowrap px-4 py-3 text-sm font-black text-emerald-700">{formatCount(row.today_outbound_count, '개')}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-sm font-black text-emerald-700">{formatCount(row.last_7_days_outbound_count, '개')}</td>
                 <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-slate-700">{formatCount(row.outbound_accum_snapshot, '개')}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-sm"><RiskSignal row={row} /></td>
+                <td className="min-w-[180px] px-4 py-3">
+                  <div className="flex flex-col gap-1">
+                    <RiskSignal row={row} />
+                    <ReorderBadge row={row} />
+                  </div>
+                </td>
                 <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-slate-500">{formatDateTime(row.collected_at)}</td>
               </tr>
             ))}
@@ -396,4 +505,11 @@ export default function ProductMovementPage({ role = 'EXECUTIVE' }) {
       </Panel>
     </>
   )
+}
+
+function rankRows(rows, valueGetter, limit = 5) {
+  return [...rows]
+    .filter((row) => valueGetter(row) > 0)
+    .sort((a, b) => valueGetter(b) - valueGetter(a))
+    .slice(0, limit)
 }
