@@ -11,6 +11,7 @@ import ChannelOperationsPage from './pages/executive/ChannelOperationsPage'
 import ChannelSalesPage from './pages/executive/ChannelSalesPage'
 import ConsultingRevenuePage from './pages/executive/ConsultingRevenuePage'
 import CustomerDatabasePage from './pages/executive/CustomerDatabasePage'
+import CustomerInquiryPage from './pages/executive/CustomerInquiryPage'
 import CustomerIntelligencePage from './pages/executive/CustomerIntelligencePage'
 import SettlementSchedulePage from './pages/executive/SettlementSchedulePage'
 import IncentiveManagementPage from './pages/executive/IncentiveManagementPage'
@@ -75,6 +76,7 @@ const pages = {
   'channel-credentials': ChannelCredentialPage,
   'customer-db': CustomerDatabasePage,
   'customer-intelligence': CustomerIntelligencePage,
+  'customer-inquiry': CustomerInquiryPage,
   'channel-operations': ChannelOperationsPage,
   'product-profit': ProductProfitPage,
   'product-forecast': ProductForecastPage,
