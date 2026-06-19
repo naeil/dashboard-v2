@@ -437,5 +437,81 @@ public class ChannelSyncService {
         return sb.toString();
     }
 
+    // ── 네이버 CS 문의 답변 등록 ──────────────────────────────────────────────
+    public Map<String, Object> answerInquiry(Long inquiryId, String answerContent) throws Exception {
+        // 1) DB에서 해당 문의 조회 (external_id, channel 확인)
+        var rows = jdbcTemplate.queryForList(
+                "SELECT id, channel, external_id, status FROM executive_customer_inquiry WHERE id = ?",
+                inquiryId);
+        if (rows.isEmpty()) throw new RuntimeException("문의를 찾을 수 없습니다: " + inquiryId);
+
+        var row = rows.get(0);
+        String channel = (String) row.get("channel");
+        String externalId = (String) row.get("external_id");
+
+        // 2) 채널별 실제 API 답변 등록
+        if ("SMARTSTORE".equals(channel)) {
+            ChannelApiCredential cred = credentialRepo.findByChannelType("SMARTSTORE")
+                    .orElseThrow(() -> new RuntimeException("SmartStore credentials not found"));
+            if (Boolean.TRUE.equals(cred.getIsActive()) &&
+                    cred.getCredentialKey1() != null && !cred.getCredentialKey1().isBlank()) {
+                postNaverAnswer(cred, externalId, answerContent);
+            }
+        }
+
+        // 3) DB 상태 업데이트 (DONE + answered_at)
+        jdbcTemplate.update("""
+                UPDATE executive_customer_inquiry
+                SET status = 'DONE', answered_at = NOW(), updated_at = NOW()
+                WHERE id = ?
+                """, inquiryId);
+
+        log.info("[AnswerInquiry] 답변 등록 완료 - id={}, channel={}, externalId={}", inquiryId, channel, externalId);
+        return Map.of("success", true, "inquiryId", inquiryId, "channel", channel);
+    }
+
+    private void postNaverAnswer(ChannelApiCredential cred, String externalId, String answerContent) throws Exception {
+        // sample- 로 시작하는 더미 데이터는 실제 API 호출 스킵
+        if (externalId != null && externalId.startsWith("sample-")) {
+            log.info("[AnswerInquiry] 샘플 데이터 - Naver API 호출 스킵 (externalId={})", externalId);
+            return;
+        }
+        // pui- 접두사는 구매자 문의 (pay-merchant/inquiries)
+        // 나머지는 상품 문의 (contents/qnas)
+        String accessToken = getNaverAccessToken(cred.getCredentialKey1(), cred.getCredentialKey2());
+        if (accessToken == null) throw new RuntimeException("네이버 토큰 발급 실패");
+
+        if (externalId != null && externalId.startsWith("pui-")) {
+            // 구매자 문의 답변: POST /v1/pay-merchant/inquiries/{inquiryNo}/answer
+            String inquiryNo = externalId.substring(4);
+            String url = "https://api.commerce.naver.com/external/v1/pay-merchant/inquiries/" + inquiryNo + "/answer";
+            String body = "{"content":"" + answerContent.replace(""", "\\"") + ""}";
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Bearer " + accessToken)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body)).build();
+            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            log.info("[AnswerInquiry] pay-merchant answer HTTP={} body={}", resp.statusCode(), resp.body());
+            if (resp.statusCode() >= 300) {
+                throw new RuntimeException("네이버 구매자 문의 답변 실패: HTTP " + resp.statusCode() + " | " + resp.body());
+            }
+        } else {
+            // 상품 문의 답변: PUT /v1/contents/qnas/{questionId}
+            String url = "https://api.commerce.naver.com/external/v1/contents/qnas/" + externalId;
+            String body = "{"answer":"" + answerContent.replace(""", "\\"") + ""}";
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Bearer " + accessToken)
+                    .header("Content-Type", "application/json")
+                    .method("PUT", HttpRequest.BodyPublishers.ofString(body)).build();
+            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            log.info("[AnswerInquiry] qna answer HTTP={} body={}", resp.statusCode(), resp.body());
+            if (resp.statusCode() >= 300) {
+                throw new RuntimeException("네이버 상품 문의 답변 실패: HTTP " + resp.statusCode() + " | " + resp.body());
+            }
+        }
+    }
+
     private record SyncResult(boolean success, String message, long salesAmount, int orderCount) {}
 }
