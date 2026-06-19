@@ -7,6 +7,7 @@ function StatusBadge({ label, color }) {
     hidden: 'bg-slate-100 text-slate-500',
     private: 'bg-violet-100 text-violet-600',
     deleted: 'bg-red-100 text-red-500',
+    bold: 'bg-amber-100 text-amber-700',
   }
   return (
     <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${colors[color] || colors.hidden}`}>
@@ -15,7 +16,7 @@ function StatusBadge({ label, color }) {
   )
 }
 
-function EditableLabel({ value, originalLabel, onChange }) {
+function EditableLabel({ value, originalLabel, onChange, isBold }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value || originalLabel)
 
@@ -53,7 +54,7 @@ function EditableLabel({ value, originalLabel, onChange }) {
       className="group flex items-center gap-1 text-left"
       title="이름 수정"
     >
-      <span className={`text-sm font-bold ${value && value !== originalLabel ? 'text-sky-600' : 'text-slate-800'}`}>
+      <span className={`text-sm ${isBold ? 'font-black text-slate-950' : 'font-bold'} ${value && value !== originalLabel ? 'text-sky-600' : isBold ? 'text-slate-950' : 'text-slate-800'}`}>
         {value || originalLabel}
       </span>
       {value && value !== originalLabel && (
@@ -131,7 +132,7 @@ function findItem(itemId) {
 function cleanOverrides(overrides) {
   return Object.fromEntries(
     Object.entries(overrides).filter(([, value]) =>
-      value.label || value.hidden || value.private || value.deleted
+      value.label || value.hidden || value.private || value.deleted || value.bold
     )
   )
 }
@@ -178,6 +179,10 @@ export default function MenuOrderSettingsPage() {
 
   function toggleDeleted(id) {
     setOv(id, { deleted: !getOv(id).deleted })
+  }
+
+  function toggleBold(id) {
+    setOv(id, { bold: !getOv(id).bold })
   }
 
   function setLabel(id, label) {
@@ -285,6 +290,10 @@ export default function MenuOrderSettingsPage() {
             이름 클릭 → 수정
           </span>
           <span className="flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-base text-amber-500">format_bold</span>
+            굵게 → 사이드바 메뉴명 굵은 폰트 강조
+          </span>
+          <span className="flex items-center gap-1.5">
             <span className="material-symbols-outlined text-base text-slate-400">visibility_off</span>
             숨기기 → 사이드바에서 안 보임
           </span>
@@ -343,6 +352,7 @@ export default function MenuOrderSettingsPage() {
                   value={sectionOverride.label}
                   originalLabel={section.title}
                   onChange={(value) => setLabel(section.id, value)}
+                  isBold={false}
                 />
                 {sectionOverride.hidden && <StatusBadge label="숨김" color="hidden" />}
                 {sectionOverride.private && <StatusBadge label="비공개" color="private" />}
@@ -382,13 +392,14 @@ export default function MenuOrderSettingsPage() {
               {section.items.map((item) => {
                 const itemOverride = getOv(item.id)
                 const isItemDeleted = !!itemOverride.deleted
+                const isItemBold = !!itemOverride.bold
                 if (isItemDeleted && !showDeleted) return null
 
                 return (
                   <div
                     key={item.id}
                     onClick={() => setSelectedItemId(item.id)}
-                    className={`flex cursor-pointer items-center justify-between gap-3 px-5 py-3 transition-colors ${selectedItemId === item.id ? 'bg-sky-50 ring-1 ring-inset ring-sky-200' : isItemDeleted ? 'bg-red-50 opacity-60' : 'hover:bg-slate-50'}`}
+                    className={`flex cursor-pointer items-center justify-between gap-3 px-5 py-3 transition-colors ${selectedItemId === item.id ? 'bg-sky-50 ring-1 ring-inset ring-sky-200' : isItemDeleted ? 'bg-red-50 opacity-60' : isItemBold ? 'bg-amber-50/40 hover:bg-amber-50' : 'hover:bg-slate-50'}`}
                   >
                     <div className="flex min-w-0 items-center gap-3">
                       <span className="material-symbols-outlined shrink-0 text-base text-slate-400">{item.icon}</span>
@@ -396,7 +407,9 @@ export default function MenuOrderSettingsPage() {
                         value={itemOverride.label}
                         originalLabel={item.label}
                         onChange={(value) => setLabel(item.id, value)}
+                        isBold={isItemBold}
                       />
+                      {isItemBold && <StatusBadge label="굵게" color="bold" />}
                       {itemOverride.hidden && <StatusBadge label="숨김" color="hidden" />}
                       {itemOverride.private && <StatusBadge label="비공개" color="private" />}
                       {itemOverride.deleted && <StatusBadge label="삭제됨" color="deleted" />}
@@ -404,6 +417,11 @@ export default function MenuOrderSettingsPage() {
                     </div>
 
                     <div className="flex shrink-0 items-center gap-1" onClick={(event) => event.stopPropagation()}>
+                      <button type="button" onClick={() => toggleBold(item.id)}
+                        title={isItemBold ? '굵게 해제' : '굵게 표시'}
+                        className={`rounded-lg p-1.5 transition-colors ${isItemBold ? 'bg-amber-100 text-amber-700' : 'text-slate-300 hover:bg-amber-50 hover:text-amber-500'}`}>
+                        <span className="material-symbols-outlined text-sm">format_bold</span>
+                      </button>
                       <button type="button" onClick={() => toggleHidden(item.id)}
                         title={itemOverride.hidden ? '표시' : '숨기기'}
                         className={`rounded-lg p-1.5 transition-colors ${itemOverride.hidden ? 'bg-slate-200 text-slate-700' : 'text-slate-300 hover:bg-slate-100 hover:text-slate-600'}`}>
