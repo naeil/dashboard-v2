@@ -211,7 +211,7 @@ function MenuLabel({ isExpanded, children }) {
     return (
           <span className={`overflow-hidden whitespace-nowrap transition-all duration-300 ${isExpanded ? 'w-auto opacity-100' : 'w-0 opacity-0'}`}>
             {children}
-          </span>span>
+          </span>
         )
 }
 
