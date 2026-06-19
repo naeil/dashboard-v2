@@ -485,7 +485,7 @@ public class ChannelSyncService {
             // 구매자 문의 답변: POST /v1/pay-merchant/inquiries/{inquiryNo}/answer
             String inquiryNo = externalId.substring(4);
             String url = "https://api.commerce.naver.com/external/v1/pay-merchant/inquiries/" + inquiryNo + "/answer";
-            String body = "{"content":"" + answerContent.replace(""", "\\"") + ""}";
+            String body = "{\"content\":\"" + answerContent.replace("\"", "\\\"") + "\"}";
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Authorization", "Bearer " + accessToken)
@@ -499,7 +499,7 @@ public class ChannelSyncService {
         } else {
             // 상품 문의 답변: PUT /v1/contents/qnas/{questionId}
             String url = "https://api.commerce.naver.com/external/v1/contents/qnas/" + externalId;
-            String body = "{"answer":"" + answerContent.replace(""", "\\"") + ""}";
+            String body = "{\"answer\":\"" + answerContent.replace("\"", "\\\"") + "\"}";
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Authorization", "Bearer " + accessToken)
