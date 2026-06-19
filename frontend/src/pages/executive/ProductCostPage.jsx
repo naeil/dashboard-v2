@@ -33,7 +33,7 @@ function saveColLabel(channelKey, colKey, label) {
   } catch {}
 }
 
-const CHANNELS_DEFAULT = ['스마트스토어팜','쿠팡','자사물','11번가','지마켓','옥션','카카오톡스토어','해외(국가별)','오프라인(납품처별)']
+const CHANNELS_DEFAULT = ['스마트스토어팜','쿠팡','자사물','11번가','지마켓','옥션','카카오톡스토어','해외(국가별)','트레이더스','제로스토어 위탁','제로스토어 사입','온라인 할인가','폐쇄몰 위탁','폐쇄몰 사입','랭킹닭컴 위탁','오프라인(납품처별)']
 
 const CHANNEL_COLS_DEFAULT = [
   {key:'product_code',label:'상품코드',type:'text',width:130},
