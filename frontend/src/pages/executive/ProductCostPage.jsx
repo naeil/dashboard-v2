@@ -118,7 +118,7 @@ function EditableHeader({label,onRename}){
 }
 
 // 탭명 편집 버튼
-function EditableTabName({tabKey,label,isActive,count,onSelect,onRename}){
+function EditableTabName({tabKey,label,isActive,count,onSelect,onRename,onDelete}){
   const [editing,setEditing]=useState(false)
   const [draft,setDraft]=useState(label)
   const ref=useRef(null)
@@ -146,6 +146,8 @@ function EditableTabName({tabKey,label,isActive,count,onSelect,onRename}){
       )}
       <span title="더블클릭으로 탭명 수정" onDoubleClick={startEdit}
         style={{cursor:'pointer',fontSize:10,color:isActive?'#4a8fcf':'#3a5a7a',padding:'0 3px',userSelect:'none',lineHeight:1}}>✏️</span>
+{onDelete&&<span title="카테고리 삭제" onClick={e=>{e.stopPropagation();if(window.confirm(`'${label}' 탭을 삭제할까요?\n해당 탭의 데이터는 삭제되지 않습니다.`))onDelete(tabKey)}}
+        style={{cursor:'pointer',fontSize:10,color:isActive?'#e57373':'#7a4a4a',padding:'0 3px',userSelect:'none',lineHeight:1}}>🗑️</span>}
     </div>
   )
 }
@@ -494,6 +496,12 @@ export default function ProductCostPage(){
     setTabLabels(prev=>({...prev,[tabKey]:newLabel}))
   }
 
+  
+  const handleTabDelete=(tabKey)=>{
+    setChannels(prev=>prev.filter(c=>c!==tabKey))
+    if(activeTab===tabKey)setActiveTab('통합정리')
+  }
+
   const getTabLabel=(key)=>tabLabels[key]||key
 
   const STATIC_TABS=['통합정리',...channels,'SKU마스터','물류비구간']
@@ -537,6 +545,7 @@ export default function ProductCostPage(){
               count={cnt}
               onSelect={k=>setActiveTab(k)}
               onRename={l=>handleTabRename(tabKey,l)}
+              onDelete={tabKey!=='통합정리'&&tabKey!=='SKU마스터'&&tabKey!=='물류비구간'?handleTabDelete:null}
             />
           )
         })}
