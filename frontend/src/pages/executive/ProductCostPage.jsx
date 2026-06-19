@@ -61,6 +61,23 @@ const OFFLINE_COLS_DEFAULT = [
 
 const OFFLINE_COL_STORAGE_KEY = 'offline_col_labels_v1'
 
+
+// note JSON 파싱 (오프라인 전용 필드 추칬)
+const OFFLINE_NOTE_FIELDS = ['buyer_country', 'buyer_name', 'trade_channel', 'trade_terms', 'currency', 'exchange_rate']
+
+function parseOfflineRow(row) {
+  if (!row) return row
+  let noteData = {}
+  try { noteData = row.note ? JSON.parse(row.note) : {} } catch {}
+  return { ...row, ...noteData }
+}
+
+function packOfflineNote(row) {
+  const noteObj = {}
+  OFFLINE_NOTE_FIELDS.forEach(f => { if (row[f] != null) noteObj[f] = row[f] })
+  return JSON.stringify(noteObj)
+}
+
 function loadOfflineCols() {
   try {
     const saved = JSON.parse(localStorage.getItem(OFFLINE_COL_STORAGE_KEY) || '{}')
@@ -255,7 +272,7 @@ function OfflineTable({ rows, onRefresh, notify }) {
   const [searchProduct, setSearchProduct] = useState('')
   const [searchBuyer, setSearchBuyer] = useState('')
 
-  useEffect(() => { setTableRows(rows) }, [rows])
+  useEffect(() => { setTableRows(rows.map(parseOfflineRow)) }, [rows])
 
   const handleRename = (key, label) => {
     saveOfflineColLabel(key, label)
@@ -266,14 +283,15 @@ function OfflineTable({ rows, onRefresh, notify }) {
     const updated = { ...row, [key]: val }
     setTableRows(prev => prev.map(item => item.id === row.id ? updated : item))
     try {
+      const payload = { ...updated, note: packOfflineNote(updated) }
       if (row.id) {
-        await updateChannelProduct(row.id, updated)
+        await updateChannelProduct(row.id, payload)
       } else {
-        await saveChannelProduct({ ...updated, channel_name: '오프라인(납품처별)' })
+        await saveChannelProduct({ ...payload, channel_name: '오프라인(납품처별)' })
       }
       onRefresh()
     } catch {
-      setTableRows(rows)
+      setTableRows(rows.map(parseOfflineRow))
       notify('저장 실패', 'error')
     }
   }
@@ -295,7 +313,7 @@ function OfflineTable({ rows, onRefresh, notify }) {
     }
     setSaving(true)
     try {
-      await saveChannelProduct({ ...newRow, channel_name: '오프라인(납품처별)' })
+      await saveChannelProduct({ ...newRow, channel_name: '오프라인(납품처별)', note: packOfflineNote(newRow) })
       setNewRow({ ...EMPTY_OFFLINE_ROW })
       setAdding(false)
       onRefresh()
