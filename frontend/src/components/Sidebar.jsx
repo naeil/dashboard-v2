@@ -328,9 +328,9 @@ export default function Sidebar({
                 <div key={section.title}>
                   {isExpanded ? (
                             <button type="button" onClick={() => toggleSection(section.title)} className="mb-1 flex w-full items-center justify-between rounded px-4 py-1 transition-colors hover:bg-slate-50">
-                                        <span className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">{section.title}</span>span>
-                                        <span className="material-symbols-outlined text-sm text-slate-300 transition-transform duration-200" style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', fontSize: '16px' }}>expand_more</span>span>
-                            </button>button>
+                                        <span className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">{section.title}</span>
+                                        <span className="material-symbols-outlined text-sm text-slate-300 transition-transform duration-200" style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', fontSize: '16px' }}>expand_more</span>
+                            </button>
                           ) : null}
                 
                   {(!isCollapsed || !isExpanded) && (
@@ -347,14 +347,14 @@ export default function Sidebar({
                                                                                                     }}
                                                                                                   className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm transition-colors ${item.emphasis ? 'font-black' : 'font-bold'} ${isActive ? 'bg-sky-500 text-white shadow-sm' : item.emphasis ? 'text-slate-900 hover:bg-slate-100 hover:text-slate-950' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'}`}
                                                                                                 >
-                                                                                                <span className="material-symbols-outlined shrink-0 text-xl">{item.icon}</span>span>
-                                                                                                <MenuLabel isExpanded={isExpanded}>{item.personal ? `${personalBaseLabel} / ${item.personalSuffix || item.label}` : item.label}</MenuLabel>MenuLabel>
-                                                                              </a>a>
+                                                                                                <span className="material-symbols-outlined shrink-0 text-xl">{item.icon}</span>
+                                                                                                <MenuLabel isExpanded={isExpanded}>{item.personal ? `${personalBaseLabel} / ${item.personalSuffix || item.label}` : item.label}</MenuLabel>
+                                                                              </a>
                                                                             )
                               })}
-                            </div>div>
+                            </div>
                         )}
-                </div>div>
+                </div>
               )
   }
   
@@ -362,25 +362,25 @@ export default function Sidebar({
           <aside className={`fixed left-0 top-0 z-50 flex h-full flex-col border-r border-slate-200 bg-white text-slate-600 shadow-sm transition-all duration-300 ${isExpanded ? 'w-72' : 'w-20'}`}>
                 <div className={`flex items-center p-5 ${isExpanded ? 'justify-between' : 'justify-center'}`}>
                         <div className={`min-w-0 ${isExpanded ? 'block' : 'hidden'}`}>
-                                  <p className="text-xs font-black uppercase tracking-[0.22em] text-sky-600">Naeil Group</p>p>
-                                  <h1 className="mt-1 truncate text-lg font-black text-slate-950">Business Platform</h1>h1>
-                        </div>div>
+                                  <p className="text-xs font-black uppercase tracking-[0.22em] text-sky-600">Naeil Group</p>
+                                  <h1 className="mt-1 truncate text-lg font-black text-slate-950">Business Platform</h1>
+                        </div>
                         <button type="button" onClick={onToggle} className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950" aria-label={isExpanded ? '사이드바 접기' : '사이드바 펼치기'}>
-                                  <span className="material-symbols-outlined">{isExpanded ? 'menu_open' : 'menu'}</span>span>
-                        </button>button>
-                </div>div>
+                                  <span className="material-symbols-outlined">{isExpanded ? 'menu_open' : 'menu'}</span>
+                        </button>
+                </div>
           
                 <nav className="flex-1 overflow-y-auto px-3 py-2">
                   {showExecutiveGroup && (
                       <div className="space-y-3">
                         {executiveSections.map(renderSection)}
-                      </div>div>
+                      </div>
                         )}
                 
                   {showStaffGroup && (
                       <div className="mt-4 space-y-3">
                         {staffSections.map(renderSection)}
-                      </div>div>
+                      </div>
                         )}
                 
                   {systemSections.length > 0 && (
@@ -388,31 +388,31 @@ export default function Sidebar({
                         {isExpanded && <div className="my-2 border-t border-slate-200" />}
                         {!isExpanded && <div className="my-2 border-t border-slate-200" />}
                         {systemSections.map(renderSection)}
-                      </div>div>
+                      </div>
                         )}
-                </nav>nav>
+                </nav>
           
                 <div className="border-t border-slate-200 p-4">
                         <div className={`flex rounded-lg bg-slate-50 p-3 ${isExpanded ? 'items-center justify-between gap-3' : 'justify-center'}`}>
                                   <div className="flex min-w-0 items-center gap-3">
                                               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500 text-sm font-black text-white">
                                                 {(displayName || username || 'A').slice(0, 1).toUpperCase()}
-                                              </div>div>
+                                              </div>
                                     {isExpanded && (
                           <div className="min-w-0">
-                                          <p className="truncate text-xs font-black text-slate-950">{displayName || username || 'admin'}</p>p>
-                                          <p className="text-[11px] font-bold text-slate-500">{department ? `${department} · ${roleLabels[role] || role}` : roleLabels[role] || role}</p>p>
-                          </div>div>
+                                          <p className="truncate text-xs font-black text-slate-950">{displayName || username || 'admin'}</p>
+                                          <p className="text-[11px] font-bold text-slate-500">{department ? `${department} · ${roleLabels[role] || role}` : roleLabels[role] || role}</p>
+                          </div>
                                               )}
-                                  </div>div>
+                                  </div>
                           {isExpanded && (
                         <button type="button" onClick={onLogout} className="rounded-lg px-3 py-2 text-xs font-black text-slate-500 transition-colors hover:bg-white hover:text-slate-950">
                                       로그아웃
-                        </button>button>
+                        </button>
                                   )}
-                        </div>div>
-                </div>div>
-          </aside>aside>
+                        </div>
+                </div>
+          </aside>
         )
 }
-// build: 1781252773189</button>
+// build: 1781252773189
