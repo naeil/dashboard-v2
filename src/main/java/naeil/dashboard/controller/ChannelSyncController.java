@@ -97,4 +97,22 @@ public class ChannelSyncController {
         return ResponseEntity.ok(Map.of("success", true, "results", results));
     }
 
+    // ==================== CS 문의 답변 등록 ====================
+
+    @PostMapping("/inquiries/{inquiryId}/answer")
+    public ResponseEntity<Map<String, Object>> answerInquiry(
+            @PathVariable Long inquiryId,
+            @RequestBody Map<String, Object> payload) {
+        try {
+            String content = (String) payload.get("content");
+            if (content == null || content.isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("success", false, "message", "답변 내용을 입력해주세요."));
+            }
+            Map<String, Object> result = channelSyncService.answerInquiry(inquiryId, content);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
 }
