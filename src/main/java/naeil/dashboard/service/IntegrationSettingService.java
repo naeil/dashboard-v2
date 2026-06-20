@@ -487,6 +487,7 @@ public class IntegrationSettingService {
         }
 
         return switch (unit) {
+            case HOUR -> endDate.atStartOfDay().minusHours(value).toLocalDate();
             case DAY -> endDate.minusDays(value);
             case WEEK -> endDate.minusWeeks(value);
             case MONTH -> endDate.minusMonths(value);
