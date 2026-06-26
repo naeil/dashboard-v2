@@ -7,6 +7,12 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:password}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
 
   jpa:
     hibernate:
@@ -28,10 +34,37 @@ spring:
   cache:
     type: redis
     redis:
-      time-to-live: 300000  # 5 minutes in milliseconds
+      time-to-live: 300000 # 5 minutes in milliseconds
 
   data:
     redis:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
       username: ${SPRING_DATA_REDIS_USERNAME:}
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
+
+  mail:
+    host: ${SPRING_MAIL_HOST:smtp.gmail.com}
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+    test-connection: false
+
+app:
+  mail:
+    from: ${APP_MAIL_FROM:noreply@naeil.com}
+
+server:
+  port: 8080
+
+logging:
+  level:
+    naeil.dashboard: INFO
+    org.springframework.web: INFO
+    org.hibernate.SQL: OFF
