@@ -8,6 +8,7 @@ import naeil.dashboard.entity.PayrollRecord;
 import naeil.dashboard.repository.PayrollRecordRepository;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -34,10 +35,12 @@ public class PayrollService {
     );
 
     private final PayrollRecordRepository payrollRecordRepository;
-    private final JavaMailSender mailSender;
     private final JdbcTemplate jdbcTemplate;
 
-    @Value("${app.mail.from}")
+    @Autowired(required = false)
+    private JavaMailSender mailSender;
+
+    @Value("${app.mail.from:noreply@naeil.com}")
     private String mailFrom;
 
     // ──────────────────────────────────────────────
@@ -272,8 +275,8 @@ public class PayrollService {
         }
         BigDecimal weeklyHolidayAllowance = "HOURLY".equals(salaryType)
                 ? (weeklyHolidayAuto
-                    ? won(hourlyWage.multiply(hoursPerDay).multiply(weeklyHolidayWeeks))
-                    : requestedWeeklyHolidayAllowance)
+                        ? won(hourlyWage.multiply(hoursPerDay).multiply(weeklyHolidayWeeks))
+                        : requestedWeeklyHolidayAllowance)
                 : BigDecimal.ZERO;
 
         BigDecimal totalPayment = baseSalary
@@ -435,6 +438,11 @@ public class PayrollService {
 
     @Transactional
     public PayrollDto.SendResult sendPayslips(String payYearMonth) {
+        if (mailSender == null) {
+            log.warn("메일 서버 설정이 없습니다. 급여명세서 이메일 발송을 건너뜁니다.");
+            return new PayrollDto.SendResult(0, 0, List.of("메일 서버 미설정 - 관리자에게 문의하세요."));
+        }
+
         List<PayrollRecord> records = payrollRecordRepository
                 .findByCompanyIdAndPayYearMonthOrderByEmployeeName(DEFAULT_COMPANY_ID, payYearMonth);
 
@@ -473,46 +481,46 @@ public class PayrollService {
 
     private String buildEmailHtml(PayrollRecord r) {
         return """
-            <html><body style="font-family:sans-serif;color:#222;">
-            <h2 style="color:#0ea5e9;">%s 급여명세서</h2>
-            <p>%s님, 안녕하세요. %s 급여명세서를 안내드립니다.</p>
-            <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%%;max-width:480px;">
-              <tr style="background:#f1f5f9;"><th colspan="2">지급 내역</th></tr>
-              <tr><td>기본급</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr><td>주휴수당</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr><td>식대</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr><td>교통비</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr><td>기타수당</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr style="font-weight:bold;background:#e0f2fe;"><td>지급합계</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr style="background:#f1f5f9;"><th colspan="2">공제 내역</th></tr>
-              <tr><td>국민연금</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr><td>건강보험</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr><td>장기요양</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr><td>고용보험</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr><td>소득세</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr><td>지방소득세</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr style="font-weight:bold;background:#fee2e2;"><td>공제합계</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr style="font-weight:bold;font-size:1.1em;background:#dcfce7;"><td>실수령액</td><td style="text-align:right;">%,d 원</td></tr>
-            </table>
-            <p style="color:#64748b;font-size:0.85em;margin-top:24px;">문의사항은 관리자에게 연락해 주세요.</p>
-            </body></html>
-            """.formatted(
-                r.getPayYearMonth(), r.getEmployeeName(), r.getPayYearMonth(),
-                r.getBaseSalary().longValue(),
-                r.getWeeklyHolidayAllowance().longValue(),
-                r.getMealAllowance().longValue(),
-                r.getTransportAllowance().longValue(),
-                r.getOtherAllowance().longValue(),
-                r.getTotalPayment().longValue(),
-                r.getDeductionNationalPension().longValue(),
-                r.getDeductionHealthInsurance().longValue(),
-                r.getDeductionLongTermCare().longValue(),
-                r.getDeductionEmploymentInsurance().longValue(),
-                r.getDeductionIncomeTax().longValue(),
-                r.getDeductionLocalIncomeTax().longValue(),
-                r.getTotalDeduction().longValue(),
-                r.getNetPay().longValue()
-        );
+                <html><body style="font-family:sans-serif;color:#222;">
+                <h2 style="color:#0ea5e9;">%s 급여명세서</h2>
+                <p>%s님, 안녕하세요. %s 급여명세서를 안내드립니다.</p>
+                <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%%;max-width:480px;">
+                <tr style="background:#f1f5f9;"><th colspan="2">지급 내역</th></tr>
+                <tr><td>기본급</td><td style="text-align:right;">%,d 원</td></tr>
+                <tr><td>주휴수당</td><td style="text-align:right;">%,d 원</td></tr>
+                <tr><td>식대</td><td style="text-align:right;">%,d 원</td></tr>
+                <tr><td>교통비</td><td style="text-align:right;">%,d 원</td></tr>
+                <tr><td>기타수당</td><td style="text-align:right;">%,d 원</td></tr>
+                <tr style="font-weight:bold;background:#e0f2fe;"><td>지급합계</td><td style="text-align:right;">%,d 원</td></tr>
+                <tr style="background:#f1f5f9;"><th colspan="2">공제 내역</th></tr>
+                <tr><td>국민연금</td><td style="text-align:right;">%,d 원</td></tr>
+                <tr><td>건강보험</td><td style="text-align:right;">%,d 원</td></tr>
+                <tr><td>장기요양</td><td style="text-align:right;">%,d 원</td></tr>
+                <tr><td>고용보험</td><td style="text-align:right;">%,d 원</td></tr>
+                <tr><td>소득세</td><td style="text-align:right;">%,d 원</td></tr>
+                <tr><td>지방소득세</td><td style="text-align:right;">%,d 원</td></tr>
+                <tr style="font-weight:bold;background:#fee2e2;"><td>공제합계</td><td style="text-align:right;">%,d 원</td></tr>
+                <tr style="font-weight:bold;font-size:1.1em;background:#dcfce7;"><td>실수령액</td><td style="text-align:right;">%,d 원</td></tr>
+                </table>
+                <p style="color:#64748b;font-size:0.85em;margin-top:24px;">문의사항은 관리자에게 연락해 주세요.</p>
+                </body></html>
+                """.formatted(
+                        r.getPayYearMonth(), r.getEmployeeName(), r.getPayYearMonth(),
+                        r.getBaseSalary().longValue(),
+                        r.getWeeklyHolidayAllowance().longValue(),
+                        r.getMealAllowance().longValue(),
+                        r.getTransportAllowance().longValue(),
+                        r.getOtherAllowance().longValue(),
+                        r.getTotalPayment().longValue(),
+                        r.getDeductionNationalPension().longValue(),
+                        r.getDeductionHealthInsurance().longValue(),
+                        r.getDeductionLongTermCare().longValue(),
+                        r.getDeductionEmploymentInsurance().longValue(),
+                        r.getDeductionIncomeTax().longValue(),
+                        r.getDeductionLocalIncomeTax().longValue(),
+                        r.getTotalDeduction().longValue(),
+                        r.getNetPay().longValue()
+                );
     }
 
     // ──────────────────────────────────────────────
@@ -634,4 +642,4 @@ public class PayrollService {
             return null;
         }
     }
-}
+                }
