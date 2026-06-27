@@ -23,3 +23,12 @@ export const sendPayslips = (payYearMonth) =>
 
 export const updateUserEmail = (userId, email) =>
   api.post(`/payroll/users/${userId}/email`, null, { params: { email } })
+
+/**
+ * 출퇴근 기록 기반 시급제 근무 데이터 자동 조회
+ * @param {string} payYearMonth - 급여 연월 (예: "2026-06")
+ * @param {number} userId - 직원 userId
+ * @returns {{ workDays, totalWorkHours, avgHoursPerDay, weeklyHolidayWeeks, message }}
+ */
+export const getAttendanceSummary = (payYearMonth, userId) =>
+  api.get('/payroll/attendance-summary', { params: { payYearMonth, userId } })
