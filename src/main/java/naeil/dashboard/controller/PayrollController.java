@@ -59,4 +59,15 @@ public class PayrollController {
         payrollService.updateUserEmail(userId, email);
         return ResponseEntity.ok(Map.of("message", "이메일이 등록되었습니다."));
     }
+
+    /**
+     * 출퇴근 기록 기반 근무 데이터 자동 조회 (시급제 전용)
+     * GET /api/payroll/attendance-summary?payYearMonth=2026-06&userId=3
+     */
+    @GetMapping("/attendance-summary")
+    public ResponseEntity<PayrollDto.AttendanceSummary> getAttendanceSummary(
+            @RequestParam String payYearMonth,
+            @RequestParam Long userId) {
+        return ResponseEntity.ok(payrollService.getAttendanceSummary(payYearMonth, userId));
+    }
 }
