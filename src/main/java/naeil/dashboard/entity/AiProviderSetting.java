@@ -52,6 +52,9 @@ public class AiProviderSetting {
     @Column(name = "validated_at")
     private LocalDateTime validatedAt;
 
+    @Column(name = "last_model_synced_at")
+    private LocalDateTime lastModelSyncedAt;
+
     @Column(name = "is_active")
     private Boolean isActive = true;
 
@@ -85,6 +88,8 @@ public class AiProviderSetting {
     public void setProjectId(String projectId) { this.projectId = projectId; }
     public LocalDateTime getValidatedAt() { return validatedAt; }
     public void setValidatedAt(LocalDateTime validatedAt) { this.validatedAt = validatedAt; }
+    public LocalDateTime getLastModelSyncedAt() { return lastModelSyncedAt; }
+    public void setLastModelSyncedAt(LocalDateTime lastModelSyncedAt) { this.lastModelSyncedAt = lastModelSyncedAt; }
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean active) { isActive = active; }
     public LocalDateTime getCreatedAt() { return createdAt; }

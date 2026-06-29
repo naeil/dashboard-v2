@@ -3,35 +3,38 @@ package naeil.dashboard.service;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import naeil.dashboard.common.exception.CustomException;
 import naeil.dashboard.dto.AiProviderSettingDto;
 import naeil.dashboard.entity.AiProviderSetting;
 import naeil.dashboard.enums.AiProvider;
 import naeil.dashboard.repository.AiProviderSettingRepository;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
+import naeil.dashboard.service.ai.AiModelCatalogProvider;
+import naeil.dashboard.service.ai.AiModelCatalogService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.ResourceAccessException;
-import org.springframework.web.client.RestTemplate;
 
 @Service
 @Transactional(readOnly = true)
 public class AiProviderSettingService {
 
-    private static final String OPENAI_MODELS_URL = "https://api.openai.com/v1/models";
-    private static final String CLAUDE_MODELS_URL = "https://api.anthropic.com/v1/models";
-    private static final String GEMINI_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models";
     private static final String CLAUDE_API_VERSION = "2023-06-01";
 
     private final AiProviderSettingRepository repository;
-    private final RestTemplate restTemplate;
+    private final AiModelCatalogService modelCatalogService;
+    private final Map<AiProvider, AiModelCatalogProvider> modelProviders;
 
-    public AiProviderSettingService(AiProviderSettingRepository repository, RestTemplate restTemplate) {
+    public AiProviderSettingService(
+            AiProviderSettingRepository repository,
+            AiModelCatalogService modelCatalogService,
+            List<AiModelCatalogProvider> modelProviders
+    ) {
         this.repository = repository;
-        this.restTemplate = restTemplate;
+        this.modelCatalogService = modelCatalogService;
+        this.modelProviders = modelProviders.stream()
+                .collect(Collectors.toMap(AiModelCatalogProvider::provider, provider -> provider));
     }
 
     public List<AiProviderSettingDto.ProviderConfig> getProviderConfigs() {
@@ -77,12 +80,12 @@ public class AiProviderSettingService {
         if (isBlank(request.apiKey())) {
             return ValidationResult.failure("API Key를 입력해주세요.");
         }
+        AiModelCatalogProvider catalogProvider = modelProviders.get(request.provider());
+        if (catalogProvider == null) {
+            return ValidationResult.failure("지원하지 않는 AI 제공사입니다.");
+        }
         try {
-            switch (request.provider()) {
-                case OPENAI -> validateOpenAi(request);
-                case CLAUDE -> validateClaude(request);
-                case GEMINI -> validateGemini(request);
-            }
+            catalogProvider.validate(request);
             return ValidationResult.success("AI 인증 정보가 확인되었습니다.");
         } catch (HttpStatusCodeException e) {
             return ValidationResult.failure(providerLabel(request.provider()) + " 인증이 거부되었습니다. (HTTP "
@@ -91,6 +94,31 @@ public class AiProviderSettingService {
             return ValidationResult.failure(providerLabel(request.provider()) + " 서버에 연결할 수 없습니다.");
         } catch (Exception e) {
             return ValidationResult.failure(providerLabel(request.provider()) + " 인증 정보를 확인할 수 없습니다.");
+        }
+    }
+
+    public List<AiProviderSettingDto.ModelOption> getModels(Long companyId, AiProvider provider) {
+        if (provider == null) {
+            throw new CustomException(400, "AI 제공사를 선택해주세요.");
+        }
+
+        AiProviderSetting setting = loadValidatedSetting(companyId, provider);
+        AiModelCatalogProvider catalogProvider = modelProviders.get(provider);
+        if (catalogProvider == null) {
+            throw new CustomException(500, providerLabel(provider) + " 모델 조회 구현이 없습니다.");
+        }
+
+        try {
+            return modelCatalogService.getModels(setting, () -> fetchAndStampModels(setting, catalogProvider));
+        } catch (HttpStatusCodeException e) {
+            throw new CustomException(
+                    e.getStatusCode().value(),
+                    providerLabel(provider) + " 모델 목록 조회 실패" + providerErrorMessage(e)
+            );
+        } catch (ResourceAccessException e) {
+            throw new CustomException(502, providerLabel(provider) + " 서버에 연결할 수 없습니다.");
+        } catch (Exception e) {
+            throw new CustomException(500, providerLabel(provider) + " 모델 목록을 조회할 수 없습니다.");
         }
     }
 
@@ -110,32 +138,46 @@ public class AiProviderSettingService {
         setting.setValidatedAt(LocalDateTime.now());
         setting.setIsActive(true);
 
-        return AiProviderSettingDto.Response.from(repository.save(setting));
-    }
-
-    private void validateOpenAi(AiProviderSettingDto.ValidateRequest request) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(request.apiKey().trim());
-        if (!isBlank(request.organizationId())) {
-            headers.set("OpenAI-Organization", request.organizationId().trim());
+        AiProviderSetting saved = repository.save(setting);
+        AiModelCatalogProvider catalogProvider = modelProviders.get(saved.getProvider());
+        if (catalogProvider != null) {
+            modelCatalogService.getModels(saved, () -> fetchAndStampModels(saved, catalogProvider));
         }
-        if (!isBlank(request.projectId())) {
-            headers.set("OpenAI-Project", request.projectId().trim());
+        return AiProviderSettingDto.Response.from(saved);
+    }
+
+    public void refreshValidatedModelCatalogs() {
+        repository.findByValidatedAtIsNotNullAndIsActiveTrueOrderByCompanyIdAscProviderAsc()
+                .stream()
+                .filter(setting -> !isBlank(setting.getApiKey()))
+                .forEach(setting -> {
+                    AiModelCatalogProvider catalogProvider = modelProviders.get(setting.getProvider());
+                    if (catalogProvider != null) {
+                        modelCatalogService.warmUpAsync(setting, () -> fetchAndStampModels(setting, catalogProvider));
+                    }
+                });
+    }
+
+    private AiProviderSetting loadValidatedSetting(Long companyId, AiProvider provider) {
+        AiProviderSetting setting = repository.findByCompanyIdAndProvider(companyId, provider)
+                .orElseThrow(() -> new CustomException(404, "저장된 AI 인증 정보가 없습니다."));
+        if (Boolean.FALSE.equals(setting.getIsActive()) || setting.getValidatedAt() == null) {
+            throw new CustomException(400, "검증 완료된 AI 인증 정보가 없습니다.");
         }
-        restTemplate.exchange(OPENAI_MODELS_URL, HttpMethod.GET, new HttpEntity<>(headers), Map.class);
+        if (isBlank(setting.getApiKey())) {
+            throw new CustomException(400, "저장된 API Key가 없습니다.");
+        }
+        return setting;
     }
 
-    private void validateClaude(AiProviderSettingDto.ValidateRequest request) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("x-api-key", request.apiKey().trim());
-        headers.set("anthropic-version", CLAUDE_API_VERSION);
-        restTemplate.exchange(CLAUDE_MODELS_URL, HttpMethod.GET, new HttpEntity<>(headers), Map.class);
-    }
-
-    private void validateGemini(AiProviderSettingDto.ValidateRequest request) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("x-goog-api-key", request.apiKey().trim());
-        restTemplate.exchange(GEMINI_MODELS_URL, HttpMethod.GET, new HttpEntity<>(headers), Map.class);
+    private List<AiProviderSettingDto.ModelOption> fetchAndStampModels(
+            AiProviderSetting setting,
+            AiModelCatalogProvider catalogProvider
+    ) {
+        List<AiProviderSettingDto.ModelOption> models = catalogProvider.fetchModels(setting);
+        setting.setLastModelSyncedAt(LocalDateTime.now());
+        repository.save(setting);
+        return models;
     }
 
     private String providerLabel(AiProvider provider) {

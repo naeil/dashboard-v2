@@ -96,6 +96,9 @@ export default function BlogAutoPublishPage() {
   const [aiSettings, setAiSettings] = useState([])
   const [aiSettingsLoading, setAiSettingsLoading] = useState(true)
   const [aiSettingsError, setAiSettingsError] = useState('')
+  const [aiModelOptionsByProvider, setAiModelOptionsByProvider] = useState({})
+  const [aiModelsLoading, setAiModelsLoading] = useState(false)
+  const [aiModelsError, setAiModelsError] = useState('')
   const [showAccountModal, setShowAccountModal] = useState(false)
   const [naverAccount, setNaverAccount] = useState({ username: '', password: '' })
   const [attachments, setAttachments] = useState([])
@@ -106,7 +109,28 @@ export default function BlogAutoPublishPage() {
 
   const set = (key, value) => setForm((prev) => ({ ...prev, [key]: value }))
   const availableAiSettings = aiSettings.filter((setting) => setting.isActive !== false && setting.validatedAt)
-  const selectedModelOptions = AI_MODEL_OPTIONS[form.aiProvider] || []
+  const selectedModelOptions = aiModelOptionsByProvider[form.aiProvider] || AI_MODEL_OPTIONS[form.aiProvider] || []
+
+  const loadAiModels = async (provider) => {
+    if (!provider) return []
+    setAiModelsLoading(true)
+    setAiModelsError('')
+    try {
+      const res = await authorizedFetch(buildApiUrl(`/settings/ai/${encodeURIComponent(provider)}/models`))
+      const body = await res.json().catch(() => [])
+      if (!res.ok) throw new Error(body.message || 'AI 모델 목록을 불러오지 못했습니다.')
+      const models = Array.isArray(body) ? body : []
+      setAiModelOptionsByProvider((prev) => ({ ...prev, [provider]: models }))
+      return models
+    } catch (err) {
+      const fallback = AI_MODEL_OPTIONS[provider] || []
+      setAiModelOptionsByProvider((prev) => ({ ...prev, [provider]: fallback }))
+      setAiModelsError(err.message || 'AI 모델 목록을 불러오지 못했습니다.')
+      return fallback
+    } finally {
+      setAiModelsLoading(false)
+    }
+  }
 
   useEffect(() => {
     let active = true
@@ -123,7 +147,7 @@ export default function BlogAutoPublishPage() {
         setAiSettings(settings)
         const firstSetting = settings.find((setting) => setting.isActive !== false && setting.validatedAt)
         if (firstSetting) {
-          const models = AI_MODEL_OPTIONS[firstSetting.provider] || []
+          const models = await loadAiModels(firstSetting.provider)
           setForm((prev) => ({
             ...prev,
             aiProvider: prev.aiProvider || firstSetting.provider,
@@ -145,11 +169,22 @@ export default function BlogAutoPublishPage() {
   }, [])
 
   useEffect(() => {
-    const models = AI_MODEL_OPTIONS[form.aiProvider] || []
-    if (form.aiProvider && !models.some((model) => model.value === form.aiModel)) {
-      set('aiModel', models[0]?.value || '')
+    let active = true
+    const syncModels = async () => {
+      if (!form.aiProvider) return
+      const cachedModels = aiModelOptionsByProvider[form.aiProvider]
+      const models = cachedModels || await loadAiModels(form.aiProvider)
+      if (!active) return
+      if (!models.some((model) => model.value === form.aiModel)) {
+        set('aiModel', models[0]?.value || '')
+      }
     }
-  }, [form.aiProvider, form.aiModel])
+
+    syncModels()
+    return () => {
+      active = false
+    }
+  }, [form.aiProvider, form.aiModel, aiModelOptionsByProvider])
 
   const addFiles = (files) => {
     const newItems = Array.from(files).map((file) => {
@@ -296,15 +331,15 @@ export default function BlogAutoPublishPage() {
         <div className="space-y-6">
           <Panel title="글 생성 설정">
             <div className="space-y-4">
-              <div className="rounded-xl border border-white/10 bg-slate-950/50 p-4">
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <span className="text-xs font-black text-slate-400">AI / 모델</span>
-                  {aiSettingsLoading && <span className="text-[11px] font-black text-slate-500">불러오는 중...</span>}
+                  <span className="text-xs font-black text-slate-600">AI / 모델</span>
+                  {aiSettingsLoading && <span className="text-[11px] font-black text-slate-400">불러오는 중...</span>}
                 </div>
                 {availableAiSettings.length > 0 ? (
-                  <div className="grid gap-3">
+                  <div className="grid gap-4">
                     <label className="block">
-                      <span className="mb-2 block text-xs font-black text-slate-500">AI 인증 정보</span>
+                      <span className="mb-2 block text-xs font-black text-slate-600">AI 인증 정보</span>
                       <select
                         value={form.aiProvider}
                         onChange={(e) => {
@@ -312,10 +347,16 @@ export default function BlogAutoPublishPage() {
                           setForm((prev) => ({
                             ...prev,
                             aiProvider: provider,
-                            aiModel: AI_MODEL_OPTIONS[provider]?.[0]?.value || '',
+                            aiModel: '',
                           }))
                         }}
-                        className="h-11 w-full rounded-lg border border-white/10 bg-slate-950 px-3 text-sm font-bold text-white outline-none focus:border-sky-400"
+                        style={{
+                          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%230f172a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
+                          backgroundRepeat: 'no-repeat',
+                          backgroundPosition: 'right 1rem center',
+                          backgroundSize: '20px 20px',
+                        }}
+                        className="h-12 w-full appearance-none rounded-lg border border-slate-300 bg-white px-4 pr-12 text-sm font-bold text-slate-950 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
                       >
                         {availableAiSettings.map((setting) => (
                           <option key={setting.provider} value={setting.provider}>
@@ -325,20 +366,35 @@ export default function BlogAutoPublishPage() {
                       </select>
                     </label>
                     <label className="block">
-                      <span className="mb-2 block text-xs font-black text-slate-500">모델</span>
+                      <span className="mb-2 flex items-center justify-between gap-2 text-xs font-black text-slate-600">
+                        <span>모델</span>
+                        {aiModelsLoading && <span className="text-[11px] text-slate-400">조회 중...</span>}
+                      </span>
                       <select
                         value={form.aiModel}
                         onChange={(e) => set('aiModel', e.target.value)}
-                        className="h-11 w-full rounded-lg border border-white/10 bg-slate-950 px-3 text-sm font-bold text-white outline-none focus:border-sky-400"
+                        disabled={aiModelsLoading}
+                        style={{
+                          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%230f172a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
+                          backgroundRepeat: 'no-repeat',
+                          backgroundPosition: 'right 1rem center',
+                          backgroundSize: '20px 20px',
+                        }}
+                        className="h-12 w-full appearance-none rounded-lg border border-slate-300 bg-white px-4 pr-12 text-sm font-bold text-slate-950 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100 disabled:bg-slate-50 disabled:text-slate-400"
                       >
                         {selectedModelOptions.map((model) => (
                           <option key={model.value} value={model.value}>{model.label}</option>
                         ))}
                       </select>
+                      {aiModelsError && (
+                        <span className="mt-2 block text-xs font-bold text-amber-600">
+                          {aiModelsError} 기존 기본 목록을 표시합니다.
+                        </span>
+                      )}
                     </label>
                   </div>
                 ) : (
-                  <p className="text-xs font-bold leading-5 text-slate-500">
+                  <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold leading-5 text-slate-500">
                     {aiSettingsError || '설정 화면에서 AI 인증 정보를 검증 후 저장하면 여기에서 선택할 수 있습니다.'}
                   </p>
                 )}

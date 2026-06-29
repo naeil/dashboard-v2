@@ -44,6 +44,7 @@ public class AiProviderSettingDto {
             String projectIdMasked,
             Boolean isActive,
             LocalDateTime validatedAt,
+            LocalDateTime lastModelSyncedAt,
             LocalDateTime updatedAt
     ) {
         public static Response from(AiProviderSetting setting) {
@@ -56,10 +57,16 @@ public class AiProviderSettingDto {
                     mask(setting.getProjectId()),
                     setting.getIsActive(),
                     setting.getValidatedAt(),
+                    setting.getLastModelSyncedAt(),
                     setting.getUpdatedAt()
             );
         }
     }
+
+    public record ModelOption(
+            String value,
+            String label
+    ) {}
 
     private static String mask(String value) {
         if (value == null || value.isBlank()) {

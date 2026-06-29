@@ -6,6 +6,7 @@ import naeil.dashboard.dto.AiProviderSettingDto;
 import naeil.dashboard.service.AiProviderSettingService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -31,6 +32,11 @@ public class AiSettingsController {
     @GetMapping
     public ResponseEntity<List<AiProviderSettingDto.Response>> getSettings() {
         return ResponseEntity.ok(service.getSettings(DEFAULT_COMPANY_ID));
+    }
+
+    @GetMapping("/{provider}/models")
+    public ResponseEntity<List<AiProviderSettingDto.ModelOption>> getModels(@PathVariable naeil.dashboard.enums.AiProvider provider) {
+        return ResponseEntity.ok(service.getModels(DEFAULT_COMPANY_ID, provider));
     }
 
     @PostMapping("/validate")

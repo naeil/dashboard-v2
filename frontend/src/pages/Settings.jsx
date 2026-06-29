@@ -158,6 +158,14 @@ function formatDateTimeKst(value) {
   return date ? dateTimeKstFormatter.format(date) : '-'
 }
 
+function buildAiSavedMessage(setting) {
+  if (!setting?.validatedAt) return ''
+  const syncedLabel = setting?.lastModelSyncedAt
+    ? `마지막 모델 동기화 ${formatDateTimeKst(setting.lastModelSyncedAt)}`
+    : '모델 동기화 대기 중'
+  return `저장된 인증 정보가 있습니다. 변경하려면 새 API Key를 입력 후 다시 테스트해주세요. ${syncedLabel}`
+}
+
 function SelectField({ value, onChange, disabled = false, className = '', children }) {
   return (
     <select
@@ -392,7 +400,7 @@ export default function Settings({ isExpanded }) {
     setAiOrganizationId('')
     setAiProjectId('')
     setAiValidationStatus(saved?.validatedAt ? 'saved' : 'idle')
-    setAiValidationMessage(saved?.validatedAt ? '저장된 인증 정보가 있습니다. 변경하려면 새 API Key를 입력 후 다시 테스트해주세요.' : '')
+    setAiValidationMessage(saved?.validatedAt ? buildAiSavedMessage(saved) : '')
     setAiDirty(false)
   }, [selectedAiProvider, aiSettings])
 
@@ -604,7 +612,7 @@ export default function Settings({ isExpanded }) {
         return [...others, responseBody]
       })
       setAiValidationStatus('saved')
-      setAiValidationMessage('AI 설정이 저장되었습니다. API Key는 암호화되어 보관됩니다.')
+      setAiValidationMessage(buildAiSavedMessage(responseBody))
       setAiDirty(false)
       setAiApiKey('')
       showToast('AI 설정이 저장되었습니다.')
@@ -1269,6 +1277,11 @@ export default function Settings({ isExpanded }) {
                     <div className="mb-6 flex items-start justify-between gap-4 border-b border-slate-100 pb-5">
                       <div>
                         <h4 className="mt-2 text-2xl font-black text-slate-950">{selectedAiConfig.label}</h4>
+                        {selectedSavedAiSetting?.lastModelSyncedAt && (
+                          <p className="mt-2 text-xs font-semibold text-slate-500">
+                            마지막 모델 동기화 {formatDateTimeKst(selectedSavedAiSetting.lastModelSyncedAt)}
+                          </p>
+                        )}
                       </div>
                       <span className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-black ${
                         aiValidationStatus === 'success' || aiValidationStatus === 'saved'

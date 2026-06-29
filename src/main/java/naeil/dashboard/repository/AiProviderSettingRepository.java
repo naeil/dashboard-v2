@@ -9,4 +9,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface AiProviderSettingRepository extends JpaRepository<AiProviderSetting, Long> {
     List<AiProviderSetting> findByCompanyIdOrderByProviderAsc(Long companyId);
     Optional<AiProviderSetting> findByCompanyIdAndProvider(Long companyId, AiProvider provider);
+    List<AiProviderSetting> findByValidatedAtIsNotNullAndIsActiveTrueOrderByCompanyIdAscProviderAsc();
 }
