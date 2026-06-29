@@ -118,7 +118,7 @@ const pages = {
   'product-cost': ProductCostPage,
   'blog-auto-publish': BlogAutoPublishPage,
   'ai-review-center': AIReviewCenterPage,
-    'cs-auto-reply': CSAutoReplyPage,h
+    'cs-auto-reply': CSAutoReplyPage,
   'support-programs': SupportProgramPage,
   'brand-health': BrandHealthPage,
   settings: Settings,
