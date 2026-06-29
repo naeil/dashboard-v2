@@ -121,6 +121,7 @@ export const defaultMenuSections = [
       { id: 'marketing-agent', icon: 'auto_awesome', label: '마케팅 에이전트', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'blog-auto-publish', icon: 'rss_feed', label: '블로그 자동 배포 AI', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'ai-review-center', icon: 'smart_toy', label: 'AI 고객 인텔리전스 센터', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'cs-auto-reply', icon: 'auto_fix_high', label: 'CS 자동답변', roles: ['EXECUTIVE', 'MANAGER'] },
     ],
   },
   {
