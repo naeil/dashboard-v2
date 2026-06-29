@@ -5,7 +5,7 @@ import AccountSecurityPage from './pages/executive/AccountSecurityPage'
 import AdPerformancePage from './pages/executive/AdPerformancePage'
 import AttendanceAdminPage from './pages/executive/AttendanceAdminPage'
 import BrandHealthPage from './pages/executive/BrandHealthPage'
-import CashFlowPage from './pages/executive/CashFlowPage'
+import CashFlowPage from './pages/executive/CashFlowPahge'
 import ChannelCredentialPage from './pages/executive/ChannelCredentialPage'
 import ChannelOperationsPage from './pages/executive/ChannelOperationsPage'
 import ChannelSalesPage from './pages/executive/ChannelSalesPage'
@@ -42,6 +42,7 @@ import PromotionMarginPage from './pages/executive/PromotionMarginPage'
 import SupportProgramPage from './pages/executive/SupportProgramPage'
 import BlogAutoPublishPage from './pages/executive/BlogAutoPublishPage'
 import AIReviewCenterPage from './pages/executive/AIReviewCenterPage'
+import CSAutoReplyPage from './pages/executive/CSAutoReplyPage'
 import PaymentApprovalPage from './pages/executive/PaymentApprovalPage'
 import PaymentRequestPage from './pages/executive/PaymentRequestPage'
 import PlatformOverviewPage from './pages/executive/PlatformOverviewPage'
@@ -117,6 +118,7 @@ const pages = {
   'product-cost': ProductCostPage,
   'blog-auto-publish': BlogAutoPublishPage,
   'ai-review-center': AIReviewCenterPage,
+    'cs-auto-reply': CSAutoReplyPage,h
   'support-programs': SupportProgramPage,
   'brand-health': BrandHealthPage,
   settings: Settings,
