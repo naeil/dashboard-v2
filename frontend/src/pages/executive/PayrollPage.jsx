@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { calculatePayroll, getPayrollMonths, getPayrollRecords, sendPayslips, uploadPayrollExcel, updateUserEmail } from '../../api/payrollApi'
+import { calculatePayroll, getPayrollMonths, getPayrollRecords, sendPayslips, uploadPayrollExcel, updateUserEmail, getAttendanceSummary } from '../../api/payrollApi'
 import { getUsers } from '../../api/authApi'
 import { DataTable, PageHeader, Panel, StatusBadge } from './ExecutiveComponents'
 
@@ -73,8 +73,8 @@ function previewCalculation(form) {
     : 0
   const weeklyHolidayAllowance = form.salaryType === 'HOURLY'
     ? (form.weeklyHolidayAuto
-        ? Math.round(dailyWeeklyHolidayAllowance * toNumber(form.weeklyHolidayWeeks))
-        : toNumber(form.weeklyHolidayAllowance))
+      ? Math.round(dailyWeeklyHolidayAllowance * toNumber(form.weeklyHolidayWeeks))
+      : toNumber(form.weeklyHolidayAllowance))
     : 0
   const totalPayment = baseSalary
     + weeklyHolidayAllowance
@@ -119,6 +119,8 @@ export default function PayrollPage() {
   const [calcForm, setCalcForm] = useState(emptyCalcForm)
   const [emailEdits, setEmailEdits] = useState({})
   const [savingEmail, setSavingEmail] = useState(null)
+  const [loadingAttendance, setLoadingAttendance] = useState(false)
+  const [attendanceSummary, setAttendanceSummary] = useState(null)
   const fileInputRef = useRef(null)
 
   const notify = (text, type = 'info') => setMessage({ text, type })
@@ -160,6 +162,41 @@ export default function PayrollPage() {
       userId,
       employeeName: user?.display_name || user?.displayName || user?.username || prev.employeeName,
     }))
+    // 시급제인 경우 직원 선택 시 출퇴근 데이터 자동 초기화
+    setAttendanceSummary(null)
+  }
+
+  // 출퇴근 기록에서 근무 데이터 자동 불러오기 (시급제 전용)
+  const handleLoadAttendance = async () => {
+    if (!calcForm.userId) {
+      notify('직원을 먼저 선택하세요.', 'error')
+      return
+    }
+    if (!calcForm.payYearMonth) {
+      notify('급여 연월을 먼저 선택하세요.', 'error')
+      return
+    }
+    setLoadingAttendance(true)
+    try {
+      const res = await getAttendanceSummary(calcForm.payYearMonth, calcForm.userId)
+      const summary = res.data
+      setAttendanceSummary(summary)
+      if (summary.workDays > 0) {
+        setCalcForm((prev) => ({
+          ...prev,
+          workDays: summary.workDays,
+          hoursPerDay: summary.avgHoursPerDay > 0 ? parseFloat(summary.avgHoursPerDay.toFixed(1)) : prev.hoursPerDay,
+          weeklyHolidayWeeks: summary.weeklyHolidayWeeks,
+        }))
+        notify(`출퇴근 기록 불러오기 완료: ${summary.message}`, 'success')
+      } else {
+        notify(summary.message || '출퇴근 기록이 없습니다.', 'warn')
+      }
+    } catch (err) {
+      notify(err?.response?.data?.message || '출퇴근 기록 조회에 실패했습니다.', 'error')
+    } finally {
+      setLoadingAttendance(false)
+    }
   }
 
   const handleUpload = async (e) => {
@@ -186,8 +223,8 @@ export default function PayrollPage() {
     event.preventDefault()
     if (!calcForm.employeeName.trim()) { notify('직원명을 입력하세요.', 'error'); return }
     if (calcForm.salaryType === 'ANNUAL' && !toNumber(calcForm.annualSalary)) { notify('연봉을 입력하세요.', 'error'); return }
-    if (calcForm.salaryType === 'HOURLY' && (!toNumber(calcForm.hourlyWage) || !toNumber(calcForm.workDays) || !toNumber(calcForm.hoursPerDay))) {
-      notify('시급, 출근일, 1일 근무시간을 입력하세요.', 'error')
+    if (calcForm.salaryType === 'HOURLY' && !toNumber(calcForm.hourlyWage)) {
+      notify('시급을 입력하세요.', 'error')
       return
     }
     setSavingPayroll(true)
@@ -245,10 +282,10 @@ export default function PayrollPage() {
   const msgColor = message.type === 'success'
     ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
     : message.type === 'error'
-      ? 'border-rose-200 bg-rose-50 text-rose-700'
-      : message.type === 'warn'
-        ? 'border-amber-200 bg-amber-50 text-amber-700'
-        : 'border-sky-200 bg-sky-50 text-sky-700'
+    ? 'border-rose-200 bg-rose-50 text-rose-700'
+    : message.type === 'warn'
+    ? 'border-amber-200 bg-amber-50 text-amber-700'
+    : 'border-sky-200 bg-sky-50 text-sky-700'
 
   return (
     <>
@@ -313,10 +350,35 @@ export default function PayrollPage() {
                 </Field>
               ) : (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-3 gap-3">
-                    <Field label="시급">
-                      <input type="number" value={calcForm.hourlyWage} onChange={(e) => setCalcValue('hourlyWage', e.target.value)} className={fieldClass} />
-                    </Field>
+                  <Field label="시급">
+                    <input type="number" value={calcForm.hourlyWage} onChange={(e) => setCalcValue('hourlyWage', e.target.value)} className={fieldClass} placeholder="시급을 직접 입력하세요" />
+                  </Field>
+
+                  {/* 출퇴근 기록 자동 불러오기 버튼 */}
+                  <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <div>
+                        <p className="text-xs font-black text-emerald-700">출퇴근 기록 자동 불러오기</p>
+                        <p className="text-[11px] text-emerald-600">직원 선택 후 클릭하면 해당 월 출근일·근무시간·주휴주수를 자동 입력합니다.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleLoadAttendance}
+                        disabled={loadingAttendance || !calcForm.userId}
+                        className="shrink-0 inline-flex items-center gap-1.5 h-9 rounded-lg bg-emerald-500 px-3 text-xs font-black text-white hover:bg-emerald-600 disabled:bg-slate-200 disabled:text-slate-400"
+                      >
+                        <span className="material-symbols-outlined text-sm">sync</span>
+                        {loadingAttendance ? '조회 중...' : '자동 입력'}
+                      </button>
+                    </div>
+                    {attendanceSummary && attendanceSummary.workDays > 0 && (
+                      <div className="mt-2 text-[11px] font-bold text-emerald-700 bg-white rounded-md px-2 py-1.5 border border-emerald-200">
+                        ✓ {attendanceSummary.message}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
                     <Field label="출근일">
                       <input type="number" value={calcForm.workDays} onChange={(e) => setCalcValue('workDays', e.target.value)} className={fieldClass} />
                     </Field>
@@ -324,6 +386,7 @@ export default function PayrollPage() {
                       <input type="number" step="0.5" value={calcForm.hoursPerDay} onChange={(e) => setCalcValue('hoursPerDay', e.target.value)} className={fieldClass} />
                     </Field>
                   </div>
+
                   <div className="rounded-lg border border-sky-100 bg-sky-50 p-3">
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <p className="text-xs font-black text-sky-700">주휴수당</p>
@@ -556,4 +619,4 @@ function PayrollSendPanel({ selectedMonth, setSelectedMonth, months, records, se
       />
     </Panel>
   )
-}
+    }

@@ -35,6 +35,155 @@ function formatClockTime(value) {
   return timeFormatter.format(new Date(value))
 }
 
+
+
+// ── 분야별 현황 신호등 (실제 데이터 기반) ──────────────────────────────
+const DOMAIN_MAP = [
+  { name: '매출·MD',    categories: ['채널 운영', '온라인 프로모션', '오프라인 프로모션'] },
+  { name: '콘텐츠',     categories: ['마케팅', '마케팅 프로젝트', '디자인'] },
+  { name: '퍼포먼스',   categories: ['NPD'] },
+  { name: '재고·물류',  categories: ['생산', '재고', '수출'] },
+  { name: '정산·재무',  categories: ['회계', '운영'] },
+  { name: '영업·제휴',  categories: ['영업'] },
+]
+
+function computeDomainSignals(tasks, forecasts, cashFlow, payments) {
+  return DOMAIN_MAP.map((domain) => {
+    const domainTasks = tasks.filter((t) => domain.categories.includes(t.work_category))
+    const total = domainTasks.length
+    const blocked = domainTasks.filter((t) => t.status === 'BLOCKED').length
+    const delayed = domainTasks.filter((t) => isTaskDelayed(t) || t.status === 'DELAYED').length
+    const done = domainTasks.filter((t) => t.status === 'DONE').length
+    const inProgress = domainTasks.filter((t) => t.status === 'IN_PROGRESS').length
+    const good = []
+    const issues = []
+
+    if (total === 0) {
+      issues.push('등록된 업무 없음')
+    } else {
+      if (inProgress > 0) good.push(`진행중 ${inProgress}건`)
+      if (done > 0) good.push(`완료 ${done}건`)
+      if (blocked > 0) issues.push(`막힘 ${blocked}건`)
+      if (delayed > 0) issues.push(`지연 ${delayed}건`)
+    }
+
+    if (domain.name === '재고·물류') {
+      const riskProds = (forecasts || []).filter((f) => Number(f.risk_score ?? 0) >= 40 || Number(f.launch_readiness_rate ?? 100) < 70)
+      if (riskProds.length > 0) issues.push(`재고 위험 ${riskProds.length}개`)
+      else if ((forecasts || []).length > 0) good.push('재고 위험 없음')
+    }
+
+    if (domain.name === '정산·재무') {
+      const pending = (payments || []).filter((p) => ['SUBMITTED', 'REVIEWING'].includes(p.status))
+      if (pending.length > 0) issues.push(`결재 대기 ${pending.length}건`)
+      const cash = Number(cashFlow?.cash_balance ?? cashFlow?.openingCash ?? 0)
+      if (cash > 0 && cash < 50000000) issues.push('현금 위험 수준')
+      else if (cash >= 50000000) good.push(`현금 ${(cash / 100000000).toFixed(1)}억`)
+    }
+
+    let status
+    if (total === 0 || blocked > 0) status = 'danger'
+    else if (delayed > 0 || issues.length > 0) status = 'warn'
+    else status = 'good'
+
+    return { name: domain.name, status, good, issues }
+  })
+}
+
+function computeUrgentTasks(tasks, forecasts) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const urgent = []
+
+  tasks
+    .filter((t) => t.status === 'BLOCKED' || isTaskDelayed(t) || t.status === 'DELAYED')
+    .forEach((t) => {
+      let dday = '지연'
+      let level = 'red'
+      if (t.due_date) {
+        const due = new Date(`${String(t.due_date).slice(0, 10)}T00:00:00`)
+        const diff = Math.ceil((due - today) / 86400000)
+        if (diff > 0) {
+          dday = `D-${diff}`
+          level = diff <= 3 ? 'red' : diff <= 7 ? 'orange' : 'yellow'
+        }
+      }
+      if (t.status === 'BLOCKED') level = 'red'
+      urgent.push({ name: t.task_name || '업무명 없음', sub: t.project_name, dday, level })
+    })
+
+  ;(forecasts || [])
+    .filter((f) => Number(f.risk_score ?? 0) >= 40 || Number(f.launch_readiness_rate ?? 100) < 70)
+    .slice(0, 3)
+    .forEach((f) => urgent.push({ name: f.product_name || '제품명 미정', sub: '재고위험', dday: '위험', level: 'red' }))
+
+  urgent.sort((a, b) => {
+    const n = (d) => { if (d === '지연' || d === '위험') return -999; const v = Number(d.replace('D-','')); return isNaN(v) ? 999 : v }
+    return n(a.dday) - n(b.dday)
+  })
+  return urgent.slice(0, 8)
+}
+
+const _signalCfg = {
+  good:   { bg: 'bg-green-50',  border: 'border-green-200',  badge: 'bg-white border border-green-300 text-green-700',   label: '잘됨' },
+  warn:   { bg: 'bg-yellow-50', border: 'border-yellow-200', badge: 'bg-white border border-yellow-300 text-yellow-700', label: '보완' },
+  danger: { bg: 'bg-red-50',    border: 'border-red-200',    badge: 'bg-white border border-red-300 text-red-700',       label: '빵꾸' },
+}
+const _ddayColor = (l) => ({ red: 'bg-red-500 text-white', orange: 'bg-orange-500 text-white', yellow: 'bg-yellow-400 text-slate-900' }[l] || 'bg-slate-400 text-white')
+
+function SignalBoardSection({ tasks = [], forecasts = [], cashFlow = {}, payments = [] }) {
+  const domains = computeDomainSignals(tasks, forecasts, cashFlow, payments)
+  const urgentItems = computeUrgentTasks(tasks, forecasts)
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-base">🗺️</span>
+          <h2 className="text-lg font-black text-slate-950">분야별 현황 신호등</h2>
+        </div>
+        <span className="text-xs font-bold text-slate-400">실시간 업무 데이터 기반</span>
+      </div>
+      <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {domains.map((domain) => {
+          const cfg = _signalCfg[domain.status]
+          return (
+            <article key={domain.name} className={`rounded-lg border p-4 ${cfg.bg} ${cfg.border}`}>
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-sm font-black text-slate-950">{domain.name}</span>
+                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-black ${cfg.badge}`}>{cfg.label}</span>
+              </div>
+              {domain.good.map((item) => <p key={item} className="mb-1 text-[11px] font-bold text-green-700">✓ {item}</p>)}
+              {domain.issues.map((item) => <p key={item} className="mb-1 text-[11px] font-bold text-red-600">△ {item}</p>)}
+              {domain.good.length === 0 && domain.issues.length === 0 && (
+                <p className="text-[11px] font-bold text-slate-400">데이터 없음</p>
+              )}
+            </article>
+          )
+        })}
+      </div>
+      <div className="border-t border-slate-100 pt-4">
+        <div className="mb-3 flex items-center gap-2">
+          <span className="text-sm">🔴</span>
+          <h3 className="text-sm font-black text-slate-950">긴급 업무</h3>
+        </div>
+        {urgentItems.length === 0
+          ? <p className="text-sm font-bold text-slate-400">🟢 현재 긴급 업무 없음</p>
+          : <div className="space-y-1">{urgentItems.map((item, idx) => (
+              <div key={idx} className="flex items-center justify-between border-b border-slate-50 py-2">
+                <div className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-bold text-slate-700">{item.name}</span>
+                  {item.sub && <span className="text-[11px] text-slate-400">{item.sub}</span>}
+                </div>
+                <span className={`ml-3 shrink-0 rounded-full px-3 py-0.5 text-[11px] font-black ${_ddayColor(item.level)}`}>{item.dday}</span>
+              </div>
+            ))}</div>
+        }
+      </div>
+    </section>
+  )
+}
+// ────────────────────────────────────────────────────────────
+
 function StatCard({ label, value, helper, icon, tone = 'sky', onClick }) {
   const tones = {
     sky: 'border-sky-400/20 bg-sky-400/10 text-sky-100',
@@ -423,6 +572,8 @@ export default function PlatformOverviewPage({ onNavigate, username = 'admin', r
           </button>
         ))}
       </section>
+      <SignalBoardSection tasks={tasks} forecasts={forecasts} cashFlow={cashFlow} payments={payments} />
+
 
       <MailWidget />
 

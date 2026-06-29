@@ -3,553 +3,749 @@
 @tailwind utilities;
 
 @layer base {
-    body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
-    input[type="date"] {
-        color-scheme: light;
-        cursor: pointer;
-        min-width: 0;
-    }
-    input[type="date"]::-webkit-calendar-picker-indicator {
-        cursor: pointer;
-        filter: none;
-        opacity: 0.95;
-        width: 18px;
-        height: 18px;
-    }
-    input[type="date"]:hover::-webkit-calendar-picker-indicator,
-    input[type="date"]:focus::-webkit-calendar-picker-indicator {
-        filter: none;
-        opacity: 1;
-    }
+      body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
+      input[type="date"] {
+              color-scheme: light;
+              cursor: pointer;
+              min-width: 0;
+      }
+      input[type="date"]::-webkit-calendar-picker-indicator {
+              cursor: pointer;
+              filter: none;
+              opacity: 0.95;
+              width: 18px;
+              height: 18px;
+      }
+      input[type="date"]:hover::-webkit-calendar-picker-indicator,
+      input[type="date"]:focus::-webkit-calendar-picker-indicator {
+              filter: none;
+              opacity: 1;
+      }
 }
 
 @layer utilities {
-    .material-symbols-outlined {
-        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-    }
-    .material-symbols-outlined.filled {
-        font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-    }
-    .tonal-gradient {
-        background: linear-gradient(135deg, #091426 0%, #1e293b 100%);
-    }
-    .glass-panel {
-        background: rgba(255, 255, 255, 0.7);
-        backdrop-filter: blur(20px);
-    }
-    
-    .inventory-scroll::-webkit-scrollbar {
-        width: 4px;
-    }
-    .inventory-scroll::-webkit-scrollbar-track {
-        background: transparent;
-    }
-    .inventory-scroll::-webkit-scrollbar-thumb {
-        background: #e0e3e5;
-        border-radius: 10px;
-    }
-    .inventory-scroll::-webkit-scrollbar-thumb:hover {
-        background: #c5c6cd;
-    }
-
-    .app-light {
-        color: #0f172a;
-        background: #f8fafc;
-        color-scheme: light;
-    }
-
-    .app-light main {
-        background: #f8fafc !important;
-    }
-
-    .app-light .bg-slate-950,
-    .app-light .bg-slate-950\/45,
-    .app-light .bg-slate-950\/40,
-    .app-light .bg-slate-950\/70,
-    .app-light .bg-slate-900,
-    .app-light .bg-slate-900\/70,
-    .app-light .bg-gray-950,
-    .app-light .bg-gray-900,
-    .app-light .bg-zinc-950,
-    .app-light .bg-zinc-900,
-    .app-light .bg-neutral-950,
-    .app-light .bg-neutral-900,
-    .app-light .bg-black,
-    .app-light .bg-black\/60,
-    .app-light .bg-surface,
-    .app-light .bg-surface-container,
-    .app-light .bg-surface-container-high {
-        background-color: #ffffff !important;
-    }
-
-    .app-light .bg-white\/\[0\.04\],
-    .app-light .bg-white\/5,
-    .app-light .hover\:bg-white\/5:hover,
-    .app-light .hover\:bg-white\/10:hover,
-    .app-light .hover\:bg-white\/\[0\.04\]:hover {
-        background-color: #f8fafc !important;
-    }
-
-    .app-light .bg-slate-800,
-    .app-light .bg-slate-700,
-    .app-light .bg-gray-800,
-    .app-light .bg-gray-700,
-    .app-light .bg-zinc-800,
-    .app-light .bg-zinc-700,
-    .app-light .bg-neutral-800,
-    .app-light .bg-neutral-700 {
-        background-color: #e2e8f0 !important;
-    }
-
-    .app-light .border-white\/10,
-    .app-light .border-slate-700,
-    .app-light .border-slate-800,
-    .app-light .border-gray-700,
-    .app-light .border-gray-800,
-    .app-light .border-zinc-700,
-    .app-light .border-zinc-800,
-    .app-light .border-neutral-700,
-    .app-light .border-neutral-800 {
-        border-color: #e2e8f0 !important;
-    }
-
-    .app-light .text-white,
-    .app-light .text-gray-50,
-    .app-light .text-gray-100,
-    .app-light .text-gray-200,
-    .app-light .text-zinc-50,
-    .app-light .text-zinc-100,
-    .app-light .text-zinc-200,
-    .app-light .text-neutral-50,
-    .app-light .text-neutral-100,
-    .app-light .text-neutral-200,
-    .app-light .text-slate-100,
-    .app-light .text-slate-200,
-    .app-light .text-slate-300 {
-        color: #0f172a !important;
-    }
-
-    .app-light .text-slate-400,
-    .app-light .text-slate-500,
-    .app-light .placeholder\:text-slate-600::placeholder {
-        color: #64748b !important;
-    }
-
-    .app-light input,
-    .app-light select,
-    .app-light textarea {
-        background-color: #ffffff !important;
-        border-color: #cbd5e1 !important;
-        color: #0f172a !important;
-        box-shadow: none;
-    }
-
-    .app-light table,
-    .app-light tbody,
-    .app-light tr,
-    .app-light td,
-    .app-light th,
-    .app-light section,
-    .app-light article,
-    .app-light form {
-        color: #0f172a;
-    }
-
-    .app-light thead,
-    .app-light th {
-        background-color: #f1f5f9 !important;
-        color: #0f172a !important;
-        border-color: #e2e8f0 !important;
-    }
-
-    .app-light tbody tr {
-        background-color: #ffffff;
-    }
-
-    .app-light tbody tr:hover {
-        background-color: #f8fafc !important;
-    }
-
-    .app-light [class*="shadow-slate-950"],
-    .app-light [class*="shadow-black"] {
-        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08) !important;
-    }
-
-    .app-light .tonal-gradient {
-        background: #ffffff !important;
-        color: #0f172a !important;
-        border: 1px solid #e2e8f0;
-    }
-
-    .app-light input:focus,
-    .app-light select:focus,
-    .app-light textarea:focus {
-        border-color: #38bdf8 !important;
-        box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.14);
-    }
-
-    .app-light table thead,
-    .app-light .divide-white\/10 > :not([hidden]) ~ :not([hidden]) {
-        border-color: #e2e8f0 !important;
-    }
-
-    .app-light .shadow-slate-950\/20,
-    .app-light .shadow-slate-950\/40,
-    .app-light .shadow-sky-950\/30 {
-        --tw-shadow-color: rgba(15, 23, 42, 0.08) !important;
-        --tw-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.06) !important;
-    }
-
-    .executive-hybrid main {
-        background:
-            radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 28%),
-            linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%) !important;
-    }
-
-    .app-light h1,
-    .app-light h2,
-    .app-light h3,
-    .app-light h4,
-    .app-light .text-slate-950,
-    .app-light .text-slate-900 {
-        color: #0f172a !important;
-    }
-
-    .app-light p,
-    .app-light td,
-    .app-light label,
-    .app-light span {
-        color: inherit;
-    }
-
-    .app-light .text-slate-600,
-    .app-light .text-slate-700,
-    .app-light .text-slate-800 {
-        color: #334155 !important;
-    }
-
-    .app-light .text-slate-400,
-    .app-light .text-slate-500 {
-        color: #64748b !important;
-    }
-
-    .app-light .text-sky-100,
-    .app-light .text-sky-200,
-    .app-light .text-sky-300,
-    .app-light .text-cyan-100,
-    .app-light .text-cyan-200,
-    .app-light .text-blue-100,
-    .app-light .text-blue-200 {
-        color: #0369a1 !important;
-    }
-
-    .app-light .text-emerald-100,
-    .app-light .text-emerald-200,
-    .app-light .text-emerald-300,
-    .app-light .text-emerald-400 {
-        color: #047857 !important;
-    }
-
-    .app-light .text-amber-100,
-    .app-light .text-amber-200,
-    .app-light .text-amber-300,
-    .app-light .text-yellow-100,
-    .app-light .text-yellow-200,
-    .app-light .text-yellow-300 {
-        color: #b45309 !important;
-    }
-
-    .app-light .text-rose-100,
-    .app-light .text-rose-200,
-    .app-light .text-rose-300,
-    .app-light .text-red-100,
-    .app-light .text-red-200,
-    .app-light .text-red-300 {
-        color: #be123c !important;
-    }
-
-    .app-light .bg-sky-400,
-    .app-light .bg-sky-500 {
-        background-color: #0284c7 !important;
-        color: #ffffff !important;
-    }
-
-    .app-light .hover\:bg-sky-300:hover,
-    .app-light .hover\:bg-sky-600:hover {
-        background-color: #0369a1 !important;
-        color: #ffffff !important;
-    }
-
-    .app-light .bg-emerald-400\/10,
-    .app-light .bg-emerald-500\/15 {
-        background-color: #ecfdf5 !important;
-    }
-
-    .app-light .bg-rose-400\/10,
-    .app-light .bg-rose-500\/15 {
-        background-color: #fff1f2 !important;
-    }
-
-    .app-light .bg-amber-400\/10,
-    .app-light .bg-amber-500\/15,
-    .app-light .bg-yellow-400\/10 {
-        background-color: #fffbeb !important;
-    }
-
-    .app-light .bg-sky-400\/10,
-    .app-light .bg-sky-400\/15,
-    .app-light .bg-sky-500\/15,
-    .app-light .bg-cyan-400\/10 {
-        background-color: #f0f9ff !important;
-    }
-
-    .app-light .bg-slate-500\/15,
-    .app-light .bg-slate-400\/10 {
-        background-color: #f1f5f9 !important;
-    }
-
-    .app-light .border-sky-400\/20,
-    .app-light .border-sky-400\/30,
-    .app-light .border-sky-400\/40,
-    .app-light .border-sky-500\/20 {
-        border-color: #bae6fd !important;
-    }
-
-    .app-light .border-emerald-400\/20,
-    .app-light .border-emerald-400\/30,
-    .app-light .border-emerald-500\/20 {
-        border-color: #a7f3d0 !important;
-    }
-
-    .app-light .border-rose-400\/20,
-    .app-light .border-rose-400\/25,
-    .app-light .border-rose-400\/30,
-    .app-light .border-rose-500\/20 {
-        border-color: #fecdd3 !important;
-    }
-
-    .app-light .border-amber-400\/20,
-    .app-light .border-amber-400\/30,
-    .app-light .border-amber-500\/20 {
-        border-color: #fde68a !important;
-    }
-
-    .app-light :where(button).bg-sky-400,
-    .app-light :where(button).bg-sky-500,
-    .app-light :where(a).bg-sky-400,
-    .app-light :where(a).bg-sky-500,
-    .app-light .bg-sky-400 *,
-    .app-light .bg-sky-500 * {
-        color: #ffffff !important;
-    }
-
-    .app-light button:disabled,
-    .app-light .disabled\:bg-slate-700:disabled,
-    .app-light .disabled\:bg-slate-200:disabled {
-        background-color: #e2e8f0 !important;
-        color: #94a3b8 !important;
-    }
-
-    .product-cost-page {
-        background: #f8fafc !important;
-        color: #0f172a !important;
-    }
-
-    .product-cost-page .product-cost-content,
-    .product-cost-page .product-cost-formula {
-        background-color: #ffffff !important;
-        border: 1px solid #e2e8f0 !important;
-        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
-    }
-
-    .product-cost-page .product-cost-header {
-        color: #0f172a !important;
-    }
-
-    .product-cost-page h1,
-    .product-cost-page h2,
-    .product-cost-page h3 {
-        color: #0f172a !important;
-    }
-
-    .product-cost-page p,
-    .product-cost-page div,
-    .product-cost-page span,
-    .product-cost-page label,
-    .product-cost-page td {
-        color: #334155 !important;
-    }
-
-    .product-cost-page table {
-        overflow: hidden;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 8px;
-        background-color: #ffffff !important;
-    }
-
-    .product-cost-page thead tr,
-    .product-cost-page th {
-        background-color: #eff6ff !important;
-        color: #1e3a8a !important;
-        border-color: #bfdbfe !important;
-        font-weight: 800 !important;
-    }
-
-    .product-cost-page tbody tr {
-        background-color: #ffffff !important;
-        border-color: #e2e8f0 !important;
-    }
-
-    .product-cost-page tbody tr:hover {
-        background-color: #f8fafc !important;
-    }
-
-    .product-cost-page td {
-        border-color: #e2e8f0 !important;
-        font-weight: 600;
-    }
-
-    .product-cost-page input,
-    .product-cost-page select {
-        background-color: #ffffff !important;
-        border: 1px solid #cbd5e1 !important;
-        color: #0f172a !important;
-    }
-
-    .product-cost-page input::placeholder {
-        color: #94a3b8 !important;
-    }
-
-    .product-cost-page input:focus,
-    .product-cost-page select:focus {
-        border-color: #0284c7 !important;
-        box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.14);
-    }
-
-    .product-cost-page button,
-    .product-cost-page label[for="cost-excel-upload"] {
-        border-radius: 8px !important;
-        font-weight: 800 !important;
-    }
-
-    .product-cost-page label[for="cost-excel-upload"] {
-        background-color: #0284c7 !important;
-        color: #ffffff !important;
-        box-shadow: 0 1px 2px rgba(2, 132, 199, 0.18);
-    }
-
-    .product-cost-page label[for="cost-excel-upload"] span {
-        color: #ffffff !important;
-    }
-
-    .product-cost-page button[style*="dashed"] {
-        background-color: #ffffff !important;
-        border-color: #38bdf8 !important;
-        color: #0369a1 !important;
-    }
-
-    .product-cost-page button[style*="none"] {
-        color: #0369a1 !important;
-    }
-
-    .product-cost-page button[style*="e57373"] {
-        color: #dc2626 !important;
-    }
-
-    .product-cost-page .product-cost-tabs {
-        background-color: transparent !important;
-        border-color: #e2e8f0 !important;
-        box-shadow: none;
-    }
-
-    .product-cost-page .product-cost-tabs button {
-        background-color: transparent !important;
-        color: #475569 !important;
-        border-color: transparent !important;
-    }
-
-    .product-cost-page .product-cost-tabs button.is-active {
-        background-color: #e0f2fe !important;
-        color: #0369a1 !important;
-        border-color: #0284c7 !important;
-    }
-
-    .product-cost-page .product-cost-tabs button span {
-        color: #0284c7 !important;
-    }
-
-    .product-cost-page .product-cost-formula {
-        background-color: #f0f9ff !important;
-        border-color: #bae6fd !important;
-    }
-
-    .product-cost-page .product-cost-formula span {
-        color: #0369a1 !important;
-        font-weight: 800;
-    }
-
-    .product-cost-page td.calculated-profit {
-        background-color: #f8fafc !important;
-        font-variant-numeric: tabular-nums;
-    }
-
-    .product-cost-page td.calculated-profit.is-positive {
-        color: #047857 !important;
-    }
-
-    .product-cost-page td.calculated-profit.is-negative {
-        color: #dc2626 !important;
-    }
-
-    @media (max-width: 767px) {
-        html,
-        body,
-        #root {
-            min-width: 0;
-            overflow-x: hidden;
-        }
-
-        .mobile-page-scope > main {
-            min-height: auto !important;
-            padding: 0 !important;
-            margin-left: 0 !important;
-            background: transparent !important;
-        }
-
-        .mobile-page-scope section,
-        .mobile-page-scope article,
-        .mobile-page-scope form,
-        .mobile-page-scope .rounded-lg {
-            max-width: 100%;
-        }
-
-        .mobile-page-scope h1 {
-            font-size: 1.35rem !important;
-            line-height: 1.2 !important;
-        }
-
-        .mobile-page-scope h2 {
-            font-size: 1.05rem !important;
-            line-height: 1.3 !important;
-        }
-
-        .mobile-page-scope .grid {
-            min-width: 0;
-        }
-
-        .mobile-page-scope table {
-            min-width: 640px;
-        }
-
-        .mobile-page-scope input,
-        .mobile-page-scope select,
-        .mobile-page-scope textarea {
-            font-size: 16px !important;
-        }
-
-        .mobile-page-scope button,
-        .mobile-page-scope a {
-            min-height: 40px;
-        }
-    }
+      .material-symbols-outlined {
+              font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      .material-symbols-outlined.filled {
+              font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      .tonal-gradient {
+              background: linear-gradient(135deg, #091426 0%, #1e293b 100%);
+      }
+      .glass-panel {
+              background: rgba(255, 255, 255, 0.7);
+              backdrop-filter: blur(20px);
+      }
+
+  .inventory-scroll::-webkit-scrollbar {
+          width: 4px;
+  }
+      .inventory-scroll::-webkit-scrollbar-track {
+              background: transparent;
+      }
+      .inventory-scroll::-webkit-scrollbar-thumb {
+              background: #e0e3e5;
+              border-radius: 10px;
+      }
+      .inventory-scroll::-webkit-scrollbar-thumb:hover {
+              background: #c5c6cd;
+      }
+
+  .app-light {
+          color: #0f172a;
+          background: #f8fafc;
+          color-scheme: light;
+  }
+
+  .app-light main {
+          background: #f8fafc !important;
+  }
+
+  .app-light .bg-slate-950,
+      .app-light .bg-slate-950\/45,
+      .app-light .bg-slate-950\/40,
+      .app-light .bg-slate-950\/70,
+      .app-light .bg-slate-900,
+      .app-light .bg-slate-900\/70,
+      .app-light .bg-gray-950,
+      .app-light .bg-gray-900,
+      .app-light .bg-zinc-950,
+      .app-light .bg-zinc-900,
+      .app-light .bg-neutral-950,
+      .app-light .bg-neutral-900,
+      .app-light .bg-black,
+      .app-light .bg-black\/60,
+      .app-light .bg-surface,
+      .app-light .bg-surface-container,
+      .app-light .bg-surface-container-high {
+              background-color: #ffffff !important;
+      }
+
+  .app-light .bg-white\/\[0\.04\],
+      .app-light .bg-white\/5,
+      .app-light .hover\:bg-white\/5:hover,
+      .app-light .hover\:bg-white\/10:hover,
+      .app-light .hover\:bg-white\/\[0\.04\]:hover {
+              background-color: #f8fafc !important;
+      }
+
+  .app-light .bg-slate-800,
+      .app-light .bg-slate-700,
+      .app-light .bg-gray-800,
+      .app-light .bg-gray-700,
+      .app-light .bg-zinc-800,
+      .app-light .bg-zinc-700,
+      .app-light .bg-neutral-800,
+      .app-light .bg-neutral-700 {
+              background-color: #e2e8f0 !important;
+      }
+
+  .app-light .border-white\/10,
+      .app-light .border-slate-700,
+      .app-light .border-slate-800,
+      .app-light .border-gray-700,
+      .app-light .border-gray-800,
+      .app-light .border-zinc-700,
+      .app-light .border-zinc-800,
+      .app-light .border-neutral-700,
+      .app-light .border-neutral-800 {
+              border-color: #e2e8f0 !important;
+      }
+
+  .app-light .text-white,
+      .app-light .text-gray-50,
+      .app-light .text-gray-100,
+      .app-light .text-gray-200,
+      .app-light .text-zinc-50,
+      .app-light .text-zinc-100,
+      .app-light .text-zinc-200,
+      .app-light .text-neutral-50,
+      .app-light .text-neutral-100,
+      .app-light .text-neutral-200,
+      .app-light .text-slate-100,
+      .app-light .text-slate-200,
+      .app-light .text-slate-300 {
+              color: #0f172a !important;
+      }
+
+  .app-light .text-slate-400,
+      .app-light .text-slate-500,
+      .app-light .placeholder\:text-slate-600::placeholder {
+              color: #64748b !important;
+      }
+
+  .app-light input,
+      .app-light select,
+      .app-light textarea {
+              background-color: #ffffff !important;
+              border-color: #cbd5e1 !important;
+              color: #0f172a !important;
+              box-shadow: none;
+      }
+
+  .app-light table,
+      .app-light tbody,
+      .app-light tr,
+      .app-light td,
+      .app-light th,
+      .app-light section,
+      .app-light article,
+      .app-light form {
+              color: #0f172a;
+      }
+
+  .app-light thead,
+      .app-light th {
+              background-color: #f1f5f9 !important;
+              color: #0f172a !important;
+              border-color: #e2e8f0 !important;
+      }
+
+  .app-light tbody tr {
+          background-color: #ffffff;
+  }
+
+  .app-light tbody tr:hover {
+          background-color: #f8fafc !important;
+  }
+
+  .app-light [class*="shadow-slate-950"],
+      .app-light [class*="shadow-black"] {
+              box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08) !important;
+      }
+
+  .app-light .tonal-gradient {
+          background: #ffffff !important;
+          color: #0f172a !important;
+          border: 1px solid #e2e8f0;
+  }
+
+  .app-light input:focus,
+      .app-light select:focus,
+      .app-light textarea:focus {
+              border-color: #38bdf8 !important;
+              box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.14);
+      }
+
+  .app-light table thead,
+      .app-light .divide-white\/10 > :not([hidden]) ~ :not([hidden]) {
+              border-color: #e2e8f0 !important;
+      }
+
+  .app-light .shadow-slate-950\/20,
+      .app-light .shadow-slate-950\/40,
+      .app-light .shadow-sky-950\/30 {
+              --tw-shadow-color: rgba(15, 23, 42, 0.08) !important;
+              --tw-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.06) !important;
+      }
+
+  .executive-hybrid main {
+          background:
+                    radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 28%),
+                    linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%) !important;
+  }
+
+  .app-light h1,
+      .app-light h2,
+      .app-light h3,
+      .app-light h4,
+      .app-light .text-slate-950,
+      .app-light .text-slate-900 {
+              color: #0f172a !important;
+      }
+
+  .app-light p,
+      .app-light td,
+      .app-light label,
+      .app-light span {
+              color: inherit;
+      }
+
+  .app-light .text-slate-600,
+      .app-light .text-slate-700,
+      .app-light .text-slate-800 {
+              color: #334155 !important;
+      }
+
+  .app-light .text-slate-400,
+      .app-light .text-slate-500 {
+              color: #64748b !important;
+      }
+
+  .app-light .text-sky-100,
+      .app-light .text-sky-200,
+      .app-light .text-sky-300,
+      .app-light .text-cyan-100,
+      .app-light .text-cyan-200,
+      .app-light .text-blue-100,
+      .app-light .text-blue-200 {
+              color: #0369a1 !important;
+      }
+
+  .app-light .text-emerald-100,
+      .app-light .text-emerald-200,
+      .app-light .text-emerald-300,
+      .app-light .text-emerald-400 {
+              color: #047857 !important;
+      }
+
+  .app-light .text-amber-100,
+      .app-light .text-amber-200,
+      .app-light .text-amber-300,
+      .app-light .text-yellow-100,
+      .app-light .text-yellow-200,
+      .app-light .text-yellow-300 {
+              color: #b45309 !important;
+      }
+
+  .app-light .text-rose-100,
+      .app-light .text-rose-200,
+      .app-light .text-rose-300,
+      .app-light .text-red-100,
+      .app-light .text-red-200,
+      .app-light .text-red-300 {
+              color: #be123c !important;
+      }
+
+  .app-light .bg-sky-400,
+      .app-light .bg-sky-500 {
+              background-color: #0284c7 !important;
+              color: #ffffff !important;
+      }
+
+  .app-light .hover\:bg-sky-300:hover,
+      .app-light .hover\:bg-sky-600:hover {
+              background-color: #0369a1 !important;
+              color: #ffffff !important;
+      }
+
+  .app-light .bg-emerald-400\/10,
+      .app-light .bg-emerald-500\/15 {
+              background-color: #ecfdf5 !important;
+      }
+
+  .app-light .bg-rose-400\/10,
+      .app-light .bg-rose-500\/15 {
+              background-color: #fff1f2 !important;
+      }
+
+  .app-light .bg-amber-400\/10,
+      .app-light .bg-amber-500\/15,
+      .app-light .bg-yellow-400\/10 {
+              background-color: #fffbeb !important;
+      }
+
+  .app-light .bg-sky-400\/10,
+      .app-light .bg-sky-400\/15,
+      .app-light .bg-sky-500\/15,
+      .app-light .bg-cyan-400\/10 {
+              background-color: #f0f9ff !important;
+      }
+
+  .app-light .bg-slate-500\/15,
+      .app-light .bg-slate-400\/10 {
+              background-color: #f1f5f9 !important;
+      }
+
+  .app-light .border-sky-400\/20,
+      .app-light .border-sky-400\/30,
+      .app-light .border-sky-400\/40,
+      .app-light .border-sky-500\/20 {
+              border-color: #bae6fd !important;
+      }
+
+  .app-light .border-emerald-400\/20,
+      .app-light .border-emerald-400\/30,
+      .app-light .border-emerald-500\/20 {
+              border-color: #a7f3d0 !important;
+      }
+
+  .app-light .border-rose-400\/20,
+      .app-light .border-rose-400\/25,
+      .app-light .border-rose-400\/30,
+      .app-light .border-rose-500\/20 {
+              border-color: #fecdd3 !important;
+      }
+
+  .app-light .border-amber-400\/20,
+      .app-light .border-amber-400\/30,
+      .app-light .border-amber-500\/20 {
+              border-color: #fde68a !important;
+      }
+
+  .app-light :where(button).bg-sky-400,
+      .app-light :where(button).bg-sky-500,
+      .app-light :where(a).bg-sky-400,
+      .app-light :where(a).bg-sky-500,
+      .app-light .bg-sky-400 *,
+      .app-light .bg-sky-500 * {
+          color: #ffffff !important;
+  }
+
+  .app-light button:disabled,
+      .app-light .disabled\:bg-slate-700:disabled,
+      .app-light .disabled\:bg-slate-200:disabled {
+              background-color: #e2e8f0 !important;
+              color: #94a3b8 !important;
+      }
+
+  .product-cost-page {
+          background: #f8fafc !important;
+          color: #0f172a !important;
+  }
+
+  .product-cost-page .product-cost-content,
+      .product-cost-page .product-cost-formula {
+              background-color: #ffffff !important;
+              border: 1px solid #e2e8f0 !important;
+              box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+      }
+
+  .product-cost-page .product-cost-header {
+          color: #0f172a !important;
+  }
+
+  .product-cost-page h1,
+      .product-cost-page h2,
+      .product-cost-page h3 {
+              color: #0f172a !important;
+      }
+
+  .product-cost-page p,
+      .product-cost-page div,
+      .product-cost-page span,
+      .product-cost-page label,
+      .product-cost-page td {
+              color: #334155 !important;
+      }
+
+  .product-cost-page table {
+          overflow: hidden;
+          border: 1px solid #e2e8f0 !important;
+          border-radius: 8px;
+          background-color: #ffffff !important;
+  }
+
+  .product-cost-page thead tr,
+      .product-cost-page th {
+              background-color: #eff6ff !important;
+              color: #1e3a8a !important;
+              border-color: #bfdbfe !important;
+              font-weight: 800 !important;
+      }
+
+  .product-cost-page tbody tr {
+          background-color: #ffffff !important;
+          border-color: #e2e8f0 !important;
+  }
+
+  .product-cost-page tbody tr:hover {
+          background-color: #f8fafc !important;
+  }
+
+  .product-cost-page td {
+          border-color: #e2e8f0 !important;
+          font-weight: 600;
+  }
+
+  .product-cost-page input,
+      .product-cost-page select {
+              background-color: #ffffff !important;
+              border: 1px solid #cbd5e1 !important;
+              color: #0f172a !important;
+      }
+
+  .product-cost-page input::placeholder {
+          color: #94a3b8 !important;
+  }
+
+  .product-cost-page input:focus,
+      .product-cost-page select:focus {
+              border-color: #0284c7 !important;
+              box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.14);
+      }
+
+  .product-cost-page button,
+      .product-cost-page label[for="cost-excel-upload"] {
+              border-radius: 8px !important;
+              font-weight: 800 !important;
+      }
+
+  .product-cost-page label[for="cost-excel-upload"] {
+          background-color: #0284c7 !important;
+          color: #ffffff !important;
+          box-shadow: 0 1px 2px rgba(2, 132, 199, 0.18);
+  }
+
+  .product-cost-page label[for="cost-excel-upload"] span {
+          color: #ffffff !important;
+  }
+
+  .product-cost-page button[style*="dashed"] {
+          background-color: #ffffff !important;
+          border-color: #38bdf8 !important;
+          color: #0369a1 !important;
+  }
+
+  .product-cost-page button[style*="none"] {
+          color: #0369a1 !important;
+  }
+
+  .product-cost-page button[style*="e57373"] {
+          color: #dc2626 !important;
+  }
+
+  .product-cost-page .product-cost-tabs {
+          background-color: transparent !important;
+          border-color: #e2e8f0 !important;
+          box-shadow: none;
+  }
+
+  .product-cost-page .product-cost-tabs button {
+          background-color: transparent !important;
+          color: #475569 !important;
+          border-color: transparent !important;
+  }
+
+  .product-cost-page .product-cost-tabs button.is-active {
+          background-color: #e0f2fe !important;
+          color: #0369a1 !important;
+          border-color: #0284c7 !important;
+  }
+
+  .product-cost-page .product-cost-tabs button span {
+          color: #0284c7 !important;
+  }
+
+  .product-cost-page .product-cost-formula {
+          background-color: #f0f9ff !important;
+          border-color: #bae6fd !important;
+  }
+
+  .product-cost-page .product-cost-formula span {
+          color: #0369a1 !important;
+          font-weight: 800;
+  }
+
+  .product-cost-page td.calculated-profit {
+          background-color: #f8fafc !important;
+          font-variant-numeric: tabular-nums;
+  }
+
+  .product-cost-page td.calculated-profit.is-positive {
+          color: #047857 !important;
+  }
+
+  .product-cost-page td.calculated-profit.is-negative {
+          color: #dc2626 !important;
+  }
+}
+
+/* =============================================
+   모바일 반응형 전역 스타일 (iPhone 17 Pro 기준 430px)
+   ============================================= */
+
+/* html/body overflow 방지 */
+html,
+body,
+#root {
+      min-width: 0;
+      overflow-x: hidden;
+}
+
+/* 모바일 dvh 지원 */
+@supports (height: 100dvh) {
+      .h-dvh { height: 100dvh; }
+}
+.h-dvh { height: 100vh; }
+
+/* =============================================
+   모바일 전용 스타일 (767px 이하)
+   ============================================= */
+@media (max-width: 767px) {
+      /* 기본 레이아웃 */
+  * {
+          box-sizing: border-box;
+  }
+
+  html, body, #root {
+          overflow-x: hidden;
+          max-width: 100vw;
+  }
+
+  /* 모바일 페이지 컨텐츠 공통 */
+  .app-light main > * {
+          max-width: 100%;
+          overflow-x: hidden;
+  }
+
+  /* 컨테이너 overflow 방지 */
+  .app-light section,
+      .app-light article,
+      .app-light .rounded-lg,
+      .app-light .rounded-xl,
+      .app-light .rounded-2xl {
+              max-width: 100%;
+      }
+
+  /* 테이블 모바일 처리 - 가로 스크롤 허용 */
+  .app-light table {
+          min-width: 600px;
+  }
+
+  .mobile-table-wrap {
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          border-radius: 8px;
+  }
+
+  /* 카드 그리드 - 모바일에서 1열 */
+  .mobile-grid-1 {
+          grid-template-columns: 1fr !important;
+  }
+
+  /* 버튼 최소 높이 44px (터치 타겟) */
+  .app-light button,
+      .app-light a[role="button"],
+      .app-light [type="button"],
+      .app-light [type="submit"] {
+              min-height: 44px;
+      }
+
+  /* 입력 폼 모바일 최적화 */
+  .app-light input:not([type="checkbox"]):not([type="radio"]):not([type="date"]),
+      .app-light select,
+      .app-light textarea {
+              width: 100%;
+              font-size: 16px !important; /* iOS zoom 방지 */
+      }
+
+  /* 날짜 input도 16px 최소 */
+  .app-light input[type="date"] {
+          font-size: 16px !important;
+  }
+
+  /* 헤더 텍스트 크기 조정 */
+  .app-light h1 {
+          font-size: 1.25rem !important;
+          line-height: 1.3 !important;
+          word-break: keep-all;
+  }
+
+  .app-light h2 {
+          font-size: 1.05rem !important;
+          line-height: 1.35 !important;
+          word-break: keep-all;
+  }
+
+  .app-light h3 {
+          font-size: 0.95rem !important;
+          word-break: keep-all;
+  }
+
+  /* 숫자/금액 줄바꿈 방지 및 처리 */
+  .app-light .tabular-nums,
+      .app-light [class*="text-2xl"],
+      .app-light [class*="text-3xl"],
+      .app-light [class*="text-4xl"] {
+              font-variant-numeric: tabular-nums;
+              word-break: break-all;
+              overflow-wrap: break-word;
+      }
+
+  /* 긴 텍스트 처리 */
+  .app-light p,
+      .app-light span,
+      .app-light td,
+      .app-light th {
+              word-break: keep-all;
+              overflow-wrap: break-word;
+      }
+
+  /* 카드 내부 패딩 축소 */
+  .app-light .p-6 {
+          padding: 1rem !important;
+  }
+
+  .app-light .px-6 {
+          padding-left: 1rem !important;
+          padding-right: 1rem !important;
+  }
+
+  .app-light .py-6 {
+          padding-top: 1rem !important;
+          padding-bottom: 1rem !important;
+  }
+
+  /* 검색/필터 영역 세로 배치 */
+  .mobile-filter-row {
+          flex-direction: column !important;
+          gap: 0.5rem !important;
+  }
+
+  .mobile-filter-row > * {
+          width: 100% !important;
+  }
+
+  /* 저장/수정/삭제 버튼 전체 너비 */
+  .mobile-btn-full {
+          width: 100% !important;
+          justify-content: center !important;
+  }
+
+  /* 상태 배지 줄바꿈 */
+  .mobile-badge {
+          white-space: nowrap;
+          font-size: 0.7rem !important;
+  }
+}
+
+/* =============================================
+   태블릿 (768px ~ 1023px)
+   ============================================= */
+@media (min-width: 768px) and (max-width: 1023px) {
+      /* 사이드바 있을 때 ml 조정은 App.jsx에서 처리 */
+  .app-light .grid-cols-4 {
+          grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .app-light .grid-cols-3 {
+          grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* =============================================
+   iPhone Safari safe area 대응
+   ============================================= */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+      .pb-safe {
+              padding-bottom: env(safe-area-inset-bottom);
+      }
+
+  .mobile-bottom-nav {
+          padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* fixed 요소가 iPhone 홈바에 가려지지 않도록 */
+.fixed-bottom-safe {
+      padding-bottom: max(0px, env(safe-area-inset-bottom));
+}
+
+/* =============================================
+   모바일 카드형 테이블 스타일
+   ============================================= */
+.mobile-card-row {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 1rem;
+      margin-bottom: 0.75rem;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.mobile-card-row .card-label {
+      font-size: 0.7rem;
+      color: #64748b;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.125rem;
+}
+
+.mobile-card-row .card-value {
+      font-size: 0.9rem;
+      color: #0f172a;
+      font-weight: 700;
+}
+
+.mobile-card-row .card-title {
+      font-size: 0.95rem;
+      color: #0f172a;
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+}
+
+.mobile-card-row .card-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.625rem;
+      margin-top: 0.5rem;
+}
+
+/* =============================================
+   모바일 드로어 애니메이션
+   ============================================= */
+.mobile-drawer {
+      animation: slideInLeft 0.25s ease-out;
+}
+
+@keyframes slideInLeft {
+      from {
+              transform: translateX(-100%);
+      }
+      to {
+              transform: translateX(0);
+      }
 }

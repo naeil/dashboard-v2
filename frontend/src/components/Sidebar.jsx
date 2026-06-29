@@ -79,6 +79,7 @@ export const defaultMenuSections = [
     items: [
       { id: 'channel-sales', icon: 'leaderboard', label: '실시간 매출', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'channel-operations', icon: 'storefront', label: '채널 운영', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'customer-inquiry', icon: 'forum', label: 'CS 문의', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'channel-credentials', icon: 'encrypted', label: '채널 계정 관리', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'inventory', icon: 'warehouse', label: '재고 현황', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'product-movement', icon: 'inventory', label: '제품 출입고', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
@@ -97,7 +98,7 @@ export const defaultMenuSections = [
       { id: 'incentive-clients', icon: 'handshake', label: '거래처 성과', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'incentive-summary', icon: 'payments', label: '직원별 예상 인센티브', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
     ],
-  },  {
+  }, {
     id: 'settings',
     title: '설정',
     group: 'staff',
@@ -119,6 +120,8 @@ export const defaultMenuSections = [
       { id: 'ad-performance', icon: 'campaign', label: '광고 성과', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'marketing-agent', icon: 'auto_awesome', label: '마케팅 에이전트', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'blog-auto-publish', icon: 'rss_feed', label: '블로그 자동 배포 AI', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'ai-review-center', icon: 'smart_toy', label: 'AI 고객 인텔리전스 센터', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'cs-auto-reply', icon: 'auto_fix_high', label: 'CS 자동답변', roles: ['EXECUTIVE', 'MANAGER'] },
     ],
   },
   {
@@ -300,7 +303,10 @@ export default function Sidebar({
           const itemOverride = overrides[item.id] || {}
           if (itemOverride.deleted || itemOverride.hidden) return null
           if (itemOverride.private && role !== 'EXECUTIVE') return null
-          return itemOverride.label ? { ...item, label: itemOverride.label } : item
+          const merged = { ...item }
+          if (itemOverride.label) merged.label = itemOverride.label
+          if (itemOverride.bold) merged.bold = true
+          return merged
         })
         .filter(Boolean)
         .filter((item) => item.roles.includes(role) || (hasItemLevelPermissions && isItemAllowed(item.id, allowedMenuIds)))
@@ -335,6 +341,7 @@ export default function Sidebar({
           <div className="space-y-1">
             {section.items.map((item) => {
               const isActive = activePage === item.id
+              const isBold = item.bold || item.emphasis
               return (
                 <a
                   key={`${section.title}-${item.id}`}
@@ -343,7 +350,7 @@ export default function Sidebar({
                     event.preventDefault()
                     onNavigate(item.id)
                   }}
-                  className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm transition-colors ${item.emphasis ? 'font-black' : 'font-bold'} ${isActive ? 'bg-sky-500 text-white shadow-sm' : item.emphasis ? 'text-slate-900 hover:bg-slate-100 hover:text-slate-950' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'}`}
+                  className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm transition-colors ${isBold ? 'font-black' : 'font-bold'} ${isActive ? 'bg-sky-500 text-white shadow-sm' : isBold ? 'text-slate-900 hover:bg-slate-100 hover:text-slate-950' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'}`}
                 >
                   <span className="material-symbols-outlined shrink-0 text-xl">{item.icon}</span>
                   <MenuLabel isExpanded={isExpanded}>{item.personal ? `${personalBaseLabel} / ${item.personalSuffix || item.label}` : item.label}</MenuLabel>

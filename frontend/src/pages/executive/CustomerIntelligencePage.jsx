@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getExecutiveCustomerDatabase, syncPlayAutoCustomerDatabase } from '../../api/executiveApi'
+import { getExecutiveCustomerDatabase, syncPlayAutoCustomerDatabase, getSalesDetail, getRepurchaseByProduct, getChannelProductMatrix } from '../../api/executiveApi'
 import { PageHeader, Panel } from './ExecutiveComponents'
 
 const fmt = (v) => Math.round(Number(v || 0)).toLocaleString('ko-KR')
@@ -211,6 +211,337 @@ function ProductCell({ products }) {
     </div>
   )
 }
+
+// ── 채널별 판매 요약 카드 ─────────────────────────────────────────────────────
+function SalesKpiCards({ data }) {
+  const won = (v) => Math.round(Number(v || 0)).toLocaleString('ko-KR') + '원'
+  const fmt = (v) => Math.round(Number(v || 0)).toLocaleString('ko-KR')
+  const totalRevenue = data.reduce((s, r) => s + Number(r.revenue || 0), 0)
+  const totalQty = data.reduce((s, r) => s + Number(r.sales_quantity || 0), 0)
+  const totalOrders = data.reduce((s, r) => s + Number(r.order_count || 0), 0)
+  const totalAd = data.reduce((s, r) => s + Number(r.ad_cost || 0), 0)
+  const avgOrderValue = totalOrders ? Math.round(totalRevenue / totalOrders) : 0
+  const roas = totalAd > 0 ? (totalRevenue / totalAd).toFixed(1) : '-'
+  const totalProfit = data.reduce((s, r) => s + Number(r.estimated_profit || 0), 0)
+  const profitMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : 0
+
+  const cards = [
+    { label: '총 매출', value: won(totalRevenue), sub: '선택 기간 기준' },
+    { label: '총 판매수량', value: fmt(totalQty) + '개', sub: '합산' },
+    { label: '주문수', value: fmt(totalOrders) + '건', sub: '합산' },
+    { label: '평균 객단가', value: won(avgOrderValue), sub: '매출 / 주문수' },
+    { label: '광고비', value: won(totalAd), sub: '채널 합산' },
+    { label: 'ROAS', value: roas, sub: '매출 / 광고비', warn: totalAd > 0 && Number(roas) < 3 },
+    { label: '추정 영업이익', value: won(totalProfit), sub: '매출 - 원가 - 비용' },
+    { label: '영업이익률', value: profitMargin + '%', sub: '영업이익 / 매출', warn: Number(profitMargin) < 10 },
+  ]
+  return (
+    <div className="grid grid-cols-4 gap-3">
+      {cards.map(({ label, value, sub, warn }) => (
+        <div key={label} className={`rounded-xl border p-4 shadow-sm ${warn ? 'bg-rose-50 border-rose-200' : 'bg-white border-slate-100'}`}>
+          <div className="mb-1 text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</div>
+          <div className={`text-xl font-black leading-none ${warn ? 'text-rose-600' : 'text-slate-900'}`}>{value}</div>
+          {sub && <div className="mt-1 text-[11px] text-slate-400">{sub}</div>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── CEO 의사결정 알림 ────────────────────────────────────────────────────────
+function CeoAlerts({ data }) {
+  const alerts = []
+  data.forEach(r => {
+    const roas = Number(r.roas || 0)
+    const repRate = Number(r.repurchase_rate || 0)
+    const profitMargin = Number(r.profit_margin || 0)
+    const stock = Number(r.current_stock || 0)
+    const stockDays = Number(r.estimated_stockout_days || 0)
+    const prod = r.product_name || r.channel || '제품'
+
+    if (roas > 0 && roas < 3) alerts.push({ type: 'warn', msg: `[광고 효율 경고] ${prod} ROAS ${roas.toFixed(1)} (기준 3 이하)` })
+    if (repRate > 0 && repRate < 10) alerts.push({ type: 'warn', msg: `[상품 지속성 경고] ${prod} 재구매율 ${repRate}% (기준 10% 이하)` })
+    if (profitMargin > 0 && profitMargin < 10) alerts.push({ type: 'danger', msg: `[수익성 경고] ${prod} 영업이익률 ${profitMargin}% (기준 10% 이하)` })
+    if (stock > 0 && stockDays > 0 && stockDays < 30) alerts.push({ type: 'danger', msg: `[재고 부족] ${prod} 예상 소진일 ${stockDays}일 (재생산 검토)` })
+  })
+  if (!alerts.length) return null
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <div className="mb-2 text-[11px] font-black uppercase tracking-widest text-amber-600">CEO 의사결정 알림</div>
+      <div className="space-y-1">
+        {alerts.slice(0, 8).map((a, i) => (
+          <div key={i} className={`flex items-start gap-2 text-[12px] ${a.type === 'danger' ? 'text-rose-700' : 'text-amber-700'}`}>
+            <span className="material-symbols-outlined text-sm mt-0.5">{a.type === 'danger' ? 'error' : 'warning'}</span>
+            {a.msg}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── 제품별 판매 상세 테이블 ──────────────────────────────────────────────────
+function SalesDetailTable({ data }) {
+  const won = (v) => Math.round(Number(v || 0)).toLocaleString('ko-KR') + '원'
+  const fmt = (v) => Math.round(Number(v || 0)).toLocaleString('ko-KR')
+  const pct = (v) => (v != null && v !== '' ? Number(v).toFixed(1) + '%' : '-')
+  if (!data.length) return <div className="py-8 text-center text-sm text-slate-400">데이터 없음</div>
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-[11px]">
+        <thead>
+          <tr className="border-b border-slate-100 bg-slate-50 text-left">
+            {['제품명','채널','판매수량','주문수','매출','원가','배송비','수수료','광고비','ROAS','전환율','재구매율','평균재구매일','추정영업이익','영업이익률','재고','소진예상'].map(h => (
+              <th key={h} className="px-3 py-2 font-bold text-slate-500 whitespace-nowrap">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((r, i) => {
+            const margin = Number(r.profit_margin || 0)
+            const roas = Number(r.roas || 0)
+            return (
+              <tr key={i} className="border-b border-slate-50 hover:bg-slate-50">
+                <td className="px-3 py-2 font-bold text-slate-800 whitespace-nowrap max-w-[140px] truncate">{r.product_name || '-'}</td>
+                <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{r.channel || '-'}</td>
+                <td className="px-3 py-2 text-right">{fmt(r.sales_quantity)}</td>
+                <td className="px-3 py-2 text-right">{fmt(r.order_count)}</td>
+                <td className="px-3 py-2 text-right font-bold">{won(r.revenue)}</td>
+                <td className="px-3 py-2 text-right">{won(r.product_cost)}</td>
+                <td className="px-3 py-2 text-right">{won(r.shipping_cost)}</td>
+                <td className="px-3 py-2 text-right">{won(r.platform_fee)}</td>
+                <td className="px-3 py-2 text-right">{won(r.ad_cost)}</td>
+                <td className={`px-3 py-2 text-right font-bold ${roas > 0 && roas < 3 ? 'text-rose-600' : 'text-slate-900'}`}>{roas > 0 ? roas.toFixed(1) : '-'}</td>
+                <td className="px-3 py-2 text-right">{pct(r.conversion_rate)}</td>
+                <td className={`px-3 py-2 text-right ${Number(r.repurchase_rate) < 10 && Number(r.repurchase_rate) > 0 ? 'text-rose-600' : ''}`}>{pct(r.repurchase_rate)}</td>
+                <td className="px-3 py-2 text-right">{r.avg_repurchase_days > 0 ? r.avg_repurchase_days + '일' : '-'}</td>
+                <td className="px-3 py-2 text-right">{won(r.estimated_profit)}</td>
+                <td className={`px-3 py-2 text-right font-bold ${margin < 10 && margin > 0 ? 'text-rose-600' : margin >= 20 ? 'text-emerald-600' : 'text-slate-900'}`}>{pct(r.profit_margin)}</td>
+                <td className="px-3 py-2 text-right">{r.current_stock > 0 ? fmt(r.current_stock) : '-'}</td>
+                <td className={`px-3 py-2 text-right ${Number(r.estimated_stockout_days) > 0 && Number(r.estimated_stockout_days) < 30 ? 'text-rose-600 font-bold' : ''}`}>
+                  {r.estimated_stockout_days > 0 ? r.estimated_stockout_days + '일' : '-'}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ── 제품별 재구매 분석 테이블 ─────────────────────────────────────────────────
+function RepurchaseTable({ data }) {
+  const pct = (v) => (v != null && v !== '' ? Number(v).toFixed(1) + '%' : '-')
+  if (!data.length) return <div className="py-8 text-center text-sm text-slate-400">데이터 없음</div>
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-[11px]">
+        <thead>
+          <tr className="border-b border-slate-100 bg-slate-50 text-left">
+            {['제품명','1차구매','2차구매','3차구매','4차구매','5회이상','30일재구매율','60일재구매율','90일재구매율','평균재구매일'].map(h => (
+              <th key={h} className="px-3 py-2 font-bold text-slate-500 whitespace-nowrap">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((r, i) => (
+            <tr key={i} className="border-b border-slate-50 hover:bg-slate-50">
+              <td className="px-3 py-2 font-bold text-slate-800 whitespace-nowrap">{r.product_name || '-'}</td>
+              <td className="px-3 py-2 text-right">{Number(r.first_purchase_users || 0).toLocaleString()}명</td>
+              <td className="px-3 py-2 text-right">{Number(r.second_purchase_users || 0).toLocaleString()}명</td>
+              <td className="px-3 py-2 text-right">{Number(r.third_purchase_users || 0).toLocaleString()}명</td>
+              <td className="px-3 py-2 text-right">{Number(r.fourth_purchase_users || 0).toLocaleString()}명</td>
+              <td className="px-3 py-2 text-right">{Number(r.fifth_plus_purchase_users || 0).toLocaleString()}명</td>
+              <td className={`px-3 py-2 text-right ${Number(r.repurchase_rate_30d) < 10 && Number(r.repurchase_rate_30d) > 0 ? 'text-rose-600' : 'text-sky-600 font-bold'}`}>{pct(r.repurchase_rate_30d)}</td>
+              <td className="px-3 py-2 text-right text-sky-600">{pct(r.repurchase_rate_60d)}</td>
+              <td className="px-3 py-2 text-right text-sky-600">{pct(r.repurchase_rate_90d)}</td>
+              <td className="px-3 py-2 text-right">{r.avg_repurchase_days > 0 ? r.avg_repurchase_days + '일' : '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ── 채널 × 제품 매트릭스 ───────────────────────────────────────────────────
+function ChannelMatrix({ data }) {
+  const won = (v) => {
+    const n = Number(v || 0)
+    if (n >= 100000000) return (n/100000000).toFixed(1) + '억'
+    if (n >= 10000) return Math.round(n/10000) + '만'
+    return Math.round(n).toLocaleString()
+  }
+  const products = [...new Set(data.map(r => r.product_name))].filter(Boolean)
+  const channels = [...new Set(data.map(r => r.channel))].filter(Boolean)
+  const cellMap = {}
+  data.forEach(r => { cellMap[`${r.product_name}|${r.channel}`] = r })
+
+  if (!products.length || !channels.length) return <div className="py-8 text-center text-sm text-slate-400">데이터 없음</div>
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-[11px] border-collapse">
+        <thead>
+          <tr className="bg-slate-50">
+            <th className="border border-slate-200 px-3 py-2 text-left font-bold text-slate-600">제품명</th>
+            {channels.map(ch => (
+              <th key={ch} className="border border-slate-200 px-3 py-2 text-center font-bold text-slate-600 whitespace-nowrap">{ch}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {products.map(prod => (
+            <tr key={prod} className="hover:bg-slate-50">
+              <td className="border border-slate-100 px-3 py-2 font-bold text-slate-800 whitespace-nowrap max-w-[130px] truncate">{prod}</td>
+              {channels.map(ch => {
+                const cell = cellMap[`${prod}|${ch}`]
+                if (!cell) return <td key={ch} className="border border-slate-100 px-3 py-2 text-center text-slate-300">-</td>
+                return (
+                  <td key={ch} className="border border-slate-100 px-3 py-2 text-center">
+                    <div className="font-bold text-slate-900">{won(cell.revenue)}원</div>
+                    <div className="text-slate-500">{Number(cell.sales_quantity||0).toLocaleString()}개</div>
+                    {Number(cell.roas) > 0 && <div className="text-sky-600">ROAS {Number(cell.roas).toFixed(1)}</div>}
+                    {Number(cell.repurchase_rate) > 0 && <div className="text-emerald-600">재구매 {Number(cell.repurchase_rate).toFixed(1)}%</div>}
+                    {Number(cell.profit_margin) > 0 && <div className={`${Number(cell.profit_margin) < 10 ? 'text-rose-600' : 'text-slate-600'}`}>이익률 {Number(cell.profit_margin).toFixed(1)}%</div>}
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ── 메인 판매 상세 섹션 ────────────────────────────────────────────────────
+const CHANNELS = ['전체','쿠팡','스마트스토어','카카오쇼핑','자사몰','오프라인','기타']
+const PRODUCTS = ['전체','당근효소','단백깡','프리하닭']
+const SORT_OPTIONS = [
+  { value: 'revenue', label: '매출 높은 순' },
+  { value: 'quantity', label: '판매량 높은 순' },
+  { value: 'conversionRate', label: '전환율 높은 순' },
+  { value: 'repurchaseRate', label: '재구매율 높은 순' },
+  { value: 'profit', label: '영업이익 높은 순' },
+]
+
+function SalesDetailSection() {
+  const def = () => {
+    const t = new Date()
+    const f = new Date(t); f.setDate(f.getDate() - 90)
+    return { start: f.toISOString().slice(0,10), end: t.toISOString().slice(0,10) }
+  }
+  const d = def()
+  const [dateStart, setDateStart] = useState(d.start)
+  const [dateEnd, setDateEnd] = useState(d.end)
+  const [channel, setChannel] = useState('전체')
+  const [product, setProduct] = useState('전체')
+  const [sortBy, setSortBy] = useState('revenue')
+  const [activeTab, setActiveTab] = useState('detail')
+  const [salesDetail, setSalesDetail] = useState([])
+  const [repurchaseData, setRepurchaseData] = useState([])
+  const [matrixData, setMatrixData] = useState([])
+  const [loading, setLoading] = useState(false)
+
+  const fetchAll = (s, e, ch, prod, sort) => {
+    setLoading(true)
+    const baseParams = { startDate: s, endDate: e }
+    const chParam = ch !== '전체' ? ch : undefined
+    const prodParam = prod !== '전체' ? prod : undefined
+    Promise.all([
+      getSalesDetail({ ...baseParams, channel: chParam, sortBy: sort }),
+      getRepurchaseByProduct({ ...baseParams, channel: chParam }),
+      getChannelProductMatrix(baseParams),
+    ]).then(([det, rep, mat]) => {
+      setSalesDetail(det.data || [])
+      setRepurchaseData(rep.data || [])
+      setMatrixData(mat.data || [])
+    }).catch(() => {}).finally(() => setLoading(false))
+  }
+
+  useEffect(() => { fetchAll(dateStart, dateEnd, channel, product, sortBy) }, [])
+
+  const handleApply = () => fetchAll(dateStart, dateEnd, channel, product, sortBy)
+
+  return (
+    <div className="space-y-4">
+      {/* 필터 영역 */}
+      <div className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">채널·제품 분석</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* 기간 */}
+            <input type="date" value={dateStart} onChange={e=>setDateStart(e.target.value)}
+              className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-700 focus:border-sky-400 focus:outline-none"/>
+            <span className="text-slate-400 text-xs">~</span>
+            <input type="date" value={dateEnd} onChange={e=>setDateEnd(e.target.value)}
+              className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-700 focus:border-sky-400 focus:outline-none"/>
+            {/* 채널 */}
+            <select value={channel} onChange={e=>setChannel(e.target.value)}
+              className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-700 focus:border-sky-400 focus:outline-none">
+              {CHANNELS.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            {/* 제품 */}
+            <select value={product} onChange={e=>setProduct(e.target.value)}
+              className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-700 focus:border-sky-400 focus:outline-none">
+              {PRODUCTS.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            {/* 정렬 */}
+            <select value={sortBy} onChange={e=>setSortBy(e.target.value)}
+              className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-700 focus:border-sky-400 focus:outline-none">
+              {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <button onClick={handleApply}
+              className="rounded-lg bg-slate-800 px-4 py-1.5 text-xs font-bold text-white hover:bg-slate-700">
+              조회
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="py-12 text-center text-slate-400">불러오는 중...</div>
+      ) : (
+        <>
+          {/* CEO 의사결정 알림 */}
+          <CeoAlerts data={salesDetail} />
+
+          {/* 채널별 요약 카드 */}
+          {salesDetail.length > 0 && (
+            <div className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
+              <div className="mb-3 text-sm font-black text-slate-900">채널별 판매 요약 카드</div>
+              <SalesKpiCards data={salesDetail} />
+            </div>
+          )}
+
+          {/* 탭 네비게이션 */}
+          <div className="rounded-xl border border-slate-100 bg-white shadow-sm">
+            <div className="flex border-b border-slate-100 px-5">
+              {[
+                { id: 'detail', label: '제품별 판매 상세' },
+                { id: 'repurchase', label: '재구매 분석' },
+                { id: 'matrix', label: '채널×제품 매트릭스' },
+              ].map(tab => (
+                <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                  className={`border-b-2 px-4 py-3 text-xs font-bold transition ${activeTab===tab.id ? 'border-sky-500 text-sky-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div className="p-4">
+              {activeTab === 'detail' && <SalesDetailTable data={salesDetail} />}
+              {activeTab === 'repurchase' && <RepurchaseTable data={repurchaseData} />}
+              {activeTab === 'matrix' && <ChannelMatrix data={matrixData} />}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 
 export default function CustomerIntelligencePage({ role = 'EXECUTIVE' }) {
   const def = defaultDates()
@@ -482,6 +813,10 @@ export default function CustomerIntelligencePage({ role = 'EXECUTIVE' }) {
               💡 CSV 다운로드 시 현재 기간({dateStart} ~ {dateEnd})의 전체 {rows.length}명 데이터가 저장됩니다. 고객명, 전화번호, 이메일, 등급, 구매내역 포함.
             </div>
           </div>
+
+{/* ── 채널별·제품별 판매 상세 분석 ─────────────────────────────────── */}
+<SalesDetailSection />
+
         </>
       )}
     </div>

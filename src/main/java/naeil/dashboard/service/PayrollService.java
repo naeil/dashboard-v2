@@ -8,6 +8,7 @@ import naeil.dashboard.entity.PayrollRecord;
 import naeil.dashboard.repository.PayrollRecordRepository;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -29,15 +30,17 @@ public class PayrollService {
 
     private static final Long DEFAULT_COMPANY_ID = 1L;
     private static final Map<Integer, InsuranceRates> INSURANCE_RATES_BY_YEAR = Map.of(
-            2025, new InsuranceRates("0.045", "0.03545", "0.1281", "0.009"),
-            2026, new InsuranceRates("0.0475", "0.03595", "0.1314", "0.009")
+        2025, new InsuranceRates("0.045", "0.03545", "0.1281", "0.009"),
+        2026, new InsuranceRates("0.0475", "0.03595", "0.1314", "0.009")
     );
 
     private final PayrollRecordRepository payrollRecordRepository;
-    private final JavaMailSender mailSender;
     private final JdbcTemplate jdbcTemplate;
 
-    @Value("${app.mail.from}")
+    @Autowired(required = false)
+    private JavaMailSender mailSender;
+
+    @Value("${app.mail.from:noreply@naeil.com}")
     private String mailFrom;
 
     // ──────────────────────────────────────────────
@@ -52,36 +55,35 @@ public class PayrollService {
 
         for (PayrollRecord record : records) {
             boolean exists = payrollRecordRepository
-                    .existsByCompanyIdAndPayYearMonthAndEmployeeName(
-                            DEFAULT_COMPANY_ID, payYearMonth, record.getEmployeeName());
+                .existsByCompanyIdAndPayYearMonthAndEmployeeName(
+                    DEFAULT_COMPANY_ID, payYearMonth, record.getEmployeeName());
             if (exists) {
                 skipped.add(record.getEmployeeName());
                 continue;
             }
-            // 직원 계정 자동 매칭 (display_name 기준)
             Long userId = findUserIdByName(record.getEmployeeName());
             PayrollRecord toSave = PayrollRecord.builder()
-                    .companyId(DEFAULT_COMPANY_ID)
-                    .payYearMonth(payYearMonth)
-                    .employeeName(record.getEmployeeName())
-                    .userId(userId)
-                    .baseSalary(record.getBaseSalary())
-                    .weeklyHolidayWeeks(record.getWeeklyHolidayWeeks())
-                    .weeklyHolidayAuto(record.getWeeklyHolidayAuto())
-                    .weeklyHolidayAllowance(record.getWeeklyHolidayAllowance())
-                    .mealAllowance(record.getMealAllowance())
-                    .transportAllowance(record.getTransportAllowance())
-                    .otherAllowance(record.getOtherAllowance())
-                    .totalPayment(record.getTotalPayment())
-                    .deductionNationalPension(record.getDeductionNationalPension())
-                    .deductionHealthInsurance(record.getDeductionHealthInsurance())
-                    .deductionLongTermCare(record.getDeductionLongTermCare())
-                    .deductionEmploymentInsurance(record.getDeductionEmploymentInsurance())
-                    .deductionIncomeTax(record.getDeductionIncomeTax())
-                    .deductionLocalIncomeTax(record.getDeductionLocalIncomeTax())
-                    .totalDeduction(record.getTotalDeduction())
-                    .netPay(record.getNetPay())
-                    .build();
+                .companyId(DEFAULT_COMPANY_ID)
+                .payYearMonth(payYearMonth)
+                .employeeName(record.getEmployeeName())
+                .userId(userId)
+                .baseSalary(record.getBaseSalary())
+                .weeklyHolidayWeeks(record.getWeeklyHolidayWeeks())
+                .weeklyHolidayAuto(record.getWeeklyHolidayAuto())
+                .weeklyHolidayAllowance(record.getWeeklyHolidayAllowance())
+                .mealAllowance(record.getMealAllowance())
+                .transportAllowance(record.getTransportAllowance())
+                .otherAllowance(record.getOtherAllowance())
+                .totalPayment(record.getTotalPayment())
+                .deductionNationalPension(record.getDeductionNationalPension())
+                .deductionHealthInsurance(record.getDeductionHealthInsurance())
+                .deductionLongTermCare(record.getDeductionLongTermCare())
+                .deductionEmploymentInsurance(record.getDeductionEmploymentInsurance())
+                .deductionIncomeTax(record.getDeductionIncomeTax())
+                .deductionLocalIncomeTax(record.getDeductionLocalIncomeTax())
+                .totalDeduction(record.getTotalDeduction())
+                .netPay(record.getNetPay())
+                .build();
             payrollRecordRepository.save(toSave);
             imported++;
         }
@@ -92,7 +94,6 @@ public class PayrollService {
     private List<PayrollRecord> parseExcel(MultipartFile file, String payYearMonth) throws Exception {
         List<PayrollRecord> result = new ArrayList<>();
         try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
-            // 직원별 시트 구조: 각 시트가 한 명의 급여명세서
             for (int s = 0; s < workbook.getNumberOfSheets(); s++) {
                 Sheet sheet = workbook.getSheetAt(s);
                 PayrollRecord record = parsePayslipSheet(sheet, payYearMonth);
@@ -102,10 +103,6 @@ public class PayrollService {
         return result;
     }
 
-    /**
-     * 급여명세서 양식 시트 파싱 (셀 레이블 스캔 방식)
-     * 직원별 시트: 성명은 "성 명 :" 형식, 금액은 레이블 오른쪽 임의 열에 위치
-     */
     private PayrollRecord parsePayslipSheet(Sheet sheet, String payYearMonth) {
         Map<String, BigDecimal> moneyMap = new LinkedHashMap<>();
         String employeeName = null;
@@ -118,11 +115,9 @@ public class PayrollService {
                 String raw = getCellString(cell);
                 if (raw == null || raw.isBlank()) continue;
 
-                String normalized = raw.replaceAll("\\s+", ""); // 공백 제거
+                String normalized = raw.replaceAll("\\s+", "");
 
-                // 성명 추출: "성명" 포함 셀
                 if (employeeName == null && normalized.contains("성명")) {
-                    // 콜론 뒤에 이름이 같은 셀에 있는 경우: "성명:홍길동"
                     if (normalized.contains(":")) {
                         String afterColon = normalized.substring(normalized.indexOf(":") + 1).trim();
                         if (!afterColon.isBlank()) {
@@ -130,15 +125,11 @@ public class PayrollService {
                             continue;
                         }
                     }
-                    // 이름이 다음 셀에 있는 경우
                     employeeName = findNextNonEmptyString(row, cell.getColumnIndex() + 1);
                     continue;
                 }
 
-                // 레이블 키 정규화 (공백 제거)
                 String key = normalized;
-
-                // 금액: 같은 행에서 오른쪽으로 숫자 탐색 (최대 20열)
                 BigDecimal amount = findNextNumericValue(row, cell.getColumnIndex() + 1, 20);
                 if (amount != null && amount.compareTo(BigDecimal.ZERO) > 0) {
                     moneyMap.putIfAbsent(key, amount);
@@ -147,33 +138,31 @@ public class PayrollService {
         }
 
         if (employeeName == null || employeeName.isBlank()) {
-            // 시트 이름으로 대체 시도
             String sheetName = sheet.getSheetName();
             if (sheetName != null && !sheetName.isBlank()) {
-                // 시트명에서 숫자/괄호 제거 (예: "유승우(1)" → "유승우")
                 employeeName = sheetName.replaceAll("[\\(\\)\\d]", "").trim();
             }
             if (employeeName == null || employeeName.isBlank()) return null;
         }
 
         return PayrollRecord.builder()
-                .companyId(DEFAULT_COMPANY_ID)
-                .payYearMonth(payYearMonth)
-                .employeeName(employeeName.trim())
-                .baseSalary(get(moneyMap, "기본급"))
-                .mealAllowance(get(moneyMap, "식비", "식대"))
-                .transportAllowance(get(moneyMap, "교통비", "차량유지보조금", "차량유지비", "자가운전보조금"))
-                .otherAllowance(get(moneyMap, "기타수당", "야간근로수당", "연장수당", "상여"))
-                .totalPayment(get(moneyMap, "지급액계", "지급합계", "총지급액"))
-                .deductionNationalPension(get(moneyMap, "국민연금"))
-                .deductionHealthInsurance(get(moneyMap, "건강보험"))
-                .deductionLongTermCare(get(moneyMap, "장기요양보험", "장기요양"))
-                .deductionEmploymentInsurance(get(moneyMap, "고용보험"))
-                .deductionIncomeTax(get(moneyMap, "소득세", "근로소득세", "갑근세"))
-                .deductionLocalIncomeTax(get(moneyMap, "지방소득세"))
-                .totalDeduction(get(moneyMap, "공제액계", "공제합계", "총공제액"))
-                .netPay(get(moneyMap, "실수령액", "실수령액", "차인지급액", "실지급액"))
-                .build();
+            .companyId(DEFAULT_COMPANY_ID)
+            .payYearMonth(payYearMonth)
+            .employeeName(employeeName.trim())
+            .baseSalary(get(moneyMap, "기본급"))
+            .mealAllowance(get(moneyMap, "식비", "식대"))
+            .transportAllowance(get(moneyMap, "교통비", "차량유지보조금", "차량유지비", "자가운전보조금"))
+            .otherAllowance(get(moneyMap, "기타수당", "야간근로수당", "연장수당", "상여"))
+            .totalPayment(get(moneyMap, "지급액계", "지급합계", "총지급액"))
+            .deductionNationalPension(get(moneyMap, "국민연금"))
+            .deductionHealthInsurance(get(moneyMap, "건강보험"))
+            .deductionLongTermCare(get(moneyMap, "장기요양보험", "장기요양"))
+            .deductionEmploymentInsurance(get(moneyMap, "고용보험"))
+            .deductionIncomeTax(get(moneyMap, "소득세", "근로소득세", "갑근세"))
+            .deductionLocalIncomeTax(get(moneyMap, "지방소득세"))
+            .totalDeduction(get(moneyMap, "공제액계", "공제합계", "총공제액"))
+            .netPay(get(moneyMap, "실수령액", "차인지급액", "실지급액"))
+            .build();
     }
 
     private String findNextNonEmptyString(Row row, int startCol) {
@@ -182,7 +171,6 @@ public class PayrollService {
             String val = getCellString(cell);
             if (val != null && !val.isBlank()) {
                 String norm = val.replaceAll("\\s+", "");
-                // 숫자나 구분자만 있는 셀 제외
                 if (!norm.matches("[\\d,.:]+")) return val.trim();
             }
         }
@@ -233,8 +221,8 @@ public class PayrollService {
 
     public List<PayrollDto.RecordResponse> getRecords(String payYearMonth) {
         List<PayrollRecord> records = payYearMonth != null
-                ? payrollRecordRepository.findByCompanyIdAndPayYearMonthOrderByEmployeeName(DEFAULT_COMPANY_ID, payYearMonth)
-                : payrollRecordRepository.findByCompanyIdOrderByPayYearMonthDescEmployeeNameAsc(DEFAULT_COMPANY_ID);
+            ? payrollRecordRepository.findByCompanyIdAndPayYearMonthOrderByEmployeeName(DEFAULT_COMPANY_ID, payYearMonth)
+            : payrollRecordRepository.findByCompanyIdOrderByPayYearMonthDescEmployeeNameAsc(DEFAULT_COMPANY_ID);
         return records.stream().map(PayrollDto.RecordResponse::from).toList();
     }
 
@@ -264,23 +252,23 @@ public class PayrollService {
         BigDecimal otherAllowance = money(payload.get("otherAllowance"));
 
         BigDecimal baseSalary = "HOURLY".equals(salaryType)
-                ? hourlyWage.multiply(workHours)
-                : annualSalary.divide(BigDecimal.valueOf(12), 0, RoundingMode.HALF_UP);
+            ? hourlyWage.multiply(workHours)
+            : annualSalary.divide(BigDecimal.valueOf(12), 0, RoundingMode.HALF_UP);
 
         if (hoursPerDay.compareTo(BigDecimal.ZERO) == 0 && workDays.compareTo(BigDecimal.ZERO) > 0) {
             hoursPerDay = workHours.divide(workDays, 4, RoundingMode.HALF_UP);
         }
         BigDecimal weeklyHolidayAllowance = "HOURLY".equals(salaryType)
-                ? (weeklyHolidayAuto
-                    ? won(hourlyWage.multiply(hoursPerDay).multiply(weeklyHolidayWeeks))
-                    : requestedWeeklyHolidayAllowance)
-                : BigDecimal.ZERO;
+            ? (weeklyHolidayAuto
+                ? won(hourlyWage.multiply(hoursPerDay).multiply(weeklyHolidayWeeks))
+                : requestedWeeklyHolidayAllowance)
+            : BigDecimal.ZERO;
 
         BigDecimal totalPayment = baseSalary
-                .add(weeklyHolidayAllowance)
-                .add(mealAllowance)
-                .add(transportAllowance)
-                .add(otherAllowance);
+            .add(weeklyHolidayAllowance)
+            .add(mealAllowance)
+            .add(transportAllowance)
+            .add(otherAllowance);
         InsuranceRates insuranceRates = insuranceRatesFor(payYearMonth);
         BigDecimal nationalPensionRate = rate(payload.get("nationalPensionRate"), insuranceRates.nationalPension());
         BigDecimal healthInsuranceRate = rate(payload.get("healthInsuranceRate"), insuranceRates.healthInsurance());
@@ -294,138 +282,181 @@ public class PayrollService {
         BigDecimal incomeTax = money(payload.get("incomeTax"));
         BigDecimal localIncomeTax = money(payload.get("localIncomeTax"));
         BigDecimal totalDeduction = nationalPension
-                .add(healthInsurance)
-                .add(longTermCare)
-                .add(employmentInsurance)
-                .add(incomeTax)
-                .add(localIncomeTax);
+            .add(healthInsurance)
+            .add(longTermCare)
+            .add(employmentInsurance)
+            .add(incomeTax)
+            .add(localIncomeTax);
         BigDecimal netPay = totalPayment.subtract(totalDeduction);
         Long userId = payload.get("userId") == null || payload.get("userId").toString().isBlank()
-                ? findUserIdByName(employeeName)
-                : Long.valueOf(payload.get("userId").toString());
+            ? findUserIdByName(employeeName)
+            : Long.valueOf(payload.get("userId").toString());
 
         Long id = upsertCalculatedRecord(
-                payYearMonth,
-                employeeName,
-                userId,
-                salaryType,
-                annualSalary,
-                hourlyWage,
-                workDays,
-                workHours,
-                baseSalary,
-                weeklyHolidayWeeks,
-                weeklyHolidayAuto,
-                weeklyHolidayAllowance,
-                mealAllowance,
-                transportAllowance,
-                otherAllowance,
-                totalPayment,
-                nationalPension,
-                healthInsurance,
-                longTermCare,
-                employmentInsurance,
-                incomeTax,
-                localIncomeTax,
-                totalDeduction,
-                netPay
+            payYearMonth, employeeName, userId, salaryType,
+            annualSalary, hourlyWage, workDays, workHours, baseSalary,
+            weeklyHolidayWeeks, weeklyHolidayAuto, weeklyHolidayAllowance,
+            mealAllowance, transportAllowance, otherAllowance,
+            totalPayment, nationalPension, healthInsurance, longTermCare,
+            employmentInsurance, incomeTax, localIncomeTax, totalDeduction, netPay
         );
 
         return payrollRecordRepository.findById(id)
-                .map(PayrollDto.RecordResponse::from)
-                .orElseThrow();
+            .map(PayrollDto.RecordResponse::from)
+            .orElseThrow();
     }
 
     private Long upsertCalculatedRecord(
-            String payYearMonth,
-            String employeeName,
-            Long userId,
-            String salaryType,
-            BigDecimal annualSalary,
-            BigDecimal hourlyWage,
-            BigDecimal workDays,
-            BigDecimal workHours,
-            BigDecimal baseSalary,
-            BigDecimal weeklyHolidayWeeks,
-            boolean weeklyHolidayAuto,
-            BigDecimal weeklyHolidayAllowance,
-            BigDecimal mealAllowance,
-            BigDecimal transportAllowance,
-            BigDecimal otherAllowance,
-            BigDecimal totalPayment,
-            BigDecimal nationalPension,
-            BigDecimal healthInsurance,
-            BigDecimal longTermCare,
-            BigDecimal employmentInsurance,
-            BigDecimal incomeTax,
-            BigDecimal localIncomeTax,
-            BigDecimal totalDeduction,
-            BigDecimal netPay
+        String payYearMonth, String employeeName, Long userId, String salaryType,
+        BigDecimal annualSalary, BigDecimal hourlyWage, BigDecimal workDays, BigDecimal workHours,
+        BigDecimal baseSalary, BigDecimal weeklyHolidayWeeks, boolean weeklyHolidayAuto,
+        BigDecimal weeklyHolidayAllowance, BigDecimal mealAllowance, BigDecimal transportAllowance,
+        BigDecimal otherAllowance, BigDecimal totalPayment, BigDecimal nationalPension,
+        BigDecimal healthInsurance, BigDecimal longTermCare, BigDecimal employmentInsurance,
+        BigDecimal incomeTax, BigDecimal localIncomeTax, BigDecimal totalDeduction, BigDecimal netPay
     ) {
         return jdbcTemplate.queryForObject("""
-                INSERT INTO payroll_record (
-                    company_id, pay_year_month, employee_name, user_id, salary_type,
-                    annual_salary, hourly_wage, work_days, work_hours,
-                    base_salary, weekly_holiday_weeks, weekly_holiday_auto, weekly_holiday_allowance,
-                    meal_allowance, transport_allowance, other_allowance,
-                    total_payment, deduction_national_pension, deduction_health_insurance,
-                    deduction_long_term_care, deduction_employment_insurance,
-                    deduction_income_tax, deduction_local_income_tax, total_deduction, net_pay
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (company_id, pay_year_month, employee_name)
-                DO UPDATE SET
-                    user_id = EXCLUDED.user_id,
-                    salary_type = EXCLUDED.salary_type,
-                    annual_salary = EXCLUDED.annual_salary,
-                    hourly_wage = EXCLUDED.hourly_wage,
-                    work_days = EXCLUDED.work_days,
-                    work_hours = EXCLUDED.work_hours,
-                    base_salary = EXCLUDED.base_salary,
-                    weekly_holiday_weeks = EXCLUDED.weekly_holiday_weeks,
-                    weekly_holiday_auto = EXCLUDED.weekly_holiday_auto,
-                    weekly_holiday_allowance = EXCLUDED.weekly_holiday_allowance,
-                    meal_allowance = EXCLUDED.meal_allowance,
-                    transport_allowance = EXCLUDED.transport_allowance,
-                    other_allowance = EXCLUDED.other_allowance,
-                    total_payment = EXCLUDED.total_payment,
-                    deduction_national_pension = EXCLUDED.deduction_national_pension,
-                    deduction_health_insurance = EXCLUDED.deduction_health_insurance,
-                    deduction_long_term_care = EXCLUDED.deduction_long_term_care,
-                    deduction_employment_insurance = EXCLUDED.deduction_employment_insurance,
-                    deduction_income_tax = EXCLUDED.deduction_income_tax,
-                    deduction_local_income_tax = EXCLUDED.deduction_local_income_tax,
-                    total_deduction = EXCLUDED.total_deduction,
-                    net_pay = EXCLUDED.net_pay,
-                    updated_at = NOW()
-                RETURNING id
-                """,
-                Long.class,
-                DEFAULT_COMPANY_ID,
-                payYearMonth,
-                employeeName,
-                userId,
-                salaryType,
-                annualSalary,
-                hourlyWage,
-                workDays,
-                workHours,
-                baseSalary,
-                weeklyHolidayWeeks,
-                weeklyHolidayAuto,
-                weeklyHolidayAllowance,
-                mealAllowance,
-                transportAllowance,
-                otherAllowance,
-                totalPayment,
-                nationalPension,
-                healthInsurance,
-                longTermCare,
-                employmentInsurance,
-                incomeTax,
-                localIncomeTax,
-                totalDeduction,
-                netPay
+            INSERT INTO payroll_record (
+                company_id, pay_year_month, employee_name, user_id, salary_type,
+                annual_salary, hourly_wage, work_days, work_hours,
+                base_salary, weekly_holiday_weeks, weekly_holiday_auto, weekly_holiday_allowance,
+                meal_allowance, transport_allowance, other_allowance,
+                total_payment, deduction_national_pension, deduction_health_insurance,
+                deduction_long_term_care, deduction_employment_insurance,
+                deduction_income_tax, deduction_local_income_tax, total_deduction, net_pay
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (company_id, pay_year_month, employee_name)
+            DO UPDATE SET
+                user_id = EXCLUDED.user_id,
+                salary_type = EXCLUDED.salary_type,
+                annual_salary = EXCLUDED.annual_salary,
+                hourly_wage = EXCLUDED.hourly_wage,
+                work_days = EXCLUDED.work_days,
+                work_hours = EXCLUDED.work_hours,
+                base_salary = EXCLUDED.base_salary,
+                weekly_holiday_weeks = EXCLUDED.weekly_holiday_weeks,
+                weekly_holiday_auto = EXCLUDED.weekly_holiday_auto,
+                weekly_holiday_allowance = EXCLUDED.weekly_holiday_allowance,
+                meal_allowance = EXCLUDED.meal_allowance,
+                transport_allowance = EXCLUDED.transport_allowance,
+                other_allowance = EXCLUDED.other_allowance,
+                total_payment = EXCLUDED.total_payment,
+                deduction_national_pension = EXCLUDED.deduction_national_pension,
+                deduction_health_insurance = EXCLUDED.deduction_health_insurance,
+                deduction_long_term_care = EXCLUDED.deduction_long_term_care,
+                deduction_employment_insurance = EXCLUDED.deduction_employment_insurance,
+                deduction_income_tax = EXCLUDED.deduction_income_tax,
+                deduction_local_income_tax = EXCLUDED.deduction_local_income_tax,
+                total_deduction = EXCLUDED.total_deduction,
+                net_pay = EXCLUDED.net_pay,
+                updated_at = NOW()
+            RETURNING id
+            """,
+            Long.class,
+            DEFAULT_COMPANY_ID, payYearMonth, employeeName, userId, salaryType,
+            annualSalary, hourlyWage, workDays, workHours, baseSalary,
+            weeklyHolidayWeeks, weeklyHolidayAuto, weeklyHolidayAllowance,
+            mealAllowance, transportAllowance, otherAllowance,
+            totalPayment, nationalPension, healthInsurance, longTermCare,
+            employmentInsurance, incomeTax, localIncomeTax, totalDeduction, netPay
+        );
+    }
+
+    // ──────────────────────────────────────────────
+    // 출퇴근 기록 기반 근무 데이터 자동 조회 (시급제 전용)
+    // ──────────────────────────────────────────────
+
+    /**
+     * 출퇴근 기록(staff_attendance_record)에서 해당 월/직원의 근무 데이터를 집계
+     * - 출근일: clock_out_at IS NOT NULL 인 날 수 (퇴근 완료된 날만)
+     * - 총 근무시간: SUM(EXTRACT(EPOCH FROM (clock_out_at - clock_in_at)) / 3600)
+     * - 주휴수당 발생 주수: 주 15시간 이상 근무한 주 수
+     */
+    public PayrollDto.AttendanceSummary getAttendanceSummary(String payYearMonth, Long userId) {
+        // userId로 username 조회
+        String username;
+        try {
+            username = jdbcTemplate.queryForObject(
+                "SELECT username FROM dashboard_user WHERE id = ? AND company_id = ?",
+                String.class, userId, DEFAULT_COMPANY_ID);
+        } catch (Exception e) {
+            return new PayrollDto.AttendanceSummary(0, 0.0, 0.0, 0.0, "직원 정보를 찾을 수 없습니다.");
+        }
+        if (username == null) {
+            return new PayrollDto.AttendanceSummary(0, 0.0, 0.0, 0.0, "직원 정보를 찾을 수 없습니다.");
+        }
+
+        // 해당 월의 출퇴근 완료 기록 조회 (퇴근 기록 있는 날만)
+        java.time.YearMonth ym;
+        try {
+            ym = java.time.YearMonth.parse(payYearMonth);
+        } catch (Exception e) {
+            ym = java.time.YearMonth.now();
+        }
+        java.time.LocalDate monthStart = ym.atDay(1);
+        java.time.LocalDate monthEnd = ym.atEndOfMonth();
+
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+            SELECT
+                work_date,
+                clock_in_at,
+                clock_out_at,
+                EXTRACT(EPOCH FROM (clock_out_at - clock_in_at)) / 3600.0 AS work_hours_day,
+                DATE_PART('week', work_date) AS week_number
+            FROM staff_attendance_record
+            WHERE company_id = ?
+              AND LOWER(username) = LOWER(?)
+              AND work_date BETWEEN ? AND ?
+              AND clock_in_at IS NOT NULL
+              AND clock_out_at IS NOT NULL
+            ORDER BY work_date
+            """, DEFAULT_COMPANY_ID, username, monthStart, monthEnd);
+
+        if (rows.isEmpty()) {
+            return new PayrollDto.AttendanceSummary(0, 0.0, 0.0, 0.0,
+                "출퇴근 기록이 없습니다. 출퇴근 기록 메뉴에서 확인해 주세요.");
+        }
+
+        int workDays = rows.size();
+        double totalWorkHours = rows.stream()
+            .mapToDouble(r -> {
+                Object h = r.get("work_hours_day");
+                if (h == null) return 0.0;
+                return ((Number) h).doubleValue();
+            })
+            .filter(h -> h > 0)
+            .sum();
+
+        // 소수점 2자리 반올림
+        totalWorkHours = Math.round(totalWorkHours * 100.0) / 100.0;
+        double avgHoursPerDay = workDays > 0 ? Math.round((totalWorkHours / workDays) * 100.0) / 100.0 : 0.0;
+
+        // 주휴수당 발생 주수: 주 15시간 이상 근무한 주 수
+        Map<Double, Double> weeklyHours = new LinkedHashMap<>();
+        for (Map<String, Object> row : rows) {
+            Object weekObj = row.get("week_number");
+            Object hoursObj = row.get("work_hours_day");
+            if (weekObj == null || hoursObj == null) continue;
+            double week = ((Number) weekObj).doubleValue();
+            double hours = ((Number) hoursObj).doubleValue();
+            weeklyHours.merge(week, hours, Double::sum);
+        }
+        long qualifyingWeeks = weeklyHours.values().stream()
+            .filter(h -> h >= 15.0)
+            .count();
+
+        String message = String.format(
+            "%d일 출근, 총 %.1f시간 근무, 주휴 발생 %d주 (주 15시간 이상)",
+            workDays, totalWorkHours, qualifyingWeeks
+        );
+
+        return new PayrollDto.AttendanceSummary(
+            workDays,
+            totalWorkHours,
+            avgHoursPerDay,
+            (double) qualifyingWeeks,
+            message
         );
     }
 
@@ -435,8 +466,13 @@ public class PayrollService {
 
     @Transactional
     public PayrollDto.SendResult sendPayslips(String payYearMonth) {
+        if (mailSender == null) {
+            log.warn("메일 서버 설정이 없습니다. 급여명세서 이메일 발송을 건너뜁니다.");
+            return new PayrollDto.SendResult(0, 0, List.of("메일 서버 미설정 - 관리자에게 문의하세요."));
+        }
+
         List<PayrollRecord> records = payrollRecordRepository
-                .findByCompanyIdAndPayYearMonthOrderByEmployeeName(DEFAULT_COMPANY_ID, payYearMonth);
+            .findByCompanyIdAndPayYearMonthOrderByEmployeeName(DEFAULT_COMPANY_ID, payYearMonth);
 
         int sent = 0;
         List<String> failed = new ArrayList<>();
@@ -477,22 +513,22 @@ public class PayrollService {
             <h2 style="color:#0ea5e9;">%s 급여명세서</h2>
             <p>%s님, 안녕하세요. %s 급여명세서를 안내드립니다.</p>
             <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%%;max-width:480px;">
-              <tr style="background:#f1f5f9;"><th colspan="2">지급 내역</th></tr>
-              <tr><td>기본급</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr><td>주휴수당</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr><td>식대</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr><td>교통비</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr><td>기타수당</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr style="font-weight:bold;background:#e0f2fe;"><td>지급합계</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr style="background:#f1f5f9;"><th colspan="2">공제 내역</th></tr>
-              <tr><td>국민연금</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr><td>건강보험</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr><td>장기요양</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr><td>고용보험</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr><td>소득세</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr><td>지방소득세</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr style="font-weight:bold;background:#fee2e2;"><td>공제합계</td><td style="text-align:right;">%,d 원</td></tr>
-              <tr style="font-weight:bold;font-size:1.1em;background:#dcfce7;"><td>실수령액</td><td style="text-align:right;">%,d 원</td></tr>
+            <tr style="background:#f1f5f9;"><th colspan="2">지급 내역</th></tr>
+            <tr><td>기본급</td><td style="text-align:right;">%,d 원</td></tr>
+            <tr><td>주휴수당</td><td style="text-align:right;">%,d 원</td></tr>
+            <tr><td>식대</td><td style="text-align:right;">%,d 원</td></tr>
+            <tr><td>교통비</td><td style="text-align:right;">%,d 원</td></tr>
+            <tr><td>기타수당</td><td style="text-align:right;">%,d 원</td></tr>
+            <tr style="font-weight:bold;background:#e0f2fe;"><td>지급합계</td><td style="text-align:right;">%,d 원</td></tr>
+            <tr style="background:#f1f5f9;"><th colspan="2">공제 내역</th></tr>
+            <tr><td>국민연금</td><td style="text-align:right;">%,d 원</td></tr>
+            <tr><td>건강보험</td><td style="text-align:right;">%,d 원</td></tr>
+            <tr><td>장기요양</td><td style="text-align:right;">%,d 원</td></tr>
+            <tr><td>고용보험</td><td style="text-align:right;">%,d 원</td></tr>
+            <tr><td>소득세</td><td style="text-align:right;">%,d 원</td></tr>
+            <tr><td>지방소득세</td><td style="text-align:right;">%,d 원</td></tr>
+            <tr style="font-weight:bold;background:#fee2e2;"><td>공제합계</td><td style="text-align:right;">%,d 원</td></tr>
+            <tr style="font-weight:bold;font-size:1.1em;background:#dcfce7;"><td>실수령액</td><td style="text-align:right;">%,d 원</td></tr>
             </table>
             <p style="color:#64748b;font-size:0.85em;margin-top:24px;">문의사항은 관리자에게 연락해 주세요.</p>
             </body></html>
@@ -512,7 +548,7 @@ public class PayrollService {
                 r.getDeductionLocalIncomeTax().longValue(),
                 r.getTotalDeduction().longValue(),
                 r.getNetPay().longValue()
-        );
+            );
     }
 
     // ──────────────────────────────────────────────
@@ -521,7 +557,7 @@ public class PayrollService {
 
     @Scheduled(cron = "0 0 9 10 * *")
     public void autoSendCurrentMonth() {
-        String yearMonth = java.time.YearMonth.now().toString(); // "2026-05"
+        String yearMonth = java.time.YearMonth.now().toString();
         log.info("[급여명세서 자동발송] {} 발송 시작", yearMonth);
         try {
             PayrollDto.SendResult result = sendPayslips(yearMonth);
@@ -538,8 +574,8 @@ public class PayrollService {
     @Transactional
     public void updateUserEmail(Long userId, String email) {
         jdbcTemplate.update(
-                "UPDATE dashboard_user SET email = ?, updated_at = NOW() WHERE id = ?",
-                email, userId);
+            "UPDATE dashboard_user SET email = ?, updated_at = NOW() WHERE id = ?",
+            email, userId);
     }
 
     // ──────────────────────────────────────────────
@@ -549,8 +585,8 @@ public class PayrollService {
     private Long findUserIdByName(String employeeName) {
         try {
             return jdbcTemplate.queryForObject(
-                    "SELECT id FROM dashboard_user WHERE company_id = ? AND display_name = ? LIMIT 1",
-                    Long.class, DEFAULT_COMPANY_ID, employeeName);
+                "SELECT id FROM dashboard_user WHERE company_id = ? AND display_name = ? LIMIT 1",
+                Long.class, DEFAULT_COMPANY_ID, employeeName);
         } catch (Exception e) {
             return null;
         }
@@ -580,8 +616,8 @@ public class PayrollService {
 
     private static BigDecimal rate(Object value, String fallback) {
         BigDecimal parsed = value == null || value.toString().isBlank()
-                ? new BigDecimal(fallback)
-                : decimal(value);
+            ? new BigDecimal(fallback)
+            : decimal(value);
         if (parsed.compareTo(BigDecimal.valueOf(0.1)) >= 0) {
             return parsed.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP);
         }
@@ -603,10 +639,10 @@ public class PayrollService {
     }
 
     private record InsuranceRates(
-            String nationalPension,
-            String healthInsurance,
-            String longTermCare,
-            String employmentInsurance
+        String nationalPension,
+        String healthInsurance,
+        String longTermCare,
+        String employmentInsurance
     ) {}
 
     private static boolean booleanValue(Object value) {
@@ -616,8 +652,8 @@ public class PayrollService {
         if (value instanceof Boolean bool) {
             return bool;
         }
-        String text = value.toString().trim();
-        return "true".equalsIgnoreCase(text) || "1".equals(text) || "Y".equalsIgnoreCase(text);
+        String t = value.toString().trim();
+        return "true".equalsIgnoreCase(t) || "1".equals(t) || "Y".equalsIgnoreCase(t);
     }
 
     private static BigDecimal won(BigDecimal value) {
@@ -628,10 +664,10 @@ public class PayrollService {
         if (record.getUserId() == null) return null;
         try {
             return jdbcTemplate.queryForObject(
-                    "SELECT email FROM dashboard_user WHERE id = ?",
-                    String.class, record.getUserId());
+                "SELECT email FROM dashboard_user WHERE id = ?",
+                String.class, record.getUserId());
         } catch (Exception e) {
             return null;
         }
     }
-}
+                }

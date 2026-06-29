@@ -68,6 +68,8 @@ public class IncentiveDto {
         private Long firstOrderAmount;
         private Long cumulativeSales;
         private Long cumulativeOperatingProfit;
+        /** 상품별 고정 마진율 (%, 예: 25.0 = 25%) */
+        private Double marginRate;
         private String status;
         private String memo;
     }
@@ -85,9 +87,18 @@ public class IncentiveDto {
         private Long firstOrderAmount;
         private Long cumulativeSales;
         private Long cumulativeOperatingProfit;
+        /** 상품별 고정 마진율 (%) */
+        private Double marginRate;
+        /** 매출 등급 (Tier1/Tier2/Tier3) */
+        private String tierLabel;
         private String status;
+        /** 신규 거래처 등록 인센티브 (고정 50,000원) */
+        private Long newClientIncentive;
+        /** 첫 발주 인센티브 = 추정영업이익 x 1% */
         private Long firstOrderIncentive;
+        /** 누적 인센티브 = 추정영업이익 x 등급% */
         private Long cumulativeSalesIncentive;
+        /** 총 예상 인센티브 (신규+첫발주+누적) */
         private Long totalExpectedIncentive;
         private String memo;
         private LocalDateTime createdAt;

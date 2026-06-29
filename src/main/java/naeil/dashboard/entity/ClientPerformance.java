@@ -45,6 +45,16 @@ public class ClientPerformance {
     @Builder.Default
     private Long cumulativeOperatingProfit = 0L;
 
+    /** 상품별 고정 마진율 (%, 예: 25.0 = 25%) */
+    @Column(name = "margin_rate")
+    @Builder.Default
+    private Double marginRate = 0.0;
+
+    /** 신규 거래처 등록 인센티브 (고정 50,000원) */
+    @Column(name = "new_client_incentive")
+    @Builder.Default
+    private Long newClientIncentive = 50_000L;
+
     @Column(name = "status", length = 30)
     @Builder.Default
     private String status = "LEAD";

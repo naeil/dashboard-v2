@@ -7,6 +7,12 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:password}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
 
   jpa:
     hibernate:
@@ -22,12 +28,13 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
     out-of-order: true
+    repair-on-migrate: true
     ignore-migration-patterns: "*:ignored,*:pending,*:missing,*:future"
 
   cache:
     type: redis
     redis:
-      time-to-live: 300000  # 5 minutes in milliseconds
+      time-to-live: 300000 # 5 minutes in milliseconds
 
   data:
     redis:
@@ -35,84 +42,29 @@ spring:
       port: ${SPRING_DATA_REDIS_PORT:6379}
       username: ${SPRING_DATA_REDIS_USERNAME:}
       password: ${SPRING_DATA_REDIS_PASSWORD:}
-      ssl:
-        enabled: ${SPRING_DATA_REDIS_SSL_ENABLED:false}
-      timeout: ${SPRING_DATA_REDIS_TIMEOUT:2000ms}
 
   mail:
-    host: ${DAOU_MAIL_SMTP_HOST:outbound.daouoffice.com}
-    port: ${DAOU_MAIL_SMTP_PORT:465}
-    username: ${DAOU_MAIL_USERNAME:}
-    password: ${DAOU_MAIL_PASSWORD:}
+    host: ${SPRING_MAIL_HOST:smtp.gmail.com}
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
           auth: true
-          ssl:
+          starttls:
             enable: true
+    test-connection: false
 
 app:
-  auth:
-    username: ${APP_AUTH_USERNAME:admin}
-    password: ${APP_AUTH_PASSWORD:change-me-1234}
-    token-secret: ${APP_AUTH_TOKEN_SECRET:change-this-token-secret-for-production-32chars}
-    token-ttl-seconds: ${APP_AUTH_TOKEN_TTL_SECONDS:2592000}
-  encryption:
-    secret-key: ${APP_ENCRYPTION_SECRET_KEY:0123456789abcdef0123456789abcdef}
   mail:
-    from: ${MAIL_FROM:${DAOU_MAIL_USERNAME:noreply@example.com}}
-  cors:
-    allowed-origin-patterns: ${APP_CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:5173,http://localhost:3000,http://192.168.0.86:5173,https://*.trycloudflare.com}
-
-openai:
-  api-key: ${OPENAI_API_KEY:}
-
-naver:
-  client-id: ${NAVER_CLIENT_ID:}
-  client-secret: ${NAVER_CLIENT_SECRET:}
-
-naver-blog-auth:
-  username: ${NAVER_BLOG_USERNAME:}
-  password: ${NAVER_BLOG_PASSWORD:}
-
-naver-blog:
-  client-id: ${NAVER_BLOG_CLIENT_ID:}
-  client-secret: ${NAVER_BLOG_CLIENT_SECRET:}
-  access-token: ${NAVER_BLOG_ACCESS_TOKEN:}
-  default-blog-id: ${NAVER_BLOG_ID:}
-
-naver-ad:
-  customer-id: ${NAVER_AD_CUSTOMER_ID:}
-  access-license: ${NAVER_AD_ACCESS_LICENSE:}
-  secret-key: ${NAVER_AD_SECRET_KEY:}
-
-meta:
-  access-token: ${META_ACCESS_TOKEN:}
-  ad-account-id: ${META_AD_ACCOUNT_ID:}
-
-daou:
-  base-url: ${DAOU_BASE_URL:https://api.daouoffice.com}
-  client-id: ${DAOU_CLIENT_ID:}
-  client-secret: ${DAOU_CLIENT_SECRET:}
-  company-id: ${DAOU_COMPANY_ID:}
-  company-name: ${DAOU_COMPANY_NAME:}
-  domain: ${DAOU_DOMAIN:}
-  callback-url: ${DAOU_CALLBACK_URL:}
-  connect-timeout: ${DAOU_CONNECT_TIMEOUT:5s}
-  read-timeout: ${DAOU_READ_TIMEOUT:20s}
-  token-refresh-skew: ${DAOU_TOKEN_REFRESH_SKEW:60s}
-  mail:
-    host: ${DAOU_MAIL_HOST:imap.daouoffice.com}
-    port: ${DAOU_MAIL_PORT:993}
-    username: ${DAOU_MAIL_USERNAME:}
-    password: ${DAOU_MAIL_PASSWORD:}
-    smtp-host: ${DAOU_MAIL_SMTP_HOST:outbound.daouoffice.com}
-    smtp-port: ${DAOU_MAIL_SMTP_PORT:465}
+    from: ${APP_MAIL_FROM:noreply@naeil.com}
 
 server:
-  port: ${PORT:${SERVER_PORT:8080}}
+  port: 8080
 
 logging:
   level:
-    naeil.dashboard: DEBUG
-    org.springframework.cache: DEBUG
+    naeil.dashboard: INFO
+    org.springframework.web: INFO
+    org.hibernate.SQL: OFF

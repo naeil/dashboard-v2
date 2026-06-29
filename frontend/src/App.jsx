@@ -11,6 +11,7 @@ import ChannelOperationsPage from './pages/executive/ChannelOperationsPage'
 import ChannelSalesPage from './pages/executive/ChannelSalesPage'
 import ConsultingRevenuePage from './pages/executive/ConsultingRevenuePage'
 import CustomerDatabasePage from './pages/executive/CustomerDatabasePage'
+import CustomerInquiryPage from './pages/executive/CustomerInquiryPage'
 import CustomerIntelligencePage from './pages/executive/CustomerIntelligencePage'
 import SettlementSchedulePage from './pages/executive/SettlementSchedulePage'
 import IncentiveManagementPage from './pages/executive/IncentiveManagementPage'
@@ -40,6 +41,8 @@ import PromotionHistoryPage from './pages/executive/PromotionHistoryPage'
 import PromotionMarginPage from './pages/executive/PromotionMarginPage'
 import SupportProgramPage from './pages/executive/SupportProgramPage'
 import BlogAutoPublishPage from './pages/executive/BlogAutoPublishPage'
+import AIReviewCenterPage from './pages/executive/AIReviewCenterPage'
+import CSAutoReplyPage from './pages/executive/CSAutoReplyPage'
 import PaymentApprovalPage from './pages/executive/PaymentApprovalPage'
 import PaymentRequestPage from './pages/executive/PaymentRequestPage'
 import PlatformOverviewPage from './pages/executive/PlatformOverviewPage'
@@ -74,6 +77,7 @@ const pages = {
   'channel-credentials': ChannelCredentialPage,
   'customer-db': CustomerDatabasePage,
   'customer-intelligence': CustomerIntelligencePage,
+  'customer-inquiry': CustomerInquiryPage,
   'channel-operations': ChannelOperationsPage,
   'product-profit': ProductProfitPage,
   'product-forecast': ProductForecastPage,
@@ -107,24 +111,25 @@ const pages = {
   'incentive-online': IncentiveManagementPage,
   'incentive-clients': IncentiveManagementPage,
   'incentive-summary': IncentiveManagementPage,
-'channel-api-settings': ChannelApiSettingsPage,
+  'channel-api-settings': ChannelApiSettingsPage,
   payroll: PayrollPage,
-  'quotation': QuotationPage,
+  quotation: QuotationPage,
   'profit-management': ProfitManagementPage,
   'product-cost': ProductCostPage,
   'blog-auto-publish': BlogAutoPublishPage,
+  'ai-review-center': AIReviewCenterPage,
+    'cs-auto-reply': CSAutoReplyPage,
   'support-programs': SupportProgramPage,
   'brand-health': BrandHealthPage,
   settings: Settings,
 }
 
-const mobilePageIds = new Set(['platform', 'staff-dashboard', 'staff-work-report', 'staff-project-status', 'account'])
 const mobileTabs = [
   { id: 'platform', label: '홈', icon: 'apps' },
-  { id: 'staff-dashboard', label: '대시보드', icon: 'dashboard' },
-  { id: 'staff-work-report', label: '업무보고', icon: 'assignment_add' },
-  { id: 'staff-project-status', label: '프로젝트', icon: 'view_timeline' },
-  { id: 'account', label: '계정', icon: 'account_circle' },
+  { id: 'channel-sales', label: '매출', icon: 'leaderboard' },
+  { id: 'settlement-schedule', label: '정산', icon: 'payments' },
+  { id: 'inventory', label: '재고', icon: 'warehouse' },
+  { id: 'staff-dashboard', label: '더보기', icon: 'menu' },
 ]
 
 function useIsMobile() {
@@ -145,12 +150,107 @@ function useIsMobile() {
 }
 
 function MobileLayout({ activePage, setPage, session, userRole }) {
+  const [menuOpen, setMenuOpen] = useState(false)
   const PageComponent = pages[activePage] || PlatformOverviewPage
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const handler = (e) => {
+      if (!e.target.closest('.mobile-drawer')) setMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', handler)
+    return () => document.removeEventListener('pointerdown', handler)
+  }, [menuOpen])
+
+  const navItems = [
+    { id: 'platform', label: '업무 홈', icon: 'apps' },
+    { id: 'ceo-dashboard', label: 'CEO 전략 대시보드', icon: 'monitoring' },
+    { id: 'cash-flow', label: '현금 흐름', icon: 'account_balance_wallet' },
+    { id: 'channel-sales', label: '실시간 매출', icon: 'leaderboard' },
+    { id: 'settlement-schedule', label: '정산 예정', icon: 'payments' },
+    { id: 'inventory', label: '재고 현황', icon: 'warehouse' },
+    { id: 'receivables', label: '미수금', icon: 'credit_score' },
+    { id: 'staff-dashboard', label: '직원 대시보드', icon: 'dashboard' },
+    { id: 'staff-work-report', label: '업무 보고', icon: 'assignment_add' },
+    { id: 'staff-project-status', label: '프로젝트 현황', icon: 'view_timeline' },
+    { id: 'work-management', label: '업무 진행 관리', icon: 'assignment' },
+    { id: 'employee-performance', label: '직원 성과 분석', icon: 'analytics' },
+    { id: 'channel-operations', label: '채널 운영', icon: 'storefront' },
+    { id: 'customer-inquiry', label: 'CS 문의', icon: 'forum' },
+    { id: 'incentive-summary', label: '직원 인센티브', icon: 'payments' },
+    { id: 'account', label: '내 계정', icon: 'account_circle' },
+  ]
+
   return (
-    <div className="app-light flex h-screen flex-col bg-slate-50 text-slate-900">
-      <main className="flex-1 overflow-y-auto pb-16">
+    <div className="app-light flex h-dvh flex-col bg-slate-50 text-slate-900" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <header className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 shadow-sm" style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
+        <button
+          type="button"
+          className="mobile-drawer flex h-11 w-11 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"
+          onClick={() => setMenuOpen(true)}
+          aria-label="메뉴 열기"
+        >
+          <span className="material-symbols-outlined text-2xl">menu</span>
+        </button>
+        <div className="text-center">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-600">Naeil Group</p>
+          <p className="text-sm font-black text-slate-950">Business Platform</p>
+        </div>
+        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-500 text-sm font-black text-white">
+          {(session?.displayName || session?.username || 'A').slice(0, 1).toUpperCase()}
+        </div>
+      </header>
+
+      {menuOpen && (
+        <div className="fixed inset-0 z-50 flex">
+          <div className="mobile-drawer flex h-full w-72 flex-col bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-600">Naeil Group</p>
+                <p className="text-base font-black text-slate-950">Business Platform</p>
+              </div>
+              <button type="button" onClick={() => setMenuOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500 text-sm font-black text-white">
+                {(session?.displayName || session?.username || 'A').slice(0, 1).toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black text-slate-950">{session?.displayName || session?.username}</p>
+                <p className="text-xs text-slate-500">{session?.department || ''}</p>
+              </div>
+            </div>
+            <nav className="flex-1 overflow-y-auto py-2">
+              {navItems.map((item) => {
+                const isActive = activePage === item.id
+                return (
+                  <button key={item.id} type="button"
+                    onClick={() => { setPage(item.id); setMenuOpen(false) }}
+                    className={`flex w-full items-center gap-3 px-4 py-3 text-sm font-bold transition-colors ${isActive ? 'bg-sky-500 text-white' : 'text-slate-700 hover:bg-slate-100'}`}>
+                    <span className="material-symbols-outlined shrink-0 text-xl">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+                )
+              })}
+            </nav>
+            <div className="border-t border-slate-200 p-4">
+              <button type="button"
+                onClick={async () => { await logout(); window.location.reload() }}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 py-3 text-sm font-black text-slate-600 hover:bg-slate-100">
+                <span className="material-symbols-outlined text-lg">logout</span>
+                로그아웃
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 bg-black/40" onClick={() => setMenuOpen(false)} />
+        </div>
+      )}
+
+      <main className="flex-1 overflow-y-auto" style={{ paddingBottom: '72px' }}>
         <PageComponent
-          onNavigate={setPage}
+          onNavigate={(id) => { setPage(id); setMenuOpen(false) }}
           username={session?.username}
           displayName={session?.displayName}
           department={session?.department}
@@ -159,17 +259,15 @@ function MobileLayout({ activePage, setPage, session, userRole }) {
           accessPermissions={session?.allowedMenuSections}
         />
       </main>
-      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 px-2">
+
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur-sm" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="grid h-16 grid-cols-5">
           {mobileTabs.map((tab) => {
             const active = activePage === tab.id
             return (
-              <button
-                key={tab.id}
-                type="button"
+              <button key={tab.id} type="button"
                 onClick={() => setPage(tab.id)}
-                className={`flex flex-col items-center justify-center gap-0.5 rounded-lg text-[11px] font-medium transition-colors ${active ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600'}`}
-              >
+                className={`flex flex-col items-center justify-center gap-0.5 rounded-none text-[11px] font-medium transition-colors ${active ? 'text-sky-600' : 'text-slate-400 hover:text-slate-600'}`}>
                 <span className={`material-symbols-outlined text-[22px] ${active ? 'filled' : ''}`}>{tab.icon}</span>
                 <span>{tab.label}</span>
               </button>
@@ -189,13 +287,13 @@ export default function App() {
   const isMobile = useIsMobile()
 
   useEffect(() => {
-  const token = getAuthToken()
-            if (!token) {
-                        setSession(null)
-                                setAuthLoading(false)
-                                        return
-            }
-        getSession()
+    const token = getAuthToken()
+    if (!token) {
+      setSession(null)
+      setAuthLoading(false)
+      return
+    }
+    getSession()
       .then((data) => {
         if (data?.authenticated) {
           setSession(data)
@@ -210,7 +308,6 @@ export default function App() {
     return () => window.removeEventListener('auth:unauthorized', handleUnauthorized)
   }, [])
 
-  
   useEffect(() => {
     const openDatePicker = (event) => {
       const input = event.target?.closest?.('[data-date-trigger]')?.querySelector?.('input[type="date"]')
@@ -251,7 +348,8 @@ export default function App() {
   if (!session) return <LoginPage onLogin={handleLogin} />
 
   const userRole = session.role ?? 'EMPLOYEE'
-  if (isMobile && mobilePageIds.has(page)) {
+
+  if (isMobile) {
     return <MobileLayout activePage={page} setPage={setPage} session={session} userRole={userRole} />
   }
 

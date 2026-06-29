@@ -66,6 +66,7 @@ const SORT_OPTIONS = [
   { id: 'soldDesc', label: '현재 판매 높은 순' },
   { id: 'revenueDesc', label: '계획 매출 높은 순' },
   { id: 'contribDesc', label: '공헌이익 높은 순' },
+  { id: 'contribAsc', label: '공헌이익률 낮은 순' },
   { id: 'nameAsc', label: '제품명 가나다순' },
 ]
 
@@ -144,6 +145,7 @@ function ChannelPanel({ ch, products, planQtyMap, onUpdateProduct, onAddProduct,
     if (sortMode === 'soldDesc') return num(b.sold_qty) - num(a.sold_qty) || b.revenue - a.revenue
     if (sortMode === 'revenueDesc') return b.revenue - a.revenue || b.qty - a.qty
     if (sortMode === 'contribDesc') return b.contrib - a.contrib || b.revenue - a.revenue
+    if (sortMode === 'contribAsc') return a.contribRate - b.contribRate || a.product_name.localeCompare(b.product_name, 'ko-KR')
     if (sortMode === 'nameAsc') return a.product_name.localeCompare(b.product_name, 'ko-KR')
     return b.qty - a.qty || b.revenue - a.revenue
   })
@@ -224,7 +226,8 @@ function ChannelPanel({ ch, products, planQtyMap, onUpdateProduct, onAddProduct,
                 <th className="px-3 py-2 text-right font-black text-slate-500">물류비</th>
                 <th className="px-3 py-2 text-right font-black text-slate-500">광고/마케팅</th>
                 <th className="px-3 py-2 text-right font-black text-slate-500">기타</th>
-                <th className="px-3 py-2 text-right font-black text-slate-500">공헌이익</th>
+                <th className="px-3 py-2 text-right font-black text-slate-500">개당 단가</th>
+              <th className="px-3 py-2 text-right font-black text-slate-500">공헌이익</th>
                 <th className="px-3 py-2 text-center font-black text-slate-500">계획 수량</th>
                 <th className="px-3 py-2 text-center font-black text-slate-500">실제 판매</th>
                 <th className="px-3 py-2 text-right font-black text-slate-500">계획 매출</th>
@@ -234,7 +237,7 @@ function ChannelPanel({ ch, products, planQtyMap, onUpdateProduct, onAddProduct,
             </thead>
             <tbody>
               {sortedRows.map((p) => (
-                <tr key={p._key} className="border-b border-slate-50 hover:bg-slate-50">
+                <tr key={p._key} className={`border-b border-slate-50 hover:bg-slate-50 ${p.contrib < 0 ? 'bg-rose-50' : ''}`}>
                   <td className="px-4 py-2">
                     <div className="min-w-[220px]">
                       <input
@@ -263,6 +266,9 @@ function ChannelPanel({ ch, products, planQtyMap, onUpdateProduct, onAddProduct,
                       />
                     </td>
                   ))}
+                  <td className="px-3 py-2 text-right text-xs font-bold text-slate-600">
+                    {num(p.qty_per_unit) > 1 ? (Math.round(num(p.sale_price) / num(p.qty_per_unit))).toLocaleString('ko-KR') : '-'}
+                  </td>
                   <td className="px-3 py-2 text-right">
                     <span className={`rounded px-2 py-0.5 font-black ${contribBadgeCls(p.contribRate)}`}>
                       {wonFmt(p.contrib)} ({pctFmt(p.contribRate)})
@@ -1270,6 +1276,24 @@ export default function ProfitManagementPage() {
             : '순이익이 0 이하 — 현재 계획으로는 부채 상환 불가'}
         </div>
       )}
+
+      {/* 이상치 알림 줄 */}
+      {(() => {
+        const allCalc = CHANNELS.flatMap(ch =>
+          (productsByChannel[ch.id] || []).map(p => {
+            const varCost = num(p.cogs) + num(p.logistics_cost) + num(p.marketing_cost) + num(p.other_cost)
+            return num(p.sale_price) - varCost
+          })
+        )
+        const lossSkus = allCalc.filter(v => v < 0).length
+        if (lossSkus === 0) return null
+        return (
+          <div className="flex items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-black text-rose-700">
+            <span className="material-symbols-outlined text-base">warning</span>
+            <span>팔수록 적자 SKU {lossSkus}건 — 공헌이익이 음수인 항목이 있습니다.</span>
+          </div>
+        )
+      })()}
 
       {/* 채널 패널들 */}
       <div className="space-y-4">

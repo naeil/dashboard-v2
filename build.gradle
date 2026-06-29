@@ -49,8 +49,8 @@ dependencies {
     // Configuration properties metadata
     annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
 
-    // Spring Mail (IMAP) 의존성 제거 - REST API 방식으로 전환됨
- implementation 'org.springframework.boot:spring-boot-starter-mail'
+    // Spring Mail
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
 
     // Security context only
     implementation 'org.springframework.security:spring-security-core'
@@ -61,15 +61,17 @@ dependencies {
     // Playwright (네이버 블로그 자동화)
     implementation 'com.microsoft.playwright:playwright:1.44.0'
 
+    // jBCrypt (네이버 커머스 API 전자서명)
+    implementation 'org.mindrot:jbcrypt:0.4'
+
     // Test
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 
 tasks.withType(Test).configureEach {
-	enabled = false
+    enabled = false
 }
 
-// .env 파일을 읽어서 bootRun 시스템 프로퍼티로 주입
 bootRun {
     def envFile = file('.env')
     if (envFile.exists()) {
@@ -87,5 +89,5 @@ bootRun {
 
 compileJava.options.encoding = 'UTF-8'
 tasks.withType(JavaCompile) {
-	options.encoding = 'UTF-8'
+    options.encoding = 'UTF-8'
 }

@@ -3618,6 +3618,115 @@ public class ExecutiveDashboardService {
                 "unmappedOrders", unmappedOrders
         );
     }
+
+    // ── 채널별·제품별 판매 상세 분석 API ─────────────────────────────────────
+
+    public List<Map<String, Object>> getSalesDetail(Long companyId, LocalDate startDate, LocalDate endDate, String channel, Long productId, String sortBy) {
+        LocalDate s = (startDate != null) ? startDate : LocalDate.now().minusDays(90);
+        LocalDate e = (endDate != null) ? endDate : LocalDate.now();
+        String orderCol;
+        if (sortBy == null) sortBy = "revenue";
+        switch (sortBy) {
+            case "quantity": orderCol = "sales_quantity DESC"; break;
+            case "conversionRate": orderCol = "conversion_rate DESC"; break;
+            case "repurchaseRate": orderCol = "repurchase_rate DESC"; break;
+            case "profit": orderCol = "estimated_profit DESC"; break;
+            default: orderCol = "revenue DESC"; break;
+        }
+        List<Object> params = new ArrayList<>();
+        params.add(companyId);
+        params.add(s.atStartOfDay());
+        params.add(e.plusDays(1).atStartOfDay());
+        StringBuilder sql = new StringBuilder(
+            "SELECT p.product_name, sh.shop_name AS channel, " +
+            "COALESCE(SUM(o.order_quantity),0) AS sales_quantity, " +
+            "COUNT(DISTINCT o.uniq) AS order_count, " +
+            "COALESCE(SUM(o.pay_amt - COALESCE(o.cancel_amt,0)),0) AS revenue, " +
+            "0 AS product_cost, COALESCE(SUM(o.shipping_fee),0) AS shipping_cost, " +
+            "0 AS platform_fee, 0 AS ad_cost, 0 AS roas, " +
+            "0 AS conversion_rate, 0 AS repurchase_rate, 0 AS avg_repurchase_days, " +
+            "0 AS estimated_profit, 0 AS profit_margin, " +
+            "0 AS current_stock, 0 AS estimated_stockout_days " +
+            "FROM orders o " +
+            "JOIN product p ON p.id = o.product_id " +
+            "JOIN shop sh ON sh.id = o.shop_id " +
+            "WHERE o.company_id = ? " +
+            "AND COALESCE(o.pay_time, o.ord_time, o.wdate) BETWEEN ?::timestamp AND ?::timestamp " +
+            "AND o.ord_status NOT IN ('취소완료','반품완료','교환완료') " +
+            "AND o.product_id IS NOT NULL "
+        );
+        if (channel != null && !channel.isBlank() && !"전체".equals(channel)) {
+            sql.append("AND sh.shop_name ILIKE ? ");
+            params.add("%" + channel + "%");
+        }
+        if (productId != null) {
+            sql.append("AND o.product_id = ? ");
+            params.add(productId);
+        }
+        sql.append("GROUP BY p.product_name, sh.shop_name ORDER BY ").append(orderCol).append(" NULLS LAST");
+        return jdbcTemplate.queryForList(sql.toString(), params.toArray());
+    }
+
+    public List<Map<String, Object>> getRepurchaseByProduct(Long companyId, LocalDate startDate, LocalDate endDate, Long productId, String channel) {
+        LocalDate s = (startDate != null) ? startDate : LocalDate.now().minusDays(180);
+        LocalDate e = (endDate != null) ? endDate : LocalDate.now();
+        List<Object> params = new ArrayList<>();
+        params.add(companyId);
+        params.add(s.atStartOfDay());
+        params.add(e.plusDays(1).atStartOfDay());
+        StringBuilder sql = new StringBuilder(
+            "SELECT p.product_name, " +
+            "COUNT(DISTINCT cstats.customer_id) FILTER (WHERE cstats.order_cnt >= 1) AS first_purchase_users, " +
+            "COUNT(DISTINCT cstats.customer_id) FILTER (WHERE cstats.order_cnt >= 2) AS second_purchase_users, " +
+            "COUNT(DISTINCT cstats.customer_id) FILTER (WHERE cstats.order_cnt >= 3) AS third_purchase_users, " +
+            "COUNT(DISTINCT cstats.customer_id) FILTER (WHERE cstats.order_cnt >= 4) AS fourth_purchase_users, " +
+            "COUNT(DISTINCT cstats.customer_id) FILTER (WHERE cstats.order_cnt >= 5) AS fifth_plus_purchase_users, " +
+            "ROUND(COUNT(DISTINCT cstats.customer_id) FILTER (WHERE cstats.order_cnt >= 2)::numeric / " +
+            "NULLIF(COUNT(DISTINCT cstats.customer_id) FILTER (WHERE cstats.order_cnt >= 1),0)*100,1) AS repurchase_rate_30d, " +
+            "ROUND(COUNT(DISTINCT cstats.customer_id) FILTER (WHERE cstats.order_cnt >= 2)::numeric / " +
+            "NULLIF(COUNT(DISTINCT cstats.customer_id) FILTER (WHERE cstats.order_cnt >= 1),0)*100,1) AS repurchase_rate_60d, " +
+            "ROUND(COUNT(DISTINCT cstats.customer_id) FILTER (WHERE cstats.order_cnt >= 2)::numeric / " +
+            "NULLIF(COUNT(DISTINCT cstats.customer_id) FILTER (WHERE cstats.order_cnt >= 1),0)*100,1) AS repurchase_rate_90d, " +
+            "0 AS avg_repurchase_days " +
+            "FROM (SELECT o.customer_id, o.product_id, COUNT(*) AS order_cnt " +
+            "FROM orders o " +
+            "WHERE o.company_id = ? " +
+            "AND COALESCE(o.pay_time, o.ord_time, o.wdate) BETWEEN ?::timestamp AND ?::timestamp " +
+            "AND o.customer_id IS NOT NULL " +
+            "AND o.ord_status NOT IN ('취소완료','반품완료','교환완료') " +
+            "GROUP BY o.customer_id, o.product_id) cstats " +
+            "JOIN product p ON p.id = cstats.product_id " +
+            "WHERE 1=1 "
+        );
+        if (productId != null) {
+            sql.append("AND cstats.product_id = ? ");
+            params.add(productId);
+        }
+        sql.append("GROUP BY p.product_name ORDER BY first_purchase_users DESC NULLS LAST");
+        return jdbcTemplate.queryForList(sql.toString(), params.toArray());
+    }
+
+    public List<Map<String, Object>> getChannelProductMatrix(Long companyId, LocalDate startDate, LocalDate endDate) {
+        LocalDate s = (startDate != null) ? startDate : LocalDate.now().minusDays(90);
+        LocalDate e = (endDate != null) ? endDate : LocalDate.now();
+        return jdbcTemplate.queryForList(
+            "SELECT p.product_name, sh.shop_name AS channel, " +
+            "COALESCE(SUM(o.pay_amt - COALESCE(o.cancel_amt,0)),0) AS revenue, " +
+            "COALESCE(SUM(o.order_quantity),0) AS sales_quantity, " +
+            "0 AS roas, 0 AS repurchase_rate, 0 AS profit_margin " +
+            "FROM orders o " +
+            "JOIN product p ON p.id = o.product_id " +
+            "JOIN shop sh ON sh.id = o.shop_id " +
+            "WHERE o.company_id = ? " +
+            "AND COALESCE(o.pay_time, o.ord_time, o.wdate) BETWEEN ?::timestamp AND ?::timestamp " +
+            "AND o.ord_status NOT IN ('취소완료','반품완료','교환완료') " +
+            "AND o.product_id IS NOT NULL " +
+            "GROUP BY p.product_name, sh.shop_name " +
+            "ORDER BY p.product_name, revenue DESC NULLS LAST",
+            companyId, s.atStartOfDay(), e.plusDays(1).atStartOfDay()
+        );
+    }
+
 }
 
 

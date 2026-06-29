@@ -384,7 +384,120 @@ export default function CEOStrategicDashboard({ onNavigate }) {
 
       {tab === 'today' && <>
 
-      {/* ─── 생존 지표 3카드 ─────────────────────────────────────────────── */}
+      
+{/* ─── CEO KPI 핵심 경영 현황 (상단 요약 배너) ────────────────────────────── */}
+<div style={{
+  background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 60%, #1a4a3a 100%)',
+  borderRadius: '16px',
+  padding: '20px 24px',
+  boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
+  position: 'relative',
+  overflow: 'hidden',
+}}>
+  {/* 헤더 */}
+  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'16px'}}>
+    <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+      <span style={{fontSize:'18px'}}>📊</span>
+      <span style={{color:'#fff',fontSize:'15px',fontWeight:'700',letterSpacing:'0.3px'}}>핵심 경영 현황</span>
+      <span style={{background:'rgba(255,255,255,0.12)',color:'rgba(255,255,255,0.7)',fontSize:'11px',padding:'2px 8px',borderRadius:'20px',fontWeight:'500'}}>실시간</span>
+    </div>
+    <span style={{color:'rgba(255,255,255,0.45)',fontSize:'12px'}}>{todayLabel} 기준</span>
+  </div>
+
+  {/* KPI 5카드 */}
+  <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'12px'}}>
+
+    {/* 1. 이번달 매출 */}
+    <div style={{background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.10)',borderRadius:'12px',padding:'14px 16px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'8px'}}>
+        <span style={{color:'rgba(255,255,255,0.55)',fontSize:'11px',fontWeight:'600',letterSpacing:'0.5px',textTransform:'uppercase'}}>이번달 매출</span>
+        <span style={{fontSize:'14px'}}>💰</span>
+      </div>
+      <div style={{color:'#fff',fontSize:'22px',fontWeight:'800',lineHeight:'1.1',marginBottom:'4px'}}>{won(totalSales)}</div>
+      <div style={{marginBottom:'4px'}}>
+        {(pct(totalSales,totalGoal) >= pct(d.daysPassed||1,d.daysInMonth||30))
+          ? <span style={{background:'#22c55e',color:'#fff',fontSize:'10px',fontWeight:'700',padding:'1px 6px',borderRadius:'10px'}}>▲ ON PACE</span>
+          : <span style={{background:'#ef4444',color:'#fff',fontSize:'10px',fontWeight:'700',padding:'1px 6px',borderRadius:'10px'}}>▼ {pct(d.daysPassed||1,d.daysInMonth||30)-pct(totalSales,totalGoal)}%p 미달</span>
+        }
+      </div>
+      <div style={{color:'rgba(255,255,255,0.4)',fontSize:'10px'}}>목표 {won(totalGoal)} · 달성률 <span style={{color:'#fbbf24',fontWeight:'700'}}>{pct(totalSales,totalGoal)}%</span></div>
+    </div>
+
+    {/* 2. 재고 현황 */}
+    <div style={{background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.10)',borderRadius:'12px',padding:'14px 16px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'8px'}}>
+        <span style={{color:'rgba(255,255,255,0.55)',fontSize:'11px',fontWeight:'600',letterSpacing:'0.5px',textTransform:'uppercase'}}>재고 현황</span>
+        <span style={{fontSize:'14px'}}>📦</span>
+      </div>
+      <div style={{color:'#fff',fontSize:'22px',fontWeight:'800',lineHeight:'1.1',marginBottom:'4px'}}>{lowStockCount}건</div>
+      <div style={{marginBottom:'4px'}}>
+        {lowStockCount === 0
+          ? <span style={{background:'#22c55e',color:'#fff',fontSize:'10px',fontWeight:'700',padding:'1px 6px',borderRadius:'10px'}}>✓ 정상</span>
+          : <span style={{background:'#f97316',color:'#fff',fontSize:'10px',fontWeight:'700',padding:'1px 6px',borderRadius:'10px'}}>⚠ 부족 주의</span>
+        }
+      </div>
+      <div style={{color:'rgba(255,255,255,0.4)',fontSize:'10px'}}>부족 상품 · 과다재고 <span style={{color:'#34d399',fontWeight:'700'}}>{(d.overStockProducts||[]).length}건</span></div>
+    </div>
+
+    {/* 3. 법인 현금 */}
+    <div style={{background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.10)',borderRadius:'12px',padding:'14px 16px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'8px'}}>
+        <span style={{color:'rgba(255,255,255,0.55)',fontSize:'11px',fontWeight:'600',letterSpacing:'0.5px',textTransform:'uppercase'}}>법인 현금</span>
+        <span style={{fontSize:'14px'}}>🏦</span>
+      </div>
+      <div style={{color:'#fff',fontSize:'22px',fontWeight:'800',lineHeight:'1.1',marginBottom:'4px'}}>{won(d.cash||0)}</div>
+      <div style={{marginBottom:'4px'}}>
+        {(d.cashDays||0) >= 90
+          ? <span style={{background:'#22c55e',color:'#fff',fontSize:'10px',fontWeight:'700',padding:'1px 6px',borderRadius:'10px'}}>✓ 안정</span>
+          : (d.cashDays||0) >= 45
+          ? <span style={{background:'#f59e0b',color:'#fff',fontSize:'10px',fontWeight:'700',padding:'1px 6px',borderRadius:'10px'}}>⚡ 주의</span>
+          : <span style={{background:'#ef4444',color:'#fff',fontSize:'10px',fontWeight:'700',padding:'1px 6px',borderRadius:'10px'}}>🚨 위험</span>
+        }
+      </div>
+      <div style={{color:'rgba(255,255,255,0.4)',fontSize:'10px'}}>생존 <span style={{color:'#60a5fa',fontWeight:'700'}}>{d.cashDays||0}일</span> · 일 {won(d.dailyBurn||0)} 소진</div>
+    </div>
+
+    {/* 4. 이달 운영비용 */}
+    <div style={{background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.10)',borderRadius:'12px',padding:'14px 16px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'8px'}}>
+        <span style={{color:'rgba(255,255,255,0.55)',fontSize:'11px',fontWeight:'600',letterSpacing:'0.5px',textTransform:'uppercase'}}>이달 운영비용</span>
+        <span style={{fontSize:'14px'}}>📋</span>
+      </div>
+      <div style={{color:'#fff',fontSize:'22px',fontWeight:'800',lineHeight:'1.1',marginBottom:'4px'}}>{won(d.fixedTotal||0)}</div>
+      <div style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'4px'}}>
+        {(d.fixedBreakdown||[]).slice(0,2).map((b,i)=>(
+          <span key={i} style={{color:'rgba(255,255,255,0.5)',fontSize:'10px'}}>{b.category} <span style={{color:'#e2e8f0'}}>{won(b.amount)}</span></span>
+        ))}
+      </div>
+      <div style={{color:'rgba(255,255,255,0.4)',fontSize:'10px'}}>총 부채 <span style={{color:'#fbbf24',fontWeight:'700'}}>{won(d.totalDebt||0)}</span></div>
+    </div>
+
+    {/* 5. 수출 파이프라인 */}
+    <div style={{background:'rgba(255,255,255,0.07)',border:'1px solid rgba(255,255,255,0.10)',borderRadius:'12px',padding:'14px 16px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'8px'}}>
+        <span style={{color:'rgba(255,255,255,0.55)',fontSize:'11px',fontWeight:'600',letterSpacing:'0.5px',textTransform:'uppercase'}}>수출 파이프라인</span>
+        <span style={{fontSize:'14px'}}>🌏</span>
+      </div>
+      <div style={{color:'#fff',fontSize:'22px',fontWeight:'800',lineHeight:'1.1',marginBottom:'4px'}}>{won(exportPipelineTotal)}</div>
+      <div style={{marginBottom:'4px'}}>
+        <span style={{background:'#6366f1',color:'#fff',fontSize:'10px',fontWeight:'700',padding:'1px 6px',borderRadius:'10px'}}>{(d.exportActions||[]).length}건 진행중</span>
+      </div>
+      <div style={{color:'rgba(255,255,255,0.4)',fontSize:'10px'}}>{(d.exportActions||[]).map(e=>e.country).slice(0,3).join('·')} 클로징 대기</div>
+    </div>
+
+  </div>
+
+  {/* 하단 매출 달성 진행바 */}
+  <div style={{marginTop:'14px',display:'flex',alignItems:'center',gap:'10px'}}>
+    <span style={{color:'rgba(255,255,255,0.45)',fontSize:'11px',whiteSpace:'nowrap'}}>월 매출 목표 달성률</span>
+    <div style={{flex:'1',height:'5px',background:'rgba(255,255,255,0.1)',borderRadius:'10px',overflow:'hidden'}}>
+      <div style={{width:`${Math.min(100,pct(totalSales,totalGoal))}%`,height:'100%',background:'linear-gradient(90deg,#3b82f6,#22c55e)',borderRadius:'10px',transition:'width 1s ease'}}/>
+    </div>
+    <span style={{color:'#fbbf24',fontSize:'11px',fontWeight:'700',whiteSpace:'nowrap'}}>{pct(totalSales,totalGoal)}% / 100%</span>
+  </div>
+</div>
+
+{/* ─── 생존 지표 3카드 ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <SurvivalCard
           cashDays={d.cashDays || 0}

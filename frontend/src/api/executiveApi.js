@@ -89,3 +89,29 @@ export const getEmployeeAnalysisHistory = (username) =>
 
 export const saveEmployeeFeedback = (analysisId, feedback) =>
   api.put(`/employee-analysis/${analysisId}/feedback`, { feedback })
+
+// ── 채널별·제품별 판매 상세 분석 API ─────────────────────────────────────────
+export const getSalesDetail = (params = {}) =>
+  api.get('/executive/analytics/sales-detail', { params: { ...companyParams, ...params } })
+
+export const getRepurchaseByProduct = (params = {}) =>
+  api.get('/executive/analytics/repurchase-by-product', { params: { ...companyParams, ...params } })
+
+export const getChannelProductMatrix = (params = {}) =>
+  api.get('/executive/analytics/channel-product-matrix', { params: { ...companyParams, ...params } })
+
+// ── 거래처별 정산 예정현황 API ────────────────────────────────────────────
+export const getSettlementRealtimeSales = (params = {}) =>
+  api.get('/settlements/realtime-sales', { params: { ...companyParams, ...params } })
+
+export const getSettlementExpected = (params = {}) =>
+  api.get('/settlements/expected', { params: { ...companyParams, ...params } })
+
+export const getSettlementSummary = (params = {}) =>
+  api.get('/settlements/summary', { params: { ...companyParams, ...params } })
+
+export const getSettlementDepositCalendar = (params = {}) =>
+  api.get('/settlements/deposit-calendar', { params: { ...companyParams, ...params } })
+
+export const getSettlementChannelIntegrationStatus = () =>
+  api.get('/settlements/channel-integration-status', { params: companyParams })

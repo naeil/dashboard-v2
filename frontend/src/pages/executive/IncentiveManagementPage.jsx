@@ -40,7 +40,6 @@ const SYNC_SOURCE_BADGE = {
   'COUPANG': { label: '쿠팡', cls: 'bg-yellow-100 text-yellow-700' },
   'IMWEB': { label: '자사몰', cls: 'bg-blue-100 text-blue-700' },
 }
-
 function fmt(n) {
   if (n == null) return '0'
   return Number(n).toLocaleString('ko-KR') + '원'
@@ -54,6 +53,41 @@ function fmtNum(n) {
 function currentMonth() {
   const now = new Date()
   return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
+}
+
+// ==================== 인센티브 계산 유틸 (추정 영업이익 기반) ====================
+const TIER2_THRESHOLD = 10_000_000
+const TIER3_THRESHOLD = 30_000_000
+
+function getTierInfo(cumulativeSales) {
+  const s = Number(cumulativeSales) || 0
+  if (s >= TIER3_THRESHOLD) return { label: 'Tier3 (3%)', rate: 0.03, color: 'text-emerald-600' }
+  if (s >= TIER2_THRESHOLD) return { label: 'Tier2 (2%)', rate: 0.02, color: 'text-blue-600' }
+  return { label: 'Tier1 (1%)', rate: 0.01, color: 'text-slate-500' }
+}
+
+function getTierProgress(cumulativeSales) {
+  const s = Number(cumulativeSales) || 0
+  if (s >= TIER3_THRESHOLD) return { pct: 100, next: null, gap: 0, tier: 3 }
+  if (s >= TIER2_THRESHOLD) return { pct: Math.round((s - TIER2_THRESHOLD) / (TIER3_THRESHOLD - TIER2_THRESHOLD) * 100), next: TIER3_THRESHOLD, gap: TIER3_THRESHOLD - s, tier: 2 }
+  return { pct: Math.round(s / TIER2_THRESHOLD * 100), next: TIER2_THRESHOLD, gap: TIER2_THRESHOLD - s, tier: 1 }
+}
+
+function calcFirstOrderIncentive(firstOrderAmount, marginRate) {
+  const amt = Number(firstOrderAmount) || 0
+  const mr = Number(marginRate) || 0
+  if (mr <= 0) return 0
+  const expectedProfit = amt * (mr / 100)
+  return Math.round(expectedProfit * 0.01)  // 1%
+}
+
+function calcCumIncentive(cumulativeSales, marginRate) {
+  const s = Number(cumulativeSales) || 0
+  const mr = Number(marginRate) || 0
+  if (mr <= 0) return 0
+  const expectedProfit = s * (mr / 100)
+  const { rate } = getTierInfo(s)
+  return Math.round(expectedProfit * rate)
 }
 
 function KpiCard({ label, value, icon, color = 'text-sky-600' }) {
@@ -73,7 +107,6 @@ function Badge({ status, map, colorMap }) {
   const cls = colorMap ? colorMap[status] || 'bg-slate-100 text-slate-600' : 'bg-slate-100 text-slate-600'
   return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-bold ${cls}`}>{label}</span>
 }
-
 // ==================== 온라인 성과 탭 ====================
 function OnlinePerformanceTab({ month }) {
   const [list, setList] = useState([])
@@ -103,13 +136,9 @@ function OnlinePerformanceTab({ month }) {
     }
   }
 
-
   const load = useCallback(() => {
     setLoading(true)
-    getOnlinePerformances(month)
-      .then(setList)
-      .catch(console.error)
-      .finally(() => setLoading(false))
+    getOnlinePerformances(month).then(setList).catch(console.error).finally(() => setLoading(false))
   }, [month])
 
   useEffect(() => { load() }, [load])
@@ -146,17 +175,11 @@ function OnlinePerformanceTab({ month }) {
     setSaving(true)
     try {
       const payload = {
-        performanceMonth: month,
-        channelName: form.channelName,
-        assigneeName: form.assigneeName,
-        salesAmount: Number(form.salesAmount) || 0,
-        manufacturingCost: Number(form.manufacturingCost) || 0,
-        advertisingCost: Number(form.advertisingCost) || 0,
-        commissionCost: Number(form.commissionCost) || 0,
-        logisticsCost: Number(form.logisticsCost) || 0,
-        otherCost: Number(form.otherCost) || 0,
-        incentiveEligible: form.incentiveEligible,
-        memo: form.memo,
+        performanceMonth: month, channelName: form.channelName, assigneeName: form.assigneeName,
+        salesAmount: Number(form.salesAmount) || 0, manufacturingCost: Number(form.manufacturingCost) || 0,
+        advertisingCost: Number(form.advertisingCost) || 0, commissionCost: Number(form.commissionCost) || 0,
+        logisticsCost: Number(form.logisticsCost) || 0, otherCost: Number(form.otherCost) || 0,
+        incentiveEligible: form.incentiveEligible, memo: form.memo,
       }
       if (editItem) await updateOnlinePerformance(editItem.id, payload)
       else await createOnlinePerformance(payload)
@@ -175,24 +198,25 @@ function OnlinePerformanceTab({ month }) {
     load()
   }
 
-  // Pool calculation for display
   const totalEligibleProfit = list.filter(o => o.incentiveEligible).reduce((s, o) => s + (o.operatingProfit || 0), 0)
   const pool = totalEligibleProfit > 3000000 ? Math.round((totalEligibleProfit - 3000000) * 0.1) : 0
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex gap-4 text-sm">
           <span className="font-bold text-slate-600">전체 영업이익: <span className="text-slate-900">{fmt(totalEligibleProfit)}</span></span>
           <span className="font-bold text-sky-600">온라인 인센티브 풀: <span className="text-sky-700">{fmt(pool)}</span></span>
         </div>
-        <button onClick={() => handleSync(null)} disabled={syncing !== null} className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-50">
-          <span className={`material-symbols-outlined text-sm${syncing === 'ALL' ? ' animate-spin' : ''}`}>{syncing === 'ALL' ? 'refresh' : 'sync'}</span>
-          {syncing === 'ALL' ? '동기화 중...' : '전체 동기화'}
-        </button>
-        <button onClick={openCreate} className="flex items-center gap-1.5 rounded-lg bg-sky-500 px-4 py-2 text-sm font-bold text-white hover:bg-sky-600">
-          <span className="material-symbols-outlined text-sm">add</span>등록
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => handleSync(null)} disabled={syncing !== null} className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-50">
+            <span className={`material-symbols-outlined text-sm${syncing === 'ALL' ? ' animate-spin' : ''}`}>{syncing === 'ALL' ? 'refresh' : 'sync'}</span>
+            {syncing === 'ALL' ? '동기화 중...' : '전체 동기화'}
+          </button>
+          <button onClick={openCreate} className="flex items-center gap-1.5 rounded-lg bg-sky-500 px-4 py-2 text-sm font-bold text-white hover:bg-sky-600">
+            <span className="material-symbols-outlined text-sm">add</span>등록
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -263,14 +287,12 @@ function OnlinePerformanceTab({ month }) {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={13} className="py-10 text-center text-slate-400">불러오는 중...</td></tr>
+              <tr><td colSpan={14} className="py-10 text-center text-slate-400">불러오는 중...</td></tr>
             ) : list.length === 0 ? (
-              <tr><td colSpan={13} className="py-10 text-center text-slate-400">등록된 데이터가 없습니다.</td></tr>
+              <tr><td colSpan={14} className="py-10 text-center text-slate-400">등록된 데이터가 없습니다.</td></tr>
             ) : list.map(item => (
               <tr key={item.id} className="hover:bg-slate-50">
-                <td className="px-3 py-3">
-                  {(() => { const s = SYNC_SOURCE_BADGE[item.syncSource || 'MANUAL']; return s ? <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${s.cls}`}>{s.label}</span> : null })()}
-                </td>
+                <td className="px-3 py-3">{(() => { const s = SYNC_SOURCE_BADGE[item.syncSource || 'MANUAL']; return s ? <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${s.cls}`}>{s.label}</span> : null })()}</td>
                 <td className="px-3 py-3 font-bold">{item.channelName}</td>
                 <td className="px-3 py-3">{item.assigneeName || '-'}</td>
                 <td className="px-3 py-3 text-right">{fmtNum(item.salesAmount)}</td>
@@ -297,8 +319,7 @@ function OnlinePerformanceTab({ month }) {
     </div>
   )
 }
-
-// ==================== 거래처 성과 탭 ====================
+// ==================== 거래처 성과 탭 (마진율 기반 계산) ====================
 function ClientPerformanceTab() {
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(false)
@@ -307,7 +328,7 @@ function ClientPerformanceTab() {
   const [form, setForm] = useState({
     clientName: '', assigneeName: '', firstRegisteredDate: '', firstOrderDate: '',
     firstOrderAmount: '', cumulativeSales: '', cumulativeOperatingProfit: '',
-    status: '리드', memo: '',
+    marginRate: '', status: '리드', memo: '',
   })
   const [saving, setSaving] = useState(false)
 
@@ -318,29 +339,17 @@ function ClientPerformanceTab() {
 
   useEffect(() => { load() }, [load])
 
-  function calcFirstOrderIncentive(amt) {
-    const a = Number(amt) || 0
-    if (a < 500000) return 0
-    if (a < 3000000) return 50000
-    if (a < 10000000) return 100000
-    return 200000
-  }
-
-  function calcCumIncentive(sales) {
-    const s = Number(sales) || 0
-    if (s >= 100000000) return 500000
-    if (s >= 50000000) return 300000
-    if (s >= 30000000) return 200000
-    if (s >= 10000000) return 100000
-    return 0
-  }
-
-  const previewFOI = calcFirstOrderIncentive(form.firstOrderAmount)
-  const previewCUI = calcCumIncentive(form.cumulativeSales)
+  // 실시간 인센티브 미리보기 (추정 영업이익 기반)
+  const previewNewClient = 50_000
+  const previewFOI = calcFirstOrderIncentive(form.firstOrderAmount, form.marginRate)
+  const previewCUI = calcCumIncentive(form.cumulativeSales, form.marginRate)
+  const previewTotal = previewNewClient + previewFOI + previewCUI
+  const tierInfo = getTierInfo(form.cumulativeSales)
+  const tierProg = getTierProgress(form.cumulativeSales)
 
   function openCreate() {
     setEditItem(null)
-    setForm({ clientName: '', assigneeName: '', firstRegisteredDate: '', firstOrderDate: '', firstOrderAmount: '', cumulativeSales: '', cumulativeOperatingProfit: '', status: '리드', memo: '' })
+    setForm({ clientName: '', assigneeName: '', firstRegisteredDate: '', firstOrderDate: '', firstOrderAmount: '', cumulativeSales: '', cumulativeOperatingProfit: '', marginRate: '', status: '리드', memo: '' })
     setShowForm(true)
   }
 
@@ -351,6 +360,7 @@ function ClientPerformanceTab() {
       firstRegisteredDate: item.firstRegisteredDate || '', firstOrderDate: item.firstOrderDate || '',
       firstOrderAmount: item.firstOrderAmount || '', cumulativeSales: item.cumulativeSales || '',
       cumulativeOperatingProfit: item.cumulativeOperatingProfit || '',
+      marginRate: item.marginRate != null ? item.marginRate : '',
       status: item.status || '리드', memo: item.memo || '',
     })
     setShowForm(true)
@@ -360,15 +370,12 @@ function ClientPerformanceTab() {
     setSaving(true)
     try {
       const payload = {
-        clientName: form.clientName,
-        assigneeName: form.assigneeName,
-        firstRegisteredDate: form.firstRegisteredDate || null,
-        firstOrderDate: form.firstOrderDate || null,
-        firstOrderAmount: Number(form.firstOrderAmount) || 0,
-        cumulativeSales: Number(form.cumulativeSales) || 0,
+        clientName: form.clientName, assigneeName: form.assigneeName,
+        firstRegisteredDate: form.firstRegisteredDate || null, firstOrderDate: form.firstOrderDate || null,
+        firstOrderAmount: Number(form.firstOrderAmount) || 0, cumulativeSales: Number(form.cumulativeSales) || 0,
         cumulativeOperatingProfit: Number(form.cumulativeOperatingProfit) || 0,
-        status: form.status,
-        memo: form.memo,
+        marginRate: Number(form.marginRate) || 0,
+        status: form.status, memo: form.memo,
       }
       if (editItem) await updateClientPerformance(editItem.id, payload)
       else await createClientPerformance(payload)
@@ -389,6 +396,11 @@ function ClientPerformanceTab() {
 
   return (
     <div className="space-y-4">
+      {/* 안내 문구 */}
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+        ※ 본 인센티브는 <strong>추정 영업이익</strong> 기준으로 계산된 예상 금액이며, 분기 정산 시 실제 영업이익 기준으로 조정됩니다.
+      </div>
+
       <div className="flex items-center justify-between">
         <p className="text-sm font-bold text-slate-600">총 거래처: {list.length}개</p>
         <button onClick={openCreate} className="flex items-center gap-1.5 rounded-lg bg-sky-500 px-4 py-2 text-sm font-bold text-white hover:bg-sky-600">
@@ -420,14 +432,19 @@ function ClientPerformanceTab() {
               <input type="date" value={form.firstOrderDate} onChange={e => setForm(f => ({ ...f, firstOrderDate: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-sm" />
             </div>
             <div>
-              <label className="text-xs font-bold text-slate-600">첫 발주금액</label>
-              <input type="number" value={form.firstOrderAmount} onChange={e => setForm(f => ({ ...f, firstOrderAmount: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-sm" placeholder="0" />
-              <p className="mt-1 text-xs text-sky-600 font-bold">첫발주 인센티브: {fmt(previewFOI)}</p>
+              <label className="text-xs font-bold text-slate-600">마진율 (%) *</label>
+              <input type="number" min="0" max="100" step="0.1" value={form.marginRate}
+                onChange={e => setForm(f => ({ ...f, marginRate: e.target.value }))}
+                className="mt-1 w-full rounded-lg border border-sky-300 bg-sky-50 p-2 text-sm font-bold" placeholder="예: 25.0" />
+              <p className="mt-1 text-xs text-slate-400">추정 영업이익 계산에 사용됩니다</p>
             </div>
             <div>
-              <label className="text-xs font-bold text-slate-600">누적 매출</label>
+              <label className="text-xs font-bold text-slate-600">첫 발주금액</label>
+              <input type="number" value={form.firstOrderAmount} onChange={e => setForm(f => ({ ...f, firstOrderAmount: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-sm" placeholder="0" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-600">누적 매출 (3개월)</label>
               <input type="number" value={form.cumulativeSales} onChange={e => setForm(f => ({ ...f, cumulativeSales: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-sm" placeholder="0" />
-              <p className="mt-1 text-xs text-purple-600 font-bold">누적매출 인센티브: {fmt(previewCUI)}</p>
             </div>
             <div>
               <label className="text-xs font-bold text-slate-600">누적 영업이익</label>
@@ -443,13 +460,49 @@ function ClientPerformanceTab() {
               <label className="text-xs font-bold text-slate-600">메모</label>
               <input value={form.memo} onChange={e => setForm(f => ({ ...f, memo: e.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-sm" />
             </div>
-            <div className="flex items-end">
-              <div className="rounded-lg border border-orange-200 bg-orange-50 p-2 text-sm">
-                <p className="text-xs font-bold text-orange-600">총 예상 인센티브</p>
-                <p className="font-black text-orange-700">{fmt(previewFOI + previewCUI)}</p>
+          </div>
+
+          {/* 실시간 인센티브 계산 패널 */}
+          <div className="mt-4 rounded-xl border border-orange-200 bg-orange-50 p-4">
+            <p className="mb-3 text-xs font-black text-orange-700">📊 실시간 인센티브 계산 (추정 영업이익 기반)</p>
+            {Number(form.marginRate) <= 0 && (
+              <p className="mb-2 text-xs text-red-500 font-bold">⚠️ 마진율을 입력하면 인센티브가 계산됩니다</p>
+            )}
+            <div className="grid grid-cols-4 gap-3 text-center">
+              <div className="rounded-lg bg-white p-2">
+                <p className="text-xs text-slate-500">신규 거래처</p>
+                <p className="text-sm font-black text-slate-700">{fmt(previewNewClient)}</p>
+                <p className="text-xs text-slate-400">고정</p>
+              </div>
+              <div className="rounded-lg bg-white p-2">
+                <p className="text-xs text-slate-500">첫 발주</p>
+                <p className="text-sm font-black text-sky-600">{fmt(previewFOI)}</p>
+                <p className="text-xs text-slate-400">영업이익×1%</p>
+              </div>
+              <div className="rounded-lg bg-white p-2">
+                <p className="text-xs text-slate-500">누적 ({tierInfo.label})</p>
+                <p className={`text-sm font-black ${tierInfo.color}`}>{fmt(previewCUI)}</p>
+                <p className="text-xs text-slate-400">영업이익×{Math.round(tierInfo.rate * 100)}%</p>
+              </div>
+              <div className="rounded-lg bg-orange-100 p-2">
+                <p className="text-xs font-bold text-orange-600">총 예상</p>
+                <p className="text-sm font-black text-orange-700">{fmt(previewTotal)}</p>
               </div>
             </div>
+            {/* 등급 진행률 바 */}
+            <div className="mt-3">
+              <div className="flex justify-between text-xs text-slate-500 mb-1">
+                <span>{tierProg.tier < 3 ? `Tier${tierProg.tier} → Tier${tierProg.tier + 1} 까지` : 'Tier3 달성!'}</span>
+                <span>{tierProg.tier < 3 ? fmt(tierProg.gap) + ' 남음' : '최고 등급'}</span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-slate-200">
+                <div className={`h-2 rounded-full transition-all ${tierProg.tier >= 3 ? 'bg-emerald-500' : tierProg.tier === 2 ? 'bg-blue-500' : 'bg-sky-400'}`}
+                  style={{ width: `${Math.min(tierProg.pct, 100)}%` }} />
+              </div>
+              <p className="mt-1 text-xs text-slate-400 text-right">{tierProg.pct}%</p>
+            </div>
           </div>
+
           <div className="mt-4 flex gap-2">
             <button onClick={handleSave} disabled={saving} className="rounded-lg bg-sky-500 px-5 py-2 text-sm font-bold text-white hover:bg-sky-600 disabled:opacity-50">
               {saving ? '저장중...' : '저장'}
@@ -463,45 +516,48 @@ function ClientPerformanceTab() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-xs font-bold text-slate-500">
             <tr>
-              {['거래처명', '담당자', '최초 등록일', '첫 발주일', '첫 발주금액', '누적 매출', '누적 영업이익', '상태', '첫발주 인센티브', '누적매출 인센티브', '총 예상 인센티브', '메모', ''].map(h => (
+              {['거래처명', '담당자', '마진율', '등급', '최초 등록일', '첫 발주금액', '누적 매출', '상태', '신규', '첫발주', '누적', '총 예상 인센티브', '메모', ''].map(h => (
                 <th key={h} className="px-3 py-3 text-left whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={13} className="py-10 text-center text-slate-400">불러오는 중...</td></tr>
+              <tr><td colSpan={14} className="py-10 text-center text-slate-400">불러오는 중...</td></tr>
             ) : list.length === 0 ? (
-              <tr><td colSpan={13} className="py-10 text-center text-slate-400">등록된 거래처가 없습니다.</td></tr>
-            ) : list.map(item => (
-              <tr key={item.id} className="hover:bg-slate-50">
-                <td className="px-3 py-3 font-bold">{item.clientName}</td>
-                <td className="px-3 py-3">{item.assigneeName || '-'}</td>
-                <td className="px-3 py-3">{item.firstRegisteredDate || '-'}</td>
-                <td className="px-3 py-3">{item.firstOrderDate || '-'}</td>
-                <td className="px-3 py-3 text-right">{fmtNum(item.firstOrderAmount)}</td>
-                <td className="px-3 py-3 text-right">{fmtNum(item.cumulativeSales)}</td>
-                <td className="px-3 py-3 text-right">{fmtNum(item.cumulativeOperatingProfit)}</td>
-                <td className="px-3 py-3"><Badge status={item.status} colorMap={CLIENT_STATUS_COLORS} /></td>
-                <td className="px-3 py-3 text-right font-bold text-sky-600">{fmt(item.firstOrderIncentive)}</td>
-                <td className="px-3 py-3 text-right font-bold text-purple-600">{fmt(item.cumulativeSalesIncentive)}</td>
-                <td className="px-3 py-3 text-right font-black text-orange-600">{fmt(item.totalExpectedIncentive)}</td>
-                <td className="px-3 py-3 text-slate-500">{item.memo || '-'}</td>
-                <td className="px-3 py-3">
-                  <div className="flex gap-1">
-                    <button onClick={() => openEdit(item)} className="rounded px-2 py-1 text-xs font-bold text-slate-500 hover:bg-slate-100">수정</button>
-                    <button onClick={() => handleDelete(item.id)} className="rounded px-2 py-1 text-xs font-bold text-red-400 hover:bg-red-50">삭제</button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+              <tr><td colSpan={14} className="py-10 text-center text-slate-400">등록된 거래처가 없습니다.</td></tr>
+            ) : list.map(item => {
+              const { label: tLabel, color: tColor } = getTierInfo(item.cumulativeSales)
+              return (
+                <tr key={item.id} className="hover:bg-slate-50">
+                  <td className="px-3 py-3 font-bold">{item.clientName}</td>
+                  <td className="px-3 py-3">{item.assigneeName || '-'}</td>
+                  <td className="px-3 py-3 text-center font-bold text-sky-600">{item.marginRate != null ? item.marginRate + '%' : '-'}</td>
+                  <td className={`px-3 py-3 font-bold text-xs ${tColor}`}>{item.tierLabel || tLabel}</td>
+                  <td className="px-3 py-3">{item.firstRegisteredDate || '-'}</td>
+                  <td className="px-3 py-3 text-right">{fmtNum(item.firstOrderAmount)}</td>
+                  <td className="px-3 py-3 text-right">{fmtNum(item.cumulativeSales)}</td>
+                  <td className="px-3 py-3"><Badge status={item.status} colorMap={CLIENT_STATUS_COLORS} /></td>
+                  <td className="px-3 py-3 text-right text-slate-500">{fmt(item.newClientIncentive ?? 50000)}</td>
+                  <td className="px-3 py-3 text-right font-bold text-sky-600">{fmt(item.firstOrderIncentive)}</td>
+                  <td className="px-3 py-3 text-right font-bold text-purple-600">{fmt(item.cumulativeSalesIncentive)}</td>
+                  <td className="px-3 py-3 text-right font-black text-orange-600">{fmt(item.totalExpectedIncentive)}</td>
+                  <td className="px-3 py-3 text-slate-500">{item.memo || '-'}</td>
+                  <td className="px-3 py-3">
+                    <div className="flex gap-1">
+                      <button onClick={() => openEdit(item)} className="rounded px-2 py-1 text-xs font-bold text-slate-500 hover:bg-slate-100">수정</button>
+                      <button onClick={() => handleDelete(item.id)} className="rounded px-2 py-1 text-xs font-bold text-red-400 hover:bg-red-50">삭제</button>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
     </div>
   )
 }
-
 // ==================== 직원별 예상 인센티브 탭 ====================
 function IncentiveSummaryTab({ month }) {
   const [list, setList] = useState([])
@@ -525,6 +581,11 @@ function IncentiveSummaryTab({ month }) {
 
   return (
     <div className="space-y-4">
+      {/* 안내 문구 */}
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+        ※ 본 인센티브는 <strong>추정 영업이익</strong> 기준으로 계산된 예상 금액이며, 분기 정산 시 실제 영업이익 기준으로 조정됩니다.
+      </div>
+
       <div className="flex items-center justify-between">
         <p className="text-sm font-bold text-slate-600">{month} 직원별 예상 인센티브</p>
         <button onClick={load} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">
