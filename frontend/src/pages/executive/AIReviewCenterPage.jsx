@@ -94,7 +94,7 @@ function ReviewCard({ review, analysis }) {
           </div>
           <div className="mt-1 flex items-center gap-1 flex-wrap">
             {Array.from({ length: 5 }).map((_, i) => (
-              <span key={i} className={`text-sm ${i < review.rating ? 'text-amber-400' : 'text-slate-200'}`}>\u2605</span>
+              <span key={i} className={`text-sm ${i < review.rating ? 'text-amber-400' : 'text-slate-200'}`}>★</span>
             ))}
             <div className="flex items-center gap-1 ml-1">
               {customerDisplayName ? (
@@ -148,7 +148,7 @@ function ReviewCard({ review, analysis }) {
         <div className="mt-3">
           <button type="button" onClick={() => setShowReply(!showReply)}
             className="text-xs font-bold text-sky-600 hover:text-sky-700">
-            {showReply ? '\u25b2 답변 초안 접기' : '\u25bc AI 답변 초안 보기'}
+            {showReply ? '▲ 답변 초안 접기' : '▼ AI 답변 초안 보기'}
           </button>
           {showReply && (
             <div className="mt-2 rounded-lg bg-sky-50 border border-sky-100 p-3">
@@ -332,7 +332,7 @@ export default function AIReviewCenterPage() {
 
       {alerts.length > 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 flex flex-wrap gap-2">
-          <span className="text-xs font-black text-amber-700">\uD83D\uDCE2 알림센터:</span>
+          <span className="text-xs font-black text-amber-700">📢 알림센터:</span>
           {alerts.map((a, i) => (
             <span key={i} className={`text-xs font-bold px-2 py-0.5 rounded-full ${a.color === 'red' ? 'bg-red-100 text-red-700' : a.color === 'amber' ? 'bg-amber-200 text-amber-800' : 'bg-orange-100 text-orange-700'}`}>{a.text}</span>
           ))}
@@ -406,7 +406,7 @@ export default function AIReviewCenterPage() {
                 <p className="text-xs text-slate-400 font-bold">{filteredReviews.length}건의 리뷰</p>
                 {mockReviews.length > 0 && (
                   <span className="text-xs text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                    \u26a0 테스트 데이터 {mockReviews.length}건 포함
+                    ⚠ 테스트 데이터 {mockReviews.length}건 포함
                   </span>
                 )}
               </div>
@@ -470,7 +470,7 @@ export default function AIReviewCenterPage() {
                   </div>
                   <div className="space-y-1 text-xs">
                     <div className="flex justify-between"><span className="text-slate-500">총 리뷰</span><span className="font-bold">{b.total}건</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500">평균 평점</span><span className="font-bold">{b.avg}\u2605</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">평균 평점</span><span className="font-bold">{b.avg}★</span></div>
                     <div className="flex justify-between"><span className="text-slate-500">긍정 비율</span><span className="font-bold text-emerald-600">{b.positive}</span></div>
                     <div className="flex justify-between"><span className="text-slate-500">재구매 언급</span><span className="font-bold text-sky-600">{b.repurchase}</span></div>
                   </div>
