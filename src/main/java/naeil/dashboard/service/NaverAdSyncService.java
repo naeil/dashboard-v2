@@ -131,16 +131,21 @@ import java.util.*;
                                                                                                      LocalDate from, LocalDate to) throws Exception {
               String since = from.format(NAVER_DATE_FMT);
               String until = to.format(NAVER_DATE_FMT);
-              String timeRangeJson = "{\"since\":\"" + since + "\",\"until\":\"" + until + "\"}";
-              String timeRangeEncoded = URLEncoder.encode(timeRangeJson, StandardCharsets.UTF_8);
+
+            // timeRange: JSON object, URL-encoded
+            String timeRangeJson = "{\"since\":\"" + since + "\",\"until\":\"" + until + "\"}";
+
+            // fields: JSON array format, URL-encoded
+            String fieldsJson = "[\"clkCnt\",\"impCnt\",\"salesAmt\",\"ctr\",\"avgCpc\",\"convAmt\"]";
 
             String queryString = "id=" + campaignId
                               + "&idType=campaign"
-                              + "&timeRange=" + timeRangeEncoded
+                              + "&timeRange=" + URLEncoder.encode(timeRangeJson, StandardCharsets.UTF_8)
                               + "&timeUnit=DAY"
-                              + "&fields=clkCnt,impCnt,salesAmt,ctr,avgCpc,convAmt";
+                              + "&fields=" + URLEncoder.encode(fieldsJson, StandardCharsets.UTF_8);
 
-            String body = callNaverAdApi(creds, "GET", "/stats", queryString);
+            log.debug("[NaverAdSync] stats query: {}", queryString);
+              String body = callNaverAdApi(creds, "GET", "/stats", queryString);
               if (body == null || body.isBlank() || "[]".equals(body.trim()) || "{}".equals(body.trim())) return null;
 
             JsonNode root = objectMapper.readTree(body);
@@ -240,7 +245,7 @@ import java.util.*;
             String respBody = response.body();
               log.warn("[NaverAdSync] API {} {} -> HTTP {} : {}",
                     method, url, response.statusCode(),
-                      respBody.substring(0, Math.min(300, respBody.length())));
+                      respBody.substring(0, Math.min(500, respBody.length())));
               throw new RuntimeException("Naver AD API error HTTP " + response.statusCode() + ": " + respBody);
     }
 
