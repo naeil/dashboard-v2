@@ -24,10 +24,18 @@ import java.util.*;
 
 /**
  * 네이버 검색광고 API 연동 동기화 서비스
-   * - 파워링크(POWERLINK): 키워드 광고
-   * - 쇼핑검색(SHOPPING_SEARCH): 쇼핑검색광고
+   * - 파워링크(POWERLINK): 키워드 광고 (campaignType=WEB_SITE)
+   * - 쇼핑검색(SHOPPING_SEARCH): 쇼핑검색광고 (campaignType=SHOPPING)
    * 매일 새벽 2시에 전일 성과 데이터를 naver_cpc_daily_stats 테이블에 적재합니다.
-   */
+   *
+   * 네이버 검색광고 통계 API (/stats) 파라미터:
+ *   - id: 캠페인ID
+   *   - idType: campaign
+   *   - startDate: yyyy-MM-dd 형식
+   *   - endDate: yyyy-MM-dd 형식
+   *   - timeUnit: DAY
+   *   - fields: 콤마로 구분된 통계 필드
+ */
 @Slf4j
   @Service
   @RequiredArgsConstructor
@@ -35,7 +43,8 @@ import java.util.*;
 
     private static final String NAVER_AD_BASE_URL = "https://api.searchad.naver.com";
         private static final Long DEFAULT_COMPANY_ID = 1L;
-        private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
+        // 네이버 검색광고 stats API 날짜 형식: yyyy-MM-dd
+    private static final DateTimeFormatter STATS_DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     private final JdbcTemplate jdbcTemplate;
         private final IntegrationCredentialService credentialService;
@@ -101,7 +110,7 @@ import java.util.*;
             // 2) 해당 adType 캠페인 목록 조회
             List<CampaignInfo> campaigns = fetchCampaigns(creds, campaignType);
               if (campaigns.isEmpty()) {
-                            log.info("[NaverAdSync] {} 캠페인 없음", adType);
+                            log.info("[NaverAdSync] {} 캠페인 없음 (campaignType={})", adType, campaignType);
                             return 0;
               }
               log.info("[NaverAdSync] {} 캠페인 {}개 발견", adType, campaigns.size());
@@ -111,27 +120,30 @@ import java.util.*;
             // 3) 날짜 범위 순회
             LocalDate cursor = from;
               while (!cursor.isAfter(to)) {
-                            String dateStr = cursor.format(DATE_FMT);
+                            String startDate = cursor.format(STATS_DATE_FMT);
+                            String endDate = cursor.format(STATS_DATE_FMT);
 
                   for (CampaignInfo campaign : campaigns) {
                                     try {
-                                                          // 4) 캠페인 키워드 성과 조회
-                                        List<Map<String, Object>> rows = fetchKeywordStats(creds, campaign.id(), dateStr);
+                                                          // 4) 캠페인 레포트 통계 조회
+                                        List<Map<String, Object>> rows = fetchCampaignReport(creds, campaign.id(), startDate, endDate);
                                                           for (Map<String, Object> row : rows) {
+                                                                                    row.put("adGroupName", row.getOrDefault("adGroupName", "-"));
+                                                                                    row.put("keyword", row.getOrDefault("keyword", "-"));
                                                                                     upsertRow(cursor, adType, campaign.name(), row);
                                                                                     upserted++;
                                                           }
 
-                                        // 캠페인 성과가 없으면 캠페인 단위로 집계
+                                        // 데이터가 없으면 캠페인 단위 집계 시도
                                         if (rows.isEmpty()) {
-                                                                  Map<String, Object> campaignStat = fetchCampaignStats(creds, campaign.id(), dateStr);
-                                                                  if (campaignStat != null) {
-                                                                                                upsertCampaignRow(cursor, adType, campaign.name(), campaignStat);
+                                                                  Map<String, Object> summary = fetchCampaignSummary(creds, campaign.id(), startDate, endDate);
+                                                                  if (summary != null) {
+                                                                                                upsertCampaignRow(cursor, adType, campaign.name(), summary);
                                                                                                 upserted++;
                                                                   }
                                         }
                                     } catch (Exception e) {
-                                                          log.warn("[NaverAdSync] 캠페인 {} 날짜 {} 오류: {}", campaign.name(), dateStr, e.getMessage());
+                                                          log.warn("[NaverAdSync] 캠페인 '{}' {} 날짜 {} 오류: {}", campaign.name(), adType, startDate, e.getMessage());
                                     }
                   }
                             cursor = cursor.plusDays(1);
@@ -140,11 +152,11 @@ import java.util.*;
             return upserted;
     }
 
-    // ── 캠페인 목록 조회 ─────────────────────────────────────────────────────
+    // ── 캠페인 목록 조회 (/ncc/campaigns) ────────────────────────────────────
     private List<CampaignInfo> fetchCampaigns(IntegrationCredentialService.NaverAdCredentials creds,
                                                                                              String campaignType) throws Exception {
               String path = "/ncc/campaigns?campaignTp=" + campaignType;
-              String body = callNaverAdApi(creds, "GET", path, null);
+              String body = callNaverAdApi(creds, "GET", "/ncc/campaigns", "campaignTp=" + campaignType);
 
             List<CampaignInfo> list = new ArrayList<>();
               JsonNode root = objectMapper.readTree(body == null ? "[]" : body);
@@ -152,81 +164,93 @@ import java.util.*;
                             for (JsonNode node : root) {
                                               String id = node.path("nccCampaignId").asText("");
                                               String name = node.path("name").asText("-");
-                                              String status = node.path("status").asText("ELIGIBLE");
                                               if (!id.isBlank()) {
-                                                                    list.add(new CampaignInfo(id, name, status));
+                                                                    list.add(new CampaignInfo(id, name));
                                               }
                             }
               }
               return list;
     }
 
-    // ── 키워드 성과 통계 조회 ───────────────────────────────────────────────
-    private List<Map<String, Object>> fetchKeywordStats(IntegrationCredentialService.NaverAdCredentials creds,
-                                                                                                                 String campaignId, String dateStr) throws Exception {
-              String path = "/stats?id=" + campaignId
+    // ── 캠페인 레포트 통계 조회 (/stats) ─────────────────────────────────────
+    // 네이버 검색광고 통계 API: GET /stats
+    // 필수 파라미터: id, idType, startDate(yyyy-MM-dd), endDate(yyyy-MM-dd), timeUnit
+    private List<Map<String, Object>> fetchCampaignReport(IntegrationCredentialService.NaverAdCredentials creds,
+                                                                                                                     String campaignId,
+                                                                                                                     String startDate, String endDate) throws Exception {
+              String queryString = "id=" + campaignId
                                 + "&idType=campaign"
-                                + "&datePreset=custom"
-                                + "&startDate=" + dateStr
-                                + "&endDate=" + dateStr
+                                + "&startDate=" + startDate
+                                + "&endDate=" + endDate
                                 + "&timeUnit=DAY"
-                                + "&fields=clkCnt,impCnt,salesAmt,ctr,avgCpc,bidAmt,ror,convAmt,salesMicroAmount";
-              String body = callNaverAdApi(creds, "GET", path, null);
+                                + "&fields=clkCnt,impCnt,salesAmt,ctr,avgCpc,ror,convAmt";
+              String body = callNaverAdApi(creds, "GET", "/stats", queryString);
 
             List<Map<String, Object>> rows = new ArrayList<>();
-              if (body == null || body.isBlank()) return rows;
+              if (body == null || body.isBlank() || "[]".equals(body.trim())) return rows;
 
             JsonNode root = objectMapper.readTree(body);
-              JsonNode data = root.path("data");
+              // /stats 응답 구조: {"data":[{"stat":{...},"impressions":...,"clicks":...}]} 또는 배열
+            JsonNode data = root.isArray() ? root : root.path("data");
               if (!data.isArray()) return rows;
 
             for (JsonNode item : data) {
-                          Map<String, Object> row = new LinkedHashMap<>();
-                          row.put("campaignId", campaignId);
-                          row.put("keyword", item.path("keyword").asText(item.path("id").asText("-")));
-                          row.put("impressions", item.path("impCnt").asLong(0));
-                          row.put("clicks", item.path("clkCnt").asLong(0));
-                          row.put("cost", decimal(item.path("salesAmt").asText("0")));
-                          row.put("ctr", decimal(item.path("ctr").asText("0")));
-                          row.put("avgCpc", decimal(item.path("avgCpc").asText("0")));
-                          row.put("conversions", item.path("convAmt").asLong(0));
-                          row.put("conversionValue", decimal(item.path("salesMicroAmount").asText("0")));
+                          // stat 하위 노드 또는 직접 노드 처리
+                  JsonNode stat = item.has("stat") ? item.path("stat") : item;
+
+                  long impressions = stat.path("impCnt").asLong(item.path("impCnt").asLong(0));
+                          long clicks = stat.path("clkCnt").asLong(item.path("clkCnt").asLong(0));
+
+                  // 노출과 클릭이 모두 0이면 스킵
+                  if (impressions == 0 && clicks == 0) continue;
+
+                  Map<String, Object> row = new LinkedHashMap<>();
+                          row.put("impressions", impressions);
+                          row.put("clicks", clicks);
+                          row.put("cost", decimal(stat.path("salesAmt").asText(item.path("salesAmt").asText("0"))));
+                          row.put("ctr", decimal(stat.path("ctr").asText(item.path("ctr").asText("0"))));
+                          row.put("avgCpc", decimal(stat.path("avgCpc").asText(item.path("avgCpc").asText("0"))));
+                          row.put("conversions", stat.path("convAmt").asLong(item.path("convAmt").asLong(0)));
+                          row.put("conversionValue", decimal(stat.path("ror").asText(item.path("ror").asText("0"))));
+                          row.put("keyword", item.path("keyword").asText("-"));
                           row.put("adGroupName", item.path("adGroupName").asText("-"));
                           rows.add(row);
             }
               return rows;
     }
 
-    // ── 캠페인 단위 집계 조회 (키워드 없을 때 fallback) ─────────────────────
-    private Map<String, Object> fetchCampaignStats(IntegrationCredentialService.NaverAdCredentials creds,
-                                                                                                       String campaignId, String dateStr) throws Exception {
-              String path = "/stats?id=" + campaignId
+    // ── 캠페인 단위 집계 (키워드 없을 때 fallback) ───────────────────────────
+    private Map<String, Object> fetchCampaignSummary(IntegrationCredentialService.NaverAdCredentials creds,
+                                                                                                           String campaignId,
+                                                                                                           String startDate, String endDate) throws Exception {
+              String queryString = "id=" + campaignId
                                 + "&idType=campaign"
-                                + "&datePreset=custom"
-                                + "&startDate=" + dateStr
-                                + "&endDate=" + dateStr
-                                + "&timeUnit=DAY"
-                                + "&fields=clkCnt,impCnt,salesAmt,ctr,avgCpc,convAmt,salesMicroAmount";
-              String body = callNaverAdApi(creds, "GET", path, null);
-              if (body == null || body.isBlank()) return null;
+                                + "&startDate=" + startDate
+                                + "&endDate=" + endDate
+                                + "&timeUnit=TOTAL"
+                                + "&fields=clkCnt,impCnt,salesAmt,ctr,avgCpc,convAmt";
+              String body = callNaverAdApi(creds, "GET", "/stats", queryString);
+              if (body == null || body.isBlank() || "[]".equals(body.trim())) return null;
 
             JsonNode root = objectMapper.readTree(body);
-              JsonNode data = root.path("data");
-              if (!data.isArray() || data.isEmpty()) return null;
+              JsonNode data = root.isArray() ? root : root.path("data");
+              if (!data.isArray() || data.size() == 0) return null;
 
             JsonNode item = data.get(0);
-              long impressions = item.path("impCnt").asLong(0);
-              long clicks = item.path("clkCnt").asLong(0);
+              JsonNode stat = item.has("stat") ? item.path("stat") : item;
+
+            long impressions = stat.path("impCnt").asLong(item.path("impCnt").asLong(0));
+              long clicks = stat.path("clkCnt").asLong(item.path("clkCnt").asLong(0));
               if (impressions == 0 && clicks == 0) return null;
 
             Map<String, Object> row = new LinkedHashMap<>();
               row.put("impressions", impressions);
               row.put("clicks", clicks);
-              row.put("cost", decimal(item.path("salesAmt").asText("0")));
-              row.put("ctr", decimal(item.path("ctr").asText("0")));
-              row.put("avgCpc", decimal(item.path("avgCpc").asText("0")));
-              row.put("conversions", item.path("convAmt").asLong(0));
-              row.put("conversionValue", decimal(item.path("salesMicroAmount").asText("0")));
+              row.put("cost", decimal(stat.path("salesAmt").asText(item.path("salesAmt").asText("0"))));
+              row.put("ctr", decimal(stat.path("ctr").asText(item.path("ctr").asText("0"))));
+              row.put("avgCpc", decimal(stat.path("avgCpc").asText(item.path("avgCpc").asText("0"))));
+              row.put("conversions", stat.path("convAmt").asLong(item.path("convAmt").asLong(0)));
+              row.put("conversionValue", BigDecimal.ZERO);
               return row;
     }
 
@@ -243,8 +267,8 @@ import java.util.*;
                                 ? conversionValue.multiply(BigDecimal.valueOf(100)).divide(cost, 2, RoundingMode.HALF_UP)
                                 : BigDecimal.ZERO;
 
-            String keyword = (String) row.getOrDefault("keyword", "-");
-              String adGroupName = (String) row.getOrDefault("adGroupName", "-");
+            String keyword = toString(row.getOrDefault("keyword", "-"));
+              String adGroupName = toString(row.getOrDefault("adGroupName", "-"));
 
             jdbcTemplate.update("""
                           INSERT INTO naver_cpc_daily_stats
@@ -268,32 +292,34 @@ import java.util.*;
                                                 conversions, conversionValue, roas);
     }
 
-    // ── DB upsert (캠페인 단위 fallback) ────────────────────────────────────
     private void upsertCampaignRow(LocalDate date, String adType, String campaignName, Map<String, Object> row) {
-              row.put("keyword", "-");
-              row.put("adGroupName", "-");
+              row.putIfAbsent("keyword", "-");
+              row.putIfAbsent("adGroupName", "-");
               upsertRow(date, adType, campaignName, row);
     }
 
     // ── 네이버 검색광고 API 호출 ─────────────────────────────────────────────
+    // path: 경로 (예: /ncc/campaigns, /stats)
+    // queryString: URL 인코딩된 쿼리 파라미터 (예: id=xxx&idType=campaign&...)
     private String callNaverAdApi(IntegrationCredentialService.NaverAdCredentials creds,
-                                                                     String method, String path, String body) throws Exception {
+                                                                     String method, String path, String queryString) throws Exception {
               String timestamp = String.valueOf(System.currentTimeMillis());
               String signature = signNaverAd(timestamp, method, path, creds.secretKey());
 
+            String url = NAVER_AD_BASE_URL + path;
+              if (queryString != null && !queryString.isBlank()) {
+                            url = url + "?" + queryString;
+              }
+
             HttpRequest.Builder builder = HttpRequest.newBuilder()
-                              .uri(URI.create(NAVER_AD_BASE_URL + path))
+                              .uri(URI.create(url))
                               .header("X-Timestamp", timestamp)
                               .header("X-API-KEY", creds.accessLicense())
                               .header("X-Customer", creds.customerId())
                               .header("X-Signature", signature)
                               .header("Content-Type", "application/json; charset=UTF-8");
 
-            if ("GET".equals(method)) {
-                          builder.GET();
-            } else {
-                          builder.method(method, HttpRequest.BodyPublishers.ofString(body == null ? "" : body));
-            }
+            builder.GET();
 
             HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
 
@@ -303,17 +329,17 @@ import java.util.*;
               if (response.statusCode() == 204) {
                             return "[]";
               }
+              String respBody = response.body();
               log.warn("[NaverAdSync] API {} {} -> HTTP {} body: {}",
-                    method, path, response.statusCode(),
-                      response.body().substring(0, Math.min(300, response.body().length())));
-              throw new RuntimeException("네이버 광고 API 오류 HTTP " + response.statusCode() + ": " + response.body());
+                    method, url, response.statusCode(),
+                      respBody.substring(0, Math.min(300, respBody.length())));
+              throw new RuntimeException("네이버 광고 API 오류 HTTP " + response.statusCode() + ": " + respBody);
     }
 
     // ── HmacSHA256 전자서명 ──────────────────────────────────────────────────
+    // 서명 메시지: timestamp.METHOD.path (경로만, 쿼리스트링 제외)
     private String signNaverAd(String timestamp, String method, String path, String secret) throws Exception {
-              // 경로에서 쿼리스트링 분리
-            String pathOnly = path.contains("?") ? path.substring(0, path.indexOf("?")) : path;
-              String message = timestamp + "." + method + "." + pathOnly;
+              String message = timestamp + "." + method + "." + path;
               Mac mac = Mac.getInstance("HmacSHA256");
               mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
               byte[] sig = mac.doFinal(message.getBytes(StandardCharsets.UTF_8));
@@ -322,6 +348,12 @@ import java.util.*;
 
     private boolean isBlank(String value) {
               return value == null || value.trim().isEmpty();
+    }
+
+    private String toString(Object value) {
+              if (value == null) return "-";
+              String s = value.toString().trim();
+              return s.isEmpty() ? "-" : s;
     }
 
     private BigDecimal decimal(Object value) {
@@ -337,5 +369,5 @@ import java.util.*;
               try { return new BigDecimal(value.toString()).longValue(); } catch (Exception e) { return 0L; }
     }
 
-    private record CampaignInfo(String id, String name, String status) {}
+    private record CampaignInfo(String id, String name) {}
   }
