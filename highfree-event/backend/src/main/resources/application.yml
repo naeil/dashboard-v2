@@ -1,0 +1,47 @@
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/highfree}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+server:
+  port: 8080
+
+app:
+  admin-key: ${ADMIN_KEY:local-admin-key-change-me}
+  cors-origins: ${CORS_ORIGINS:http://localhost:3000}
+  rewards:
+    - key: POINT_1000
+      label: "1,000P 당첨!"
+      points: 1000
+      weight: 30
+    - key: POINT_500
+      label: "500P 당첨!"
+      points: 500
+      weight: 40
+    - key: POINT_300
+      label: "300P 당첨!"
+      points: 300
+      weight: 20
+    - key: POINT_200
+      label: "200P 당첨!"
+      points: 200
+      weight: 10
+
+logging:
+  level:
+    kr.co.highfree: INFO
+    org.hibernate.SQL: WARN
