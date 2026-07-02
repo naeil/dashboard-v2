@@ -10,11 +10,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface QrCodeRepository extends JpaRepository<QrCode, Long> {
+interface QrCodeRepository extends JpaRepository<QrCode, Long> {
     Optional<QrCode> findByQrId(String qrId);
 }
 
-public interface EventSessionRepository extends JpaRepository<EventSession, Long> {
+interface EventSessionRepository extends JpaRepository<EventSession, Long> {
     Optional<EventSession> findBySessionId(UUID sessionId);
 
     @Query(value = "SELECT ip_address, COUNT(*) as cnt FROM event_sessions GROUP BY ip_address HAVING COUNT(*) >= 3 ORDER BY cnt DESC LIMIT 50", nativeQuery = true)
@@ -30,16 +30,16 @@ public interface EventSessionRepository extends JpaRepository<EventSession, Long
     List<Object[]> qrPerformance();
 }
 
-public interface SpinResultRepository extends JpaRepository<SpinResult, Long> {
+interface SpinResultRepository extends JpaRepository<SpinResult, Long> {
     Optional<SpinResult> findBySessionId(UUID sessionId);
     boolean existsBySessionId(UUID sessionId);
 }
 
-public interface CustomerRepository extends JpaRepository<Customer, Long> {
+interface CustomerRepository extends JpaRepository<Customer, Long> {
     Optional<Customer> findByPhoneNumber(String phoneNumber);
 }
 
-public interface PointTransactionRepository extends JpaRepository<PointTransaction, Long> {
+interface PointTransactionRepository extends JpaRepository<PointTransaction, Long> {
     @Query(value = "SELECT COALESCE(SUM(points),0) FROM point_transactions WHERE customer_id = :customerId AND tx_type = 'EARN'", nativeQuery = true)
     long sumPointsByCustomer(@Param("customerId") Long customerId);
 
