@@ -2,15 +2,14 @@ package kr.co.highfree.event.service;
 
 import kr.co.highfree.event.dto.Dtos.*;
 import kr.co.highfree.event.repository.*;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.OffsetDateTime;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.*;
 
 @Service
-@RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class AdminService {
 
@@ -19,34 +18,43 @@ public class AdminService {
     private final CustomerRepository customerRepo;
     private final PointTransactionRepository ptRepo;
 
+    public AdminService(EventSessionRepository sessionRepo, SpinResultRepository spinResultRepo,
+                        CustomerRepository customerRepo, PointTransactionRepository ptRepo) {
+        this.sessionRepo = sessionRepo;
+        this.spinResultRepo = spinResultRepo;
+        this.customerRepo = customerRepo;
+        this.ptRepo = ptRepo;
+    }
+
     public AdminSummary getSummary() {
         long scans = sessionRepo.count();
         long spins = spinResultRepo.count();
         long claims = ptRepo.totalPointsEarned() != null ? customerRepo.count() : 0;
         long customers = customerRepo.count();
-        Long totalPoints = ptRepo.totalPointsEarned();
+        long totalPoints = ptRepo.totalPointsEarned() != null ? ptRepo.totalPointsEarned() : 0;
         double conversion = scans > 0 ? (double) customers / scans * 100 : 0;
 
         return AdminSummary.builder()
-                .totalScans(scans)
-                .totalSpins(spins)
-                .totalClaims(customers)
-                .conversionRate(Math.round(conversion * 100.0) / 100.0)
-                .totalPointsEarned(totalPoints != null ? totalPoints : 0)
-                .build();
+            .totalScans(scans)
+            .totalSpins(spins)
+            .totalClaims(customers)
+            .conversionRate(Math.round(conversion * 100.0) / 100.0)
+            .totalPointsEarned(totalPoints)
+            .build();
     }
 
-    public List<Map<String, Object>> getDaily(int days) {
-        OffsetDateTime from = OffsetDateTime.now().minusDays(days);
-        List<Object[]> scanRows = sessionRepo.dailyScans(from);
-        List<Object[]> claimRows = ptRepo.dailyClaims(from);
+    public List<Map<String, Object>> getDaily() {
+        List<Object[]> scanRows = sessionRepo.findDailyStats();
+        List<Object[]> claimRows = ptRepo.findDailyStats();
+        List<Object[]> pointRows = ptRepo.findDailyPoints();
 
-        Map<String, Long> claimMap = new HashMap<>();
-        Map<String, Long> pointMap = new HashMap<>();
+        Map<String, Long> claimMap = new LinkedHashMap<>();
         for (Object[] row : claimRows) {
-            String day = row[0].toString();
-            claimMap.put(day, ((Number) row[1]).longValue());
-            pointMap.put(day, ((Number) row[2]).longValue());
+            claimMap.put(row[0].toString(), ((Number) row[1]).longValue());
+        }
+        Map<String, Long> pointMap = new LinkedHashMap<>();
+        for (Object[] row : pointRows) {
+            pointMap.put(row[0].toString(), ((Number) row[1]).longValue());
         }
 
         List<Map<String, Object>> result = new ArrayList<>();
