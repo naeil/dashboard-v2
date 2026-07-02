@@ -1,16 +1,14 @@
 package kr.co.highfree.event.domain;
 
 import jakarta.persistence.*;
-import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
-
 import java.time.OffsetDateTime;
 
 @Entity
 @Table(name = "customers")
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class Customer {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -19,7 +17,6 @@ public class Customer {
     private String phoneNumber;
 
     @Column(name = "marketing_agree")
-    @Builder.Default
     private Boolean marketingAgree = false;
 
     @Column(name = "upup_user_id", length = 100)
@@ -32,4 +29,25 @@ public class Customer {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private OffsetDateTime updatedAt;
+
+    public Customer() {}
+
+    public Long getId() { return id; }
+    public void setId(Long v) { this.id = v; }
+    public String getPhoneNumber() { return phoneNumber; }
+    public void setPhoneNumber(String v) { this.phoneNumber = v; }
+    public Boolean getMarketingAgree() { return marketingAgree; }
+    public void setMarketingAgree(Boolean v) { this.marketingAgree = v; }
+    public String getUpupUserId() { return upupUserId; }
+    public void setUpupUserId(String v) { this.upupUserId = v; }
+    public OffsetDateTime getCreatedAt() { return createdAt; }
+    public OffsetDateTime getUpdatedAt() { return updatedAt; }
+
+    public static Builder builder() { return new Builder(); }
+    public static class Builder {
+        private final Customer o = new Customer();
+        public Builder phoneNumber(String v) { o.phoneNumber=v; return this; }
+        public Builder marketingAgree(Boolean v) { o.marketingAgree=v; return this; }
+        public Customer build() { return o; }
+    }
 }
