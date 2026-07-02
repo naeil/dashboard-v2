@@ -4,19 +4,21 @@ import kr.co.highfree.event.config.EventProps;
 import kr.co.highfree.event.domain.*;
 import kr.co.highfree.event.dto.Dtos.*;
 import kr.co.highfree.event.repository.*;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
-@Slf4j
 @Service
-@RequiredArgsConstructor
 public class EventService {
+
+    private static final Logger log = LoggerFactory.getLogger(EventService.class);
 
     private final EventProps eventProps;
     private final QrCodeRepository qrCodeRepo;
@@ -26,44 +28,55 @@ public class EventService {
     private final PointTransactionRepository ptRepo;
     private final SecureRandom secureRandom = new SecureRandom();
 
+    public EventService(EventProps eventProps, QrCodeRepository qrCodeRepo,
+                        EventSessionRepository sessionRepo, SpinResultRepository spinResultRepo,
+                        CustomerRepository customerRepo, PointTransactionRepository ptRepo) {
+        this.eventProps = eventProps;
+        this.qrCodeRepo = qrCodeRepo;
+        this.sessionRepo = sessionRepo;
+        this.spinResultRepo = spinResultRepo;
+        this.customerRepo = customerRepo;
+        this.ptRepo = ptRepo;
+    }
+
     @Transactional
     public SessionResponse createSession(SessionRequest req, String ip, String ua) {
         QrCode qrCode = qrCodeRepo.findByQrId(req.getQrId()).orElseGet(() -> {
             QrCode newQr = QrCode.builder()
-                    .qrId(req.getQrId())
-                    .country(req.getCountry())
-                    .channel(req.getChannel())
-                    .product(req.getProduct())
-                    .flavor(req.getFlavor())
-                    .campaign(req.getCampaign())
-                    .build();
+                .qrId(req.getQrId())
+                .country(req.getCountry())
+                .channel(req.getChannel())
+                .product(req.getProduct())
+                .flavor(req.getFlavor())
+                .campaign(req.getCampaign())
+                .build();
             return qrCodeRepo.save(newQr);
         });
 
         EventSession session = EventSession.builder()
-                .qrCode(qrCode)
-                .ipAddress(ip)
-                .userAgent(ua)
-                .referrer(req.getReferrer())
-                .country(req.getCountry() != null ? req.getCountry() : qrCode.getCountry())
-                .channel(req.getChannel() != null ? req.getChannel() : qrCode.getChannel())
-                .product(req.getProduct() != null ? req.getProduct() : qrCode.getProduct())
-                .flavor(req.getFlavor() != null ? req.getFlavor() : qrCode.getFlavor())
-                .campaign(req.getCampaign() != null ? req.getCampaign() : qrCode.getCampaign())
-                .build();
+            .qrCode(qrCode)
+            .ipAddress(ip)
+            .userAgent(ua)
+            .referrer(req.getReferrer())
+            .country(req.getCountry() != null ? req.getCountry() : qrCode.getCountry())
+            .channel(req.getChannel() != null ? req.getChannel() : qrCode.getChannel())
+            .product(req.getProduct() != null ? req.getProduct() : qrCode.getProduct())
+            .flavor(req.getFlavor() != null ? req.getFlavor() : qrCode.getFlavor())
+            .campaign(req.getCampaign() != null ? req.getCampaign() : qrCode.getCampaign())
+            .build();
         session = sessionRepo.save(session);
 
         boolean alreadySpun = spinResultRepo.existsBySessionId(session.getSessionId());
         return SessionResponse.builder()
-                .sessionId(session.getSessionId())
-                .alreadySpun(alreadySpun)
-                .build();
+            .sessionId(session.getSessionId())
+            .alreadySpun(alreadySpun)
+            .build();
     }
 
     @Transactional
     public SpinResponse spin(SpinRequest req) {
-        EventSession session = sessionRepo.findBySessionId(req.getSessionId())
-                .orElseThrow(() -> new IllegalArgumentException("Invalid session"));
+        sessionRepo.findBySessionId(req.getSessionId())
+            .orElseThrow(() -> new IllegalArgumentException("Invalid session"));
 
         if (spinResultRepo.existsBySessionId(req.getSessionId())) {
             throw new IllegalStateException("Already spun");
@@ -71,26 +84,26 @@ public class EventService {
 
         EventProps.RewardConfig reward = pickReward();
         SpinResult result = SpinResult.builder()
-                .sessionId(req.getSessionId())
-                .rewardKey(reward.getKey())
-                .rewardLabel(reward.getLabel())
-                .rewardPoints(reward.getPoints())
-                .isRetry(req.isRetry())
-                .build();
+            .sessionId(req.getSessionId())
+            .rewardKey(reward.getKey())
+            .rewardLabel(reward.getLabel())
+            .rewardPoints(reward.getPoints())
+            .isRetry(req.isRetry())
+            .build();
         spinResultRepo.save(result);
 
         return SpinResponse.builder()
-                .rewardKey(reward.getKey())
-                .rewardLabel(reward.getLabel())
-                .rewardPoints(reward.getPoints())
-                .canDouble(true)
-                .build();
+            .rewardKey(reward.getKey())
+            .rewardLabel(reward.getLabel())
+            .rewardPoints(reward.getPoints())
+            .canDouble(true)
+            .build();
     }
 
     @Transactional
     public DoubleResponse doubleUp(DoubleRequest req) {
         SpinResult result = spinResultRepo.findBySessionId(req.getSessionId())
-                .orElseThrow(() -> new IllegalArgumentException("Spin result not found"));
+            .orElseThrow(() -> new IllegalArgumentException("Spin result not found"));
 
         boolean success = secureRandom.nextBoolean();
         int finalPoints;
@@ -106,10 +119,10 @@ public class EventService {
         spinResultRepo.save(result);
 
         return DoubleResponse.builder()
-                .success(success)
-                .finalPoints(finalPoints)
-                .message(message)
-                .build();
+            .success(success)
+            .finalPoints(finalPoints)
+            .message(message)
+            .build();
     }
 
     @Transactional
@@ -119,37 +132,43 @@ public class EventService {
         }
 
         SpinResult spinResult = spinResultRepo.findBySessionId(req.getSessionId())
-                .orElseThrow(() -> new IllegalArgumentException("Spin result not found"));
+            .orElseThrow(() -> new IllegalArgumentException("Spin result not found"));
 
-        Customer customer = customerRepo.findByPhoneNumber(req.getPhoneNumber())
-                .orElseGet(() -> customerRepo.save(Customer.builder()
-                        .phoneNumber(req.getPhoneNumber())
-                        .marketingAgree(req.isMarketingAgree())
-                        .build()));
-
-        customer.setMarketingAgree(req.isMarketingAgree());
-        customerRepo.save(customer);
-
-        if (ptRepo.existsTodayEarnByCustomer(customer.getId())) {
-            throw new IllegalStateException("오늘 이미 포인트를 적립하셨습니다");
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
+        if (ptRepo.existsByPhoneNumberAndDate(req.getPhoneNumber(), today)) {
+            throw new IllegalStateException("오늘 이미 포인트를 받으셨습니다");
         }
 
-        PointTransaction pt = PointTransaction.builder()
-                .customerId(customer.getId())
-                .sessionId(req.getSessionId())
-                .type("EARN")
-                .point(spinResult.getRewardPoints())
-                .description("단백깡 이벤트 " + spinResult.getRewardLabel())
+        Customer customer = customerRepo.findByPhoneNumber(req.getPhoneNumber()).orElseGet(() -> {
+            Customer c = Customer.builder()
+                .phoneNumber(req.getPhoneNumber())
+                .marketingAgree(req.isMarketingAgree())
                 .build();
-        ptRepo.save(pt);
+            return customerRepo.save(c);
+        });
+        if (req.isMarketingAgree() && !Boolean.TRUE.equals(customer.getMarketingAgree())) {
+            customer.setMarketingAgree(true);
+            customerRepo.save(customer);
+        }
 
-        int total = ptRepo.sumEarnByCustomerId(customer.getId()).orElse(0);
+        int earned = spinResult.getRewardPoints();
+        PointTransaction tx = PointTransaction.builder()
+            .customer(customer)
+            .sessionId(req.getSessionId())
+            .points(earned)
+            .txType("EARN")
+            .description("단백깡 이벤트 - " + spinResult.getRewardLabel())
+            .build();
+        ptRepo.save(tx);
+
+        long totalPoints = ptRepo.sumPointsByCustomer(customer.getId());
+
         return ClaimResponse.builder()
-                .success(true)
-                .earnedPoints(spinResult.getRewardPoints())
-                .totalPoints(total)
-                .message("포인트가 적립되었습니다!")
-                .build();
+            .success(true)
+            .earnedPoints(earned)
+            .totalPoints((int) totalPoints)
+            .message(earned + "P가 적립되었습니다!")
+            .build();
     }
 
     private EventProps.RewardConfig pickReward() {
