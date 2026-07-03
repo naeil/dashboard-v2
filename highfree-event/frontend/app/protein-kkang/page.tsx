@@ -119,10 +119,26 @@ function SpinWheel({ onSpin, spinning, result }: {
 
   useEffect(() => {
     if (!spinning) return
-    // Start animation - spin fast then slow down
-    const spinDeg = 1800 + Math.random() * 360
-    const targetRot = rotation + (spinDeg * Math.PI) / 180
-    targetRotationRef.current = targetRot
+    const seg = WHEEL_SEGMENTS.length
+    const arc = (2 * Math.PI) / seg
+
+    // 서버 result.rewardLabel과 매칭되는 세그먼트 인덱스 찾기
+    let targetSegIdx = Math.floor(Math.random() * seg)
+    if (result) {
+      const matchIdx = WHEEL_SEGMENTS.findIndex(s => s.label === result.rewardLabel)
+      if (matchIdx >= 0) targetSegIdx = matchIdx
+    }
+
+    // drawWheel: 세그먼트 i 중앙 = rot + i*arc + arc/2 - PI/2
+    // 화살표(12시) = 각도 -PI/2
+    // 세그먼트 i 중앙이 화살표에 오려면: rot = -i*arc - arc/2 (mod 2PI)
+    const stopAngle = -(targetSegIdx * arc + arc / 2)
+    // 현재 rotation에서 5바퀴 이상 돌고 stopAngle에 맞춰 멈춤
+    const currentMod = ((rotation % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)
+    const stopMod = ((stopAngle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)
+    const diff = stopMod >= currentMod ? stopMod - currentMod : stopMod - currentMod + 2 * Math.PI
+    const targetRot = rotation + 5 * 2 * Math.PI + diff
+
     startTimeRef.current = performance.now()
 
     const duration = 4000
@@ -144,7 +160,7 @@ function SpinWheel({ onSpin, spinning, result }: {
     }
     animRef.current = requestAnimationFrame(animate)
     return () => cancelAnimationFrame(animRef.current)
-  }, [spinning])
+  }, [spinning, result])
 
   return (
     <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
@@ -356,8 +372,8 @@ function ProteinKkangContent() {
 
   const handleSpin = async () => {
     if (!sessionId) return
-    setSpinning(true)
     try {
+      // 1. API 먼저 호출해서 결과 확보
       const res = await fetch(`${API}/api/spin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -365,9 +381,13 @@ function ProteinKkangContent() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      // Wait for animation
-      await new Promise(r => setTimeout(r, 4000))
+      // 2. 결과를 state에 세팅 (SpinWheel이 이 값을 참조해서 정확한 각도에 멈춤)
       setSpinResult(data)
+      // 3. 그 다음 애니메이션 시작
+      setSpinning(true)
+      // 4. 애니메이션 4초 대기
+      await new Promise(r => setTimeout(r, 4000))
+      // 5. result 스테이지로 이동
       setStage('result')
       setShowConfetti(true)
       setTimeout(() => setShowConfetti(false), 4000)
