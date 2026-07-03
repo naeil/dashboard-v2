@@ -31,6 +31,26 @@ const WHEEL_SEGMENTS = [
   { label: '10,000P', color: '#FFD700', textColor: '#333' },
 ]
 
+// 포인트별 쿠폰 매핑 (아임웹 QR 이벤트 쿠폰)
+const COUPON_MAP: Record<number, string> = {
+  500: 'EBCAD5D9A4B32',
+  1000: '344B0726C61E7',
+  1500: '344B0726C61E7',  // 1,500P → 1,000원 쿠폰 (가장 근접)
+  2000: '686036FAF3E89',
+  3000: 'EF07199912C11',
+  5000: 'ACCA2E81844DD',
+  10000: '6D722A9439F8A',
+}
+
+const getCouponUrl = (points: number): string => {
+  const code = COUPON_MAP[points] || COUPON_MAP[1000]
+  return `https://www.highfree.co.kr/?coupon=${code}`
+}
+
+const getCouponCode = (points: number): string => {
+  return COUPON_MAP[points] || COUPON_MAP[1000]
+}
+
 // Double wheel segments (표시용 - 꽝 80%, 다시하기 15%, 2배 5%)
 const DOUBLE_SEGMENTS = [
   { label: '꽝', color: '#444', textColor: '#aaa' },
@@ -832,8 +852,34 @@ function ProteinKkangContent() {
               </div>
             ))}
           </div>
+          {/* 쿠폰 코드 표시 + 복사 */}
+          <div style={{
+            background: '#1a1a1a',
+            border: '1.5px dashed #FF6B35',
+            borderRadius: 12,
+            padding: '14px 16px',
+            marginBottom: 10,
+            textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>🎟 할인 쿠폰 코드</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              <span style={{ fontSize: 18, fontWeight: 700, color: '#FF6B35', letterSpacing: 2 }}>
+                {getCouponCode(claimResult?.earnedPoints ?? 1000)}
+              </span>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(getCouponCode(claimResult?.earnedPoints ?? 1000))
+                  alert('쿠폰 코드가 복사되었습니다!')
+                }}
+                style={{ padding: '4px 10px', background: '#333', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
+              >
+                복사
+              </button>
+            </div>
+          </div>
+          {/* 쇼핑몰 이동 버튼 - 쿠폰 자동 적용 URL */}
           <a
-            href="https://www.highfree.co.kr/"
+            href={getCouponUrl(claimResult?.earnedPoints ?? 1000)}
             target="_blank"
             rel="noopener noreferrer"
             style={{
