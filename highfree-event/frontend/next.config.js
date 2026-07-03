@@ -7,6 +7,9 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  env: {
+    NEXT_PUBLIC_API_URL: 'https://highfree-event-api.onrender.com',
+  },
 }
 
 module.exports = nextConfig
