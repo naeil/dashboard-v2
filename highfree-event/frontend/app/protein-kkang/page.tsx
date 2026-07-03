@@ -332,8 +332,8 @@ function ProteinKkangContent() {
   const [spinResult, setSpinResult] = useState<SpinResult | null>(null)
   const [claimResult, setClaimResult] = useState<ClaimResult | null>(null)
   const [phone, setPhone] = useState('')
-  const [privacyAgree, setPrivacyAgree] = useState(false)
-  const [marketingAgree, setMarketingAgree] = useState(false)
+  const [privacyAgree, setPrivacyAgree] = useState(true)
+  const [marketingAgree, setMarketingAgree] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [spinning, setSpinning] = useState(false)
@@ -430,6 +430,8 @@ function ProteinKkangContent() {
       setError('올바른 휴대폰 번호를 입력해주세요')
       return
     }
+    if (!marketingAgree)
+      return alert('마케팅 정보 활용 동의가 필요합니다');
     setLoading(true)
     setError('')
     try {
@@ -756,7 +758,7 @@ function ProteinKkangContent() {
                   style={{ width: 18, height: 18, marginTop: 2, flexShrink: 0, accentColor: '#FF6B35' }}
                 />
                 <span style={{ fontSize: 13, color: '#aaa', lineHeight: 1.5 }}>
-                  <span style={{ color: '#888' }}>[선택]</span> 마케팅 수신 동의 (이벤트·혜택 안내)
+                  <span style={{ color: '#888' }}>[필수]</span> 마케팅 수신 동의 (이벤트·혜택 안내)
                 </span>
               </label>
             </div>
