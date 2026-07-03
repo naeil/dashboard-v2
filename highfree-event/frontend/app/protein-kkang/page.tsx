@@ -261,28 +261,40 @@ function DoubleWheel({ onSpin, spinning, result }: {
 
   useEffect(() => {
     if (!spinning) return
-    const spinDeg = 1800 + Math.random() * 360
-    const targetRot = rotation + (spinDeg * Math.PI) / 180
-    startTimeRef.current = performance.now()
-    const duration = 4000
-    const animate = (now: number) => {
-      const elapsed = now - startTimeRef.current
-      const progress = Math.min(elapsed / duration, 1)
-      const eased = 1 - Math.pow(1 - progress, 3)
-      const cur = rotation + (targetRot - rotation) * eased
-      setRotation(cur)
-      drawWheel(cur, progress >= 1)
-      if (progress < 1) {
-        animRef.current = requestAnimationFrame(animate)
-      } else {
-        setRotation(targetRot)
-        setAnimating(false)
-        setSpun(true)
-      }
+    const seg = DOUBLE_SEGMENTS.length
+    const arc = (2 * Math.PI) / seg
+
+    // 서버 결과에 따라 멈출 세그먼트 결정
+    let targetSegIdx = Math.floor(Math.random() * seg)
+    if (result) {
+      // success=true → 2X🎉 세그먼트, retry=true → 다시하기, 나머지 → 꽝
+      const targetLabel = result.success
+        ? '2X🎉'
+        : result.retry
+        ? '다시하기'
+        : '꽝'
+      const matchIdx = DOUBLE_SEGMENTS.findIndex(s => s.label === targetLabel)
+      if (matchIdx >= 0) targetSegIdx = matchIdx
     }
-    animRef.current = requestAnimationFrame(animate)
-    return () => cancelAnimationFrame(animRef.current)
-  }, [spinning])
+
+    const stopAngle = -(targetSegIdx * arc + arc / 2)
+    const fullSpins = 5 * 2 * Math.PI
+    const targetRotation = fullSpins + stopAngle
+
+    const start = performance.now()
+    const duration = 4000
+    let animId: number
+    const animate = (now: number) => {
+      const elapsed = Math.min(now - start, duration)
+      const t = elapsed / duration
+      const eased = 1 - Math.pow(1 - t, 3)
+      setRotation(eased * targetRotation)
+      if (elapsed < duration) animId = requestAnimationFrame(animate)
+      else setRotation(targetRotation % (2 * Math.PI))
+    }
+    animId = requestAnimationFrame(animate)
+    return () => cancelAnimationFrame(animId)
+  }, [spinning, result])
 
   return (
     <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
@@ -399,19 +411,22 @@ function ProteinKkangContent() {
 
   const handleDouble = async () => {
     if (!sessionId) return
-    setStage('double')
-    setDoubleSpinning(true)
     try {
-      const [res] = await Promise.all([
-        fetch(`${API}/api/double`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId })
-        }),
-        new Promise(r => setTimeout(r, 4000))
-      ])
+      // 1. API 먼저 호출하여 결과를 받는다
+      const res = await fetch(`${API}/api/doubleUp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      })
       const data = await (res as Response).json()
+      // 2. 결과를 먼저 저장 (애니메이션이 이 값을 참조)
       setDoubleResult(data)
+      // 3. 결과를 알고 난 후 애니메이션 시작
+      setStage('double')
+      setDoubleSpinning(true)
+      // 4. 4초 대기 (애니메이션 시간)
+      await new Promise(r => setTimeout(r, 4000))
+      setDoubleSpinning(false)
       if (data.success) {
         setSpinResult(prev => prev ? { ...prev, rewardPoints: data.finalPoints } : prev)
         setShowConfetti(true)
@@ -419,8 +434,6 @@ function ProteinKkangContent() {
       }
     } catch (e: any) {
       setError(e.message || '오류가 발생했습니다')
-    } finally {
-      setDoubleSpinning(false)
     }
   }
 
