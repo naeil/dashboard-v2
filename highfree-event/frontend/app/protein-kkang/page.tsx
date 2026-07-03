@@ -832,6 +832,29 @@ function ProteinKkangContent() {
               </div>
             ))}
           </div>
+          <a
+            href="https://www.highfree.co.kr/"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'block',
+              width: '100%',
+              padding: '16px',
+              background: 'linear-gradient(135deg, #FF6B35, #FF8C42)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 12,
+              fontSize: 16,
+              fontWeight: 700,
+              textAlign: 'center',
+              cursor: 'pointer',
+              textDecoration: 'none',
+              marginBottom: 8,
+              boxSizing: 'border-box',
+            }}
+          >
+            🛒 하이프리 쇼핑몰에서 사용하기
+          </a>
 
           <div style={styles.disclaimer}>
             본 포인트는 현금으로 교환되지 않으며,<br />
