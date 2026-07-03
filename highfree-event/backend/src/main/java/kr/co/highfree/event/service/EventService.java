@@ -115,8 +115,8 @@ public class EventService {
         if (roll < 8000) {
             // 꽝 80%
             success = false;
-            finalPoints = result.getRewardPoints();
-            message = "아쉽네요! 원래 포인트 " + finalPoints + "P를 드립니다.";
+            finalPoints = 0;
+            message = "아쉬워요! 이번엔 꽝! 1차 포인트가 적립되지 않습니다.";
         } else if (roll < 9500) {
             // 다시하기 15%
             success = false;
