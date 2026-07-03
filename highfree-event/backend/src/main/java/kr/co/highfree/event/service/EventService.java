@@ -105,21 +105,36 @@ public class EventService {
         SpinResult result = spinResultRepo.findBySessionId(req.getSessionId())
             .orElseThrow(() -> new IllegalArgumentException("Spin result not found"));
 
-        boolean success = secureRandom.nextBoolean();
+        // 꽝 80% (0~7999), 다시하기 15% (8000~9499), 2배 5% (9500~9999)
+        int roll = secureRandom.nextInt(10000);
         int finalPoints;
         String message;
-        if (success) {
+        boolean success;
+        boolean retry = false;
+
+        if (roll < 8000) {
+            // 꽝 80%
+            success = false;
+            finalPoints = result.getRewardPoints();
+            message = "아쉽네요! 원래 포인트 " + finalPoints + "P를 드립니다.";
+        } else if (roll < 9500) {
+            // 다시하기 15%
+            success = false;
+            retry = true;
+            finalPoints = result.getRewardPoints();
+            message = "다시 한 번! 포인트 " + finalPoints + "P를 드립니다.";
+        } else {
+            // 2배 5%
+            success = true;
             finalPoints = result.getRewardPoints() * 2;
             message = "2배 성공! " + finalPoints + "P 획득!";
-        } else {
-            finalPoints = 100;
-            message = "아쉽네요. 기본 100P 드립니다!";
         }
         result.setRewardPoints(finalPoints);
         spinResultRepo.save(result);
 
         return DoubleResponse.builder()
             .success(success)
+            .retry(retry)
             .finalPoints(finalPoints)
             .message(message)
             .build();
