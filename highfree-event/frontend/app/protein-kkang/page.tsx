@@ -19,28 +19,28 @@ interface ClaimResult {
   totalPoints: number
 }
 
-// Wheel segments
+// Wheel segments (표시용 - 실제 당첨은 서버에서 결정)
 const WHEEL_SEGMENTS = [
   { label: '1,000P', color: '#FF6B35', textColor: '#fff' },
-  { label: '300P', color: '#FFD700', textColor: '#333' },
-  { label: '500P', color: '#FF6B35', textColor: '#fff' },
-  { label: '200P', color: '#4ECDC4', textColor: '#fff' },
   { label: '1,000P', color: '#FFD700', textColor: '#333' },
-  { label: '300P', color: '#FF6B35', textColor: '#fff' },
-  { label: '500P', color: '#4ECDC4', textColor: '#fff' },
-  { label: '200P', color: '#FFD700', textColor: '#333' },
+  { label: '1,500P', color: '#4ECDC4', textColor: '#fff' },
+  { label: '1,000P', color: '#FF6B35', textColor: '#fff' },
+  { label: '3,000P', color: '#FFD700', textColor: '#333' },
+  { label: '1,000P', color: '#4ECDC4', textColor: '#fff' },
+  { label: '5,000P', color: '#FF6B35', textColor: '#fff' },
+  { label: '10,000P', color: '#FFD700', textColor: '#333' },
 ]
 
-// Double wheel segments
+// Double wheel segments (표시용 - 꽝 80%, 다시하기 15%, 2배 5%)
 const DOUBLE_SEGMENTS = [
-  { label: '2X', color: '#FF6B35', textColor: '#fff' },
   { label: '꽝', color: '#444', textColor: '#aaa' },
-  { label: '2X', color: '#FFD700', textColor: '#333' },
-  { label: '다시한번', color: '#4ECDC4', textColor: '#fff' },
-  { label: '2X', color: '#FF6B35', textColor: '#fff' },
+  { label: '꽝', color: '#333', textColor: '#888' },
   { label: '꽝', color: '#444', textColor: '#aaa' },
-  { label: '2X', color: '#FFD700', textColor: '#333' },
-  { label: '다시한번', color: '#4ECDC4', textColor: '#fff' },
+  { label: '다시하기', color: '#4ECDC4', textColor: '#fff' },
+  { label: '꽝', color: '#333', textColor: '#888' },
+  { label: '꽝', color: '#444', textColor: '#aaa' },
+  { label: '다시하기', color: '#4ECDC4', textColor: '#fff' },
+  { label: '2X 🎉', color: '#FF6B35', textColor: '#fff' },
 ]
 
 function SpinWheel({ onSpin, spinning, result }: {
