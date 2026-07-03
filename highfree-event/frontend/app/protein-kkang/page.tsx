@@ -101,12 +101,12 @@ function SpinWheel({ onSpin, spinning, result }: {
 
   const startSpin = async () => {
     if (animating || spinning) return
-    setAnimating(true)
     onSpin()
+    setAnimating(true)
   }
 
   useEffect(() => {
-    if (!spinning || animating) return
+    if (!spinning) return
     // Start animation - spin fast then slow down
     const spinDeg = 1800 + Math.random() * 360
     const targetRot = rotation + (spinDeg * Math.PI) / 180
@@ -240,7 +240,7 @@ function ProteinKkangContent() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
       // Wait for animation
-      await new Promise(r => setTimeout(r, 4500))
+      await new Promise(r => setTimeout(r, 4000))
       setSpinResult(data)
       setStage('result')
       setShowConfetti(true)
