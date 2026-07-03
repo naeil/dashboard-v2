@@ -115,4 +115,21 @@ public class AdminService {
         }
         return result;
     }
+
+        public List<Map<String, Object>> getParticipants() {
+                    List<Object[]> rows = customerRepo.findAllParticipants();
+                    List<Map<String, Object>> result = new ArrayList<>();
+                    for (Object[] row : rows) {
+                                    Map<String, Object> item = new LinkedHashMap<>();
+                                    item.put("id", row[0]);
+                                    item.put("phoneNumber", row[1]);
+                                    item.put("points", row[2]);
+                                    item.put("couponCode", row[3]);
+                                    item.put("marketingAgree", row[4]);
+                                    item.put("joinedAt", row[5] != null ? row[5].toString() : null);
+                                    result.add(item);
+                    }
+                    return result;
+        }
+}
 }
