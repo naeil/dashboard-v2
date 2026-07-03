@@ -31,6 +31,18 @@ const WHEEL_SEGMENTS = [
   { label: '200P', color: '#FFD700', textColor: '#333' },
 ]
 
+// Double wheel segments
+const DOUBLE_SEGMENTS = [
+  { label: '2X', color: '#FF6B35', textColor: '#fff' },
+  { label: '꽝', color: '#444', textColor: '#aaa' },
+  { label: '2X', color: '#FFD700', textColor: '#333' },
+  { label: '다시한번', color: '#4ECDC4', textColor: '#fff' },
+  { label: '2X', color: '#FF6B35', textColor: '#fff' },
+  { label: '꽝', color: '#444', textColor: '#aaa' },
+  { label: '2X', color: '#FFD700', textColor: '#333' },
+  { label: '다시한번', color: '#4ECDC4', textColor: '#fff' },
+]
+
 function SpinWheel({ onSpin, spinning, result }: {
   onSpin: () => void
   spinning: boolean
@@ -164,6 +176,119 @@ function SpinWheel({ onSpin, spinning, result }: {
   )
 }
 
+function DoubleWheel({ onSpin, spinning, result }: {
+  onSpin: () => void
+  spinning: boolean
+  result: { success: boolean; finalPoints: number; message: string } | null
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [rotation, setRotation] = useState(0)
+  const [animating, setAnimating] = useState(false)
+  const [spun, setSpun] = useState(false)
+  const animRef = useRef<number>(0)
+  const startTimeRef = useRef<number>(0)
+
+  const drawWheel = (rot: number, done?: boolean) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const size = canvas.width
+    const cx = size / 2
+    const cy = size / 2
+    const r = size / 2 - 4
+    const seg = DOUBLE_SEGMENTS.length
+    const arc = (2 * Math.PI) / seg
+    ctx.clearRect(0, 0, size, size)
+    DOUBLE_SEGMENTS.forEach((s, i) => {
+      const start = rot + i * arc - Math.PI / 2
+      const end = start + arc
+      ctx.beginPath()
+      ctx.moveTo(cx, cy)
+      ctx.arc(cx, cy, r, start, end)
+      ctx.closePath()
+      ctx.fillStyle = s.color
+      ctx.fill()
+      ctx.strokeStyle = '#0A0A0A'
+      ctx.lineWidth = 2
+      ctx.stroke()
+      ctx.save()
+      ctx.translate(cx, cy)
+      ctx.rotate(start + arc / 2)
+      ctx.textAlign = 'right'
+      ctx.fillStyle = s.textColor
+      ctx.font = `bold ${size * 0.055}px -apple-system, sans-serif`
+      ctx.fillText(s.label, r - 12, 6)
+      ctx.restore()
+    })
+    ctx.beginPath()
+    ctx.arc(cx, cy, size * 0.1, 0, 2 * Math.PI)
+    ctx.fillStyle = '#1A1A1A'
+    ctx.fill()
+    ctx.strokeStyle = '#FF6B35'
+    ctx.lineWidth = 3
+    ctx.stroke()
+    ctx.fillStyle = '#FF6B35'
+    ctx.font = `bold ${size * 0.06}px -apple-system, sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(done ? '!' : 'GO!', cx, cy)
+  }
+
+  useEffect(() => { drawWheel(rotation) }, [rotation])
+
+  const startSpin = () => {
+    if (animating || spun) return
+    onSpin()
+    setAnimating(true)
+  }
+
+  useEffect(() => {
+    if (!spinning) return
+    const spinDeg = 1800 + Math.random() * 360
+    const targetRot = rotation + (spinDeg * Math.PI) / 180
+    startTimeRef.current = performance.now()
+    const duration = 4000
+    const animate = (now: number) => {
+      const elapsed = now - startTimeRef.current
+      const progress = Math.min(elapsed / duration, 1)
+      const eased = 1 - Math.pow(1 - progress, 3)
+      const cur = rotation + (targetRot - rotation) * eased
+      setRotation(cur)
+      drawWheel(cur, progress >= 1)
+      if (progress < 1) {
+        animRef.current = requestAnimationFrame(animate)
+      } else {
+        setRotation(targetRot)
+        setAnimating(false)
+        setSpun(true)
+      }
+    }
+    animRef.current = requestAnimationFrame(animate)
+    return () => cancelAnimationFrame(animRef.current)
+  }, [spinning])
+
+  return (
+    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+      <div style={{ width: 0, height: 0, borderLeft: '14px solid transparent', borderRight: '14px solid transparent', borderTop: '28px solid #FF6B35', filter: 'drop-shadow(0 2px 4px rgba(255,107,53,0.6))', zIndex: 10 }} />
+      <div style={{ position: 'relative', cursor: spinning || spun ? 'default' : 'pointer' }} onClick={!spinning && !spun ? startSpin : undefined}>
+        <canvas ref={canvasRef} width={300} height={300} style={{ borderRadius: '50%', boxShadow: '0 0 40px rgba(255,107,53,0.3), 0 0 80px rgba(255,107,53,0.1)', display: 'block' }} />
+      </div>
+      {!spun && !spinning && <div style={{ fontSize: 14, color: '#888' }}>돌림판을 탭하여 시작하세요!</div>}
+      {spinning && <div style={{ fontSize: 14, color: '#FF6B35' }}>돌아가는 중...</div>}
+      {result && spun && (
+        <div style={{ textAlign: 'center', marginTop: 8 }}>
+          <div style={{ fontSize: 48, marginBottom: 4 }}>{result.success ? '🚀' : '😅'}</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
+            {result.success ? '2배 성공!' : '아쉽네요!'}
+          </div>
+          <div style={{ fontSize: 14, color: '#888' }}>{result.message}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Confetti() {
   const colors = ['#FF6B35', '#FFD700', '#4ECDC4', '#FF69B4', '#7CFC00']
   return (
@@ -198,6 +323,7 @@ function ProteinKkangContent() {
   const [spinning, setSpinning] = useState(false)
   const [doubleResult, setDoubleResult] = useState<{ success: boolean; finalPoints: number; message: string } | null>(null)
   const [showConfetti, setShowConfetti] = useState(false)
+  const [doubleSpinning, setDoubleSpinning] = useState(false)
 
   useEffect(() => {
     initSession()
@@ -253,25 +379,28 @@ function ProteinKkangContent() {
 
   const handleDouble = async () => {
     if (!sessionId) return
-    setLoading(true)
+    setStage('double')
+    setDoubleSpinning(true)
     try {
-      const res = await fetch(`${API}/api/double`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId })
-      })
-      const data = await res.json()
+      const [res] = await Promise.all([
+        fetch(`${API}/api/double`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId })
+        }),
+        new Promise(r => setTimeout(r, 4000))
+      ])
+      const data = await (res as Response).json()
       setDoubleResult(data)
       if (data.success) {
         setSpinResult(prev => prev ? { ...prev, rewardPoints: data.finalPoints } : prev)
         setShowConfetti(true)
         setTimeout(() => setShowConfetti(false), 3000)
       }
-      setStage('double')
     } catch (e: any) {
       setError(e.message || '오류가 발생했습니다')
     } finally {
-      setLoading(false)
+      setDoubleSpinning(false)
     }
   }
 
@@ -519,25 +648,34 @@ function ProteinKkangContent() {
       )}
 
       {/* Double result */}
-      {stage === 'double' && doubleResult && (
+      {stage === 'double' && (
         <div style={{ width: '100%', animation: 'fadeIn 0.5s ease' }}>
           <div style={styles.header}>
-            <div style={{ fontSize: 64, marginBottom: 8 }}>{doubleResult.success ? '🚀' : '😅'}</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: '#fff', marginBottom: 8 }}>
-              {doubleResult.success ? '2배 성공!' : '아쉽네요!'}
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(255,107,53,0.15)', border: '1px solid rgba(255,107,53,0.4)', borderRadius: 100, padding: '6px 14px', fontSize: 12, color: '#FF6B35', marginBottom: 16 }}>
+              🎡 행운의 돌림판
             </div>
-            <div style={{ fontSize: 15, color: '#888' }}>{doubleResult.message}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#fff', marginBottom: 4 }}>2배 도전!</div>
+            <div style={{ fontSize: 14, color: '#888' }}>돌림판을 돌려 포인트를 2배로!</div>
           </div>
 
-          <div style={{ ...styles.card, textAlign: 'center' }}>
-            <div style={{ fontSize: 14, color: '#888', marginBottom: 8 }}>최종 포인트</div>
-            <div style={styles.resultPoints}>{doubleResult.finalPoints.toLocaleString()}</div>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#FF6B35' }}>P</div>
-          </div>
+          <DoubleWheel
+            onSpin={() => {}}
+            spinning={doubleSpinning}
+            result={doubleResult}
+          />
 
-          <button style={styles.btn} onClick={() => setStage('phone')}>
-            📱 포인트 받기
-          </button>
+          {doubleResult && !doubleSpinning && (
+            <>
+              <div style={{ ...styles.card, textAlign: 'center', marginTop: 24 }}>
+                <div style={{ fontSize: 14, color: '#888', marginBottom: 8 }}>최종 포인트</div>
+                <div style={styles.resultPoints}>{doubleResult.finalPoints.toLocaleString()}</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: '#FF6B35' }}>P</div>
+              </div>
+              <button style={styles.btn} onClick={() => setStage('phone')}>
+                📱 포인트 받기
+              </button>
+            </>
+          )}
           <div style={styles.disclaimer}>
             본 포인트는 현금으로 교환되지 않으며,<br />
             하이프리 이벤트 및 제품 구매 혜택으로만 사용할 수 있습니다.
