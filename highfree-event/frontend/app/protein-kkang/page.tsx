@@ -664,7 +664,7 @@ function ProteinKkangContent() {
 
           <div style={{ ...styles.card, textAlign: 'center' }}>
             <div style={{ fontSize: 14, color: '#888', marginBottom: 8 }}>획득 포인트</div>
-            <div style={styles.resultPoints}>{spinResult.rewardPoints.toLocaleString()}</div>
+            <div style={styles.resultPoints}>{spinResult.rewardPoints?.toLocaleString()}</div>
             <div style={{ fontSize: 28, fontWeight: 700, color: '#FF6B35', marginBottom: 16 }}>P</div>
             <div style={{ fontSize: 14, color: '#555' }}>포인트를 2배로 늘릴 기회!</div>
           </div>
@@ -703,7 +703,7 @@ function ProteinKkangContent() {
             <>
               <div style={{ ...styles.card, textAlign: 'center', marginTop: 24 }}>
                 <div style={{ fontSize: 14, color: '#888', marginBottom: 8 }}>최종 포인트</div>
-                <div style={styles.resultPoints}>{doubleResult.finalPoints.toLocaleString()}</div>
+                <div style={styles.resultPoints}>{doubleResult?.finalPoints?.toLocaleString()}</div>
                 <div style={{ fontSize: 28, fontWeight: 700, color: '#FF6B35' }}>P</div>
               </div>
               <button style={styles.btn} onClick={() => setStage('phone')}>
@@ -809,7 +809,7 @@ function ProteinKkangContent() {
 
           <div style={{ ...styles.card, width: '100%', textAlign: 'center' }}>
             <div style={{ fontSize: 14, color: '#888', marginBottom: 8 }}>이번에 적립한 포인트</div>
-            <div style={styles.resultPoints}>{claimResult.earnedPoints.toLocaleString()}</div>
+            <div style={styles.resultPoints}>{claimResult.earnedPoints?.toLocaleString()}</div>
             <div style={{ fontSize: 28, fontWeight: 700, color: '#FF6B35', marginBottom: 16 }}>P</div>
             <div style={{
               background: '#242424',
@@ -818,7 +818,7 @@ function ProteinKkangContent() {
             }}>
               <div style={{ fontSize: 13, color: '#888', marginBottom: 4 }}>총 누적 포인트</div>
               <div style={{ fontSize: 24, fontWeight: 700, color: '#FFD700' }}>
-                {claimResult.totalPoints.toLocaleString()}P
+                {claimResult.totalPoints?.toLocaleString()}P
               </div>
             </div>
           </div>
