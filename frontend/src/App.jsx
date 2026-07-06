@@ -5,6 +5,7 @@ import AccountSecurityPage from './pages/executive/AccountSecurityPage'
 import AdPerformancePage from './pages/executive/AdPerformancePage'
 import AttendanceAdminPage from './pages/executive/AttendanceAdminPage'
 import BrandHealthPage from './pages/executive/BrandHealthPage'
+import FieldDataInputPage from './pages/executive/FieldDataInputPage'
 import CashFlowPage from './pages/executive/CashFlowPage'
 import ChannelCredentialPage from './pages/executive/ChannelCredentialPage'
 import ChannelOperationsPage from './pages/executive/ChannelOperationsPage'
@@ -121,6 +122,7 @@ const pages = {
     'cs-auto-reply': CSAutoReplyPage,
   'support-programs': SupportProgramPage,
   'brand-health': BrandHealthPage,
+  'field-data-input': FieldDataInputPage,
   settings: Settings,
 }
 
