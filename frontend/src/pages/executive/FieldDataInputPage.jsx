@@ -312,4 +312,3 @@ return h('div', { className: 'space-y-6' },
     )
   )
 }
-}
