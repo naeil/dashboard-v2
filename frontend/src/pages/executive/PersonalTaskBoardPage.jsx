@@ -324,5 +324,3 @@ export default function PersonalTaskBoardPage({ displayName, username }) {
                      historySection()
                  )
 }
-
-}
