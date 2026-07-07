@@ -19,6 +19,7 @@ export const defaultMenuSections = [
     departments: ['executive'],
     items: [
       { id: 'ceo-dashboard', icon: 'monitoring', label: 'CEO 전략 대시보드', roles: ['EXECUTIVE'] },
+      { id: 'personal-task-board', icon: 'checklist', label: '개인 업무 관리', roles: ['EXECUTIVE'] },
     ],
   },
   {
