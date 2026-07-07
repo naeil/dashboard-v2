@@ -74,12 +74,17 @@ public Map<String, Object> getSummary(Long companyId, LocalDate startDate, Local
     .mapToLong(entry -> entry.getImpressions() == null ? 0L : entry.getImpressions())
     .sum();
 
-    BigDecimal totalOtherCost = otherCosts.stream()
+BigDecimal totalCostAmount = sales.stream()
+          .map(FieldSalesEntry::getCostAmount)
+          .filter(java.util.Objects::nonNull)
+          .reduce(BigDecimal.ZERO, BigDecimal::add);
+  
+      BigDecimal totalOtherCost = otherCosts.stream()
       .map(FieldOtherCostEntry::getAmount)
       .filter(java.util.Objects::nonNull)
       .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-    BigDecimal operatingProfit = totalSalesAmount.subtract(totalAdCost).subtract(totalOtherCost);
+        BigDecimal operatingProfit = totalSalesAmount.subtract(totalCostAmount).subtract(totalAdCost).subtract(totalOtherCost);
 
     BigDecimal roas = totalAdCost.signum() > 0
       ? totalSalesAmount.divide(totalAdCost, 4, RoundingMode.HALF_UP)
@@ -107,6 +112,7 @@ public Map<String, Object> getSummary(Long companyId, LocalDate startDate, Local
   summary.put("totalSalesQuantity", totalSalesQuantity);
   summary.put("totalAdCost", totalAdCost);
   summary.put("totalOtherCost", totalOtherCost);
+      summary.put("totalCostAmount", totalCostAmount);
   summary.put("operatingProfit", operatingProfit);
   summary.put("roas", roas);
   summary.put("cpa", cpa);
@@ -172,12 +178,16 @@ private List<Map<String, Object>> buildBrandBreakdown(
   Map<Long, BigDecimal> salesByBrand = new HashMap<>();
   Map<Long, BigDecimal> adCostByBrand = new HashMap<>();
   Map<Long, BigDecimal> otherCostByBrand = new HashMap<>();
+      Map<Long, BigDecimal> costByBrand = new HashMap<>();
 
     for (FieldSalesEntry entry : sales) {
       if (entry.getBrandId() == null || entry.getSalesAmount() == null) {
         continue;
       }
       salesByBrand.merge(entry.getBrandId(), entry.getSalesAmount(), BigDecimal::add);
+            if (entry.getCostAmount() != null) {
+                      costByBrand.merge(entry.getBrandId(), entry.getCostAmount(), BigDecimal::add);
+            }
     }
   for (FieldAdCostEntry entry : adCosts) {
     if (entry.getBrandId() == null || entry.getAdCostAmount() == null) {
@@ -204,19 +214,26 @@ private List<Map<String, Object>> buildBrandBreakdown(
       brandIds.add(brandId);
     }
   }
+      for (Long brandId : costByBrand.keySet()) {
+              if (!brandIds.contains(brandId)) {
+                        brandIds.add(brandId);
+              }
+      }
 
     List<Map<String, Object>> result = new ArrayList<>();
   for (Long brandId : brandIds) {
     BigDecimal brandSales = salesByBrand.getOrDefault(brandId, BigDecimal.ZERO);
     BigDecimal brandAdCost = adCostByBrand.getOrDefault(brandId, BigDecimal.ZERO);
     BigDecimal brandOtherCost = otherCostByBrand.getOrDefault(brandId, BigDecimal.ZERO);
-    BigDecimal brandProfit = brandSales.subtract(brandAdCost).subtract(brandOtherCost);
+        BigDecimal brandCost = costByBrand.getOrDefault(brandId, BigDecimal.ZERO);
+          BigDecimal brandProfit = brandSales.subtract(brandCost).subtract(brandAdCost).subtract(brandOtherCost);
 
   Map<String, Object> row = new LinkedHashMap<>();
     row.put("brandId", brandId);
     row.put("salesAmount", brandSales);
     row.put("adCostAmount", brandAdCost);
     row.put("otherCostAmount", brandOtherCost);
+        row.put("costAmount", brandCost);
     row.put("operatingProfit", brandProfit);
     result.add(row);
   }
