@@ -57,3 +57,54 @@ export const deleteOtherCostEntry = (id, companyId = 1) =>
 // L1/L2 summary
 export const getFieldDataSummary = (startDate, endDate, companyId = 1) =>
   api.get(`${BASE}/summary`, { params: { companyId, startDate, endDate } })
+
+
+// Excel upload / template download
+
+export const uploadSalesExcel = (file, companyId = 1, createdBy) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post(`${BASE}/sales/upload`, formData, {
+          params: { companyId, createdBy },
+          headers: { 'Content-Type': 'multipart/form-data' },
+    })
+}
+
+export const downloadSalesTemplate = () =>
+    api.get(`${BASE}/sales/template`, { responseType: 'blob' })
+
+export const uploadAdCostExcel = (file, companyId = 1, createdBy) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post(`${BASE}/ad-costs/upload`, formData, {
+          params: { companyId, createdBy },
+          headers: { 'Content-Type': 'multipart/form-data' },
+    })
+}
+
+export const downloadAdCostTemplate = () =>
+    api.get(`${BASE}/ad-costs/template`, { responseType: 'blob' })
+
+export const uploadInventoryExcel = (file, companyId = 1, createdBy) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post(`${BASE}/inventory/upload`, formData, {
+          params: { companyId, createdBy },
+          headers: { 'Content-Type': 'multipart/form-data' },
+    })
+}
+
+export const downloadInventoryTemplate = () =>
+    api.get(`${BASE}/inventory/template`, { responseType: 'blob' })
+
+export const uploadOtherCostExcel = (file, companyId = 1, createdBy) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post(`${BASE}/other-costs/upload`, formData, {
+          params: { companyId, createdBy },
+          headers: { 'Content-Type': 'multipart/form-data' },
+    })
+}
+
+export const downloadOtherCostTemplate = () =>
+    api.get(`${BASE}/other-costs/template`, { responseType: 'blob' })
