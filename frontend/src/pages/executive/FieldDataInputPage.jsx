@@ -41,6 +41,7 @@ const COLUMN_LABELS = {
     productId: '제품 ID',
     quantity: '수량',
     salesAmount: '매출액',
+        costAmount: '원가',
     memo: '메모',
     adCostAmount: '광고비',
     conversions: '전환수',
@@ -58,7 +59,7 @@ function firstDayOfMonthIso() {
     return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
 }
 
-const emptySalesForm = { brandId: '', productId: '', channelName: '', entryDate: todayIso(), quantity: '', salesAmount: '', memo: '' }
+const emptySalesForm = { brandId: '', productId: '', channelName: '', entryDate: todayIso(), quantity: '', salesAmount: '', costAmount: '', memo: '' }
 const emptyAdCostForm = { brandId: '', productId: '', channelName: '', entryDate: todayIso(), adCostAmount: '', impressions: '', clicks: '', conversions: '', memo: '' }
 const emptyInventoryForm = { brandId: '', productId: '', entryType: 'INBOUND', entryDate: todayIso(), quantity: '', memo: '' }
 const emptyOtherCostForm = { brandId: '', productId: '', costCategory: '', entryDate: todayIso(), amount: '', memo: '' }
@@ -142,6 +143,7 @@ async function submitSales(event) {
               entryDate: salesForm.entryDate,
               quantity: toNumberOrNull(salesForm.quantity) || 0,
               salesAmount: toNumberOrNull(salesForm.salesAmount) || 0,
+              costAmount: toNumberOrNull(salesForm.costAmount) || 0,
               memo: salesForm.memo || null,
       }
       await createSalesEntry(payload, 1, createdBy)
@@ -264,6 +266,7 @@ const inputClass = 'w-full rounded-lg border border-slate-200 px-3 py-2 text-sm'
                             field(salesForm.entryDate, (v) => setSalesForm({ ...salesForm, entryDate: v }), '입력일자', 'date'),
                             field(salesForm.quantity, (v) => setSalesForm({ ...salesForm, quantity: v }), '수량'),
                             field(salesForm.salesAmount, (v) => setSalesForm({ ...salesForm, salesAmount: v }), '매출액'),
+                            field(salesForm.costAmount, (v) => setSalesForm({ ...salesForm, costAmount: v }), '원가'),
                             field(salesForm.memo, (v) => setSalesForm({ ...salesForm, memo: v }), '메모'),
                             h('button', { type: 'submit', className: 'rounded-lg bg-sky-500 px-4 py-2 text-sm font-black text-white' }, '저장')
                           )
@@ -370,6 +373,7 @@ return h('div', { className: 'space-y-6' },
                                    summaryCard('총 매출', Number(summary.totalSalesAmount).toLocaleString()),
                                    summaryCard('총 광고비', Number(summary.totalAdCost).toLocaleString()),
                                    summaryCard('총 기타비용', Number(summary.totalOtherCost).toLocaleString()),
+                               summaryCard('총 원가', Number(summary.totalCostAmount).toLocaleString()),
                                    summaryCard('영업이익', Number(summary.operatingProfit).toLocaleString(), true),
                                    summaryCard('ROAS', summary.roas),
                                    summaryCard('CPA', Number(summary.cpa).toLocaleString()),
@@ -384,6 +388,7 @@ return h('div', { className: 'space-y-6' },
                                                                                                                                      h('th', { className: 'py-1' }, '매출'),
                                                                                                                                      h('th', { className: 'py-1' }, '광고비'),
                                                                                                                                      h('th', { className: 'py-1' }, '기타비용'),
+                                                                                                                                         h('th', { className: 'py-1' }, '원가'),
                                                                                                                                      h('th', { className: 'py-1' }, '영업이익')
                                                                                                                                    )),
                                                                                                       h('tbody', null, summary.byBrand.map((row) => h('tr', { key: row.brandId, className: 'border-t border-slate-100' },
@@ -391,6 +396,7 @@ return h('div', { className: 'space-y-6' },
                                                                                                                                                                   h('td', { className: 'py-1' }, Number(row.salesAmount).toLocaleString()),
                                                                                                                                                                   h('td', { className: 'py-1' }, Number(row.adCostAmount).toLocaleString()),
                                                                                                                                                                   h('td', { className: 'py-1' }, Number(row.otherCostAmount).toLocaleString()),
+                                                                                                                                                          h('td', { className: 'py-1' }, Number(row.costAmount).toLocaleString()),
                                                                                                                                                                   h('td', { className: 'py-1 font-bold' }, Number(row.operatingProfit).toLocaleString())
                                                                                                                                                                 )))
                                                                                                     )
@@ -409,7 +415,7 @@ return h('div', { className: 'space-y-6' },
                  activeTab === 'inventory' ? inventoryFormEl : null,
                  activeTab === 'other-costs' ? otherCostFormEl : null,
                  h('div', { className: 'mt-6 overflow-x-auto' },
-                           activeTab === 'sales' ? entryTable(['entryDate', 'channelName', 'productId', 'quantity', 'salesAmount', 'memo'], salesEntries, (id) => removeEntry('sales', id)) : null,
+                                   activeTab === 'sales' ? entryTable(['entryDate', 'channelName', 'productId', 'quantity', 'salesAmount', 'costAmount', 'memo'], salesEntries, (id) => removeEntry('sales', id)) : null,
                            activeTab === 'ad-costs' ? entryTable(['entryDate', 'channelName', 'productId', 'adCostAmount', 'conversions', 'memo'], adCostEntries, (id) => removeEntry('ad-costs', id)) : null,
                            activeTab === 'inventory' ? entryTable(['entryDate', 'entryType', 'productId', 'quantity', 'memo'], inventoryEntries, (id) => removeEntry('inventory', id)) : null,
                            activeTab === 'other-costs' ? entryTable(['entryDate', 'costCategory', 'productId', 'amount', 'memo'], otherCostEntries, (id) => removeEntry('other-costs', id)) : null
