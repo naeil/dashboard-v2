@@ -65,6 +65,10 @@ import org.hibernate.annotations.UpdateTimestamp;
     @Builder.Default
     private BigDecimal salesAmount = BigDecimal.ZERO;
 
+      @Column(name = "cost_amount", nullable = false, precision = 14, scale = 2)
+      @Builder.Default
+      private BigDecimal costAmount = BigDecimal.ZERO;
+
 @Column(name = "memo", length = 500)
     private String memo;
 
