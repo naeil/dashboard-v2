@@ -6,6 +6,7 @@ import AdPerformancePage from './pages/executive/AdPerformancePage'
 import AttendanceAdminPage from './pages/executive/AttendanceAdminPage'
 import BrandHealthPage from './pages/executive/BrandHealthPage'
 import FieldDataInputPage from './pages/executive/FieldDataInputPage'
+import PersonalTaskBoardPage from './pages/executive/PersonalTaskBoardPage'
 import CashFlowPage from './pages/executive/CashFlowPage'
 import ChannelCredentialPage from './pages/executive/ChannelCredentialPage'
 import ChannelOperationsPage from './pages/executive/ChannelOperationsPage'
@@ -123,6 +124,7 @@ const pages = {
   'support-programs': SupportProgramPage,
   'brand-health': BrandHealthPage,
   'field-data-input': FieldDataInputPage,
+    'personal-task-board': PersonalTaskBoardPage,
   settings: Settings,
 }
 
