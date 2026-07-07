@@ -37,7 +37,7 @@ import org.springframework.web.multipart.MultipartFile;
    * Additive-only: does not touch any other sync/aggregation logic.
    *
    * Expected column order (row 1 = header, data starts at row 2):
- * - Sales : brandId, productId, channelName, entryDate, quantity, salesAmount, memo
+ * - Sales : brandId, productId, channelName, entryDate, quantity, salesAmount, costAmount, memo
    * - Ad cost : brandId, productId, channelName, entryDate, adCostAmount, impressions, clicks, conversions, memo
    * - Inventory : brandId, productId, entryType(inbound/outbound/order request), entryDate, quantity, memo
    * - Other cost : brandId, productId, costCategory, entryDate, amount, memo
@@ -79,7 +79,8 @@ import org.springframework.web.multipart.MultipartFile;
                                                                 .entryDate(entryDate)
                                                                 .quantity(readInt(row.getCell(4)))
                                                                 .salesAmount(readDecimal(row.getCell(5)))
-                                                                .memo(readString(row.getCell(6)))
+                                                                .costAmount(readDecimal(row.getCell(6)))
+                                                                .memo(readString(row.getCell(7)))
                                                                 .createdBy(createdBy)
                                                                 .build());
                   });
@@ -160,8 +161,8 @@ import org.springframework.web.multipart.MultipartFile;
 
     public byte[] buildSalesTemplate() {
               return buildTemplate(
-                                new String[]{"brandId", "productId", "channelName", "entryDate", "quantity", "salesAmount", "memo"},
-                                new Object[]{1, 101, "own-mall", "2026-07-01", 10, 250000, "sample row, please replace with real data"});
+                                new String[]{"brandId", "productId", "channelName", "entryDate", "quantity", "salesAmount", "costAmount", "memo"},
+                                    new Object[]{1, 101, "own-mall", "2026-07-01", 10, 250000, 150000, "sample row, please replace with real data"});
     }
 
     public byte[] buildAdCostTemplate() {
