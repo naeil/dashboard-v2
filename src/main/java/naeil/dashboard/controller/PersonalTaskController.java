@@ -1,5 +1,6 @@
 package naeil.dashboard.controller;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -17,51 +18,59 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Personal task board REST API used by the "personal task management" page
-   * under executive home / CEO strategic dashboard. Additive-only controller.
-   */
+* Personal task board REST API used by the "personal task management" page
+  * under executive home / CEO strategic dashboard. Additive-only controller.
+  */
 @RestController
   @RequestMapping("/api/personal-tasks")
   @RequiredArgsConstructor
   public class PersonalTaskController {
 
-    private final PersonalTaskService personalTaskService;
+private final PersonalTaskService personalTaskService;
 
-    @GetMapping
-        public ResponseEntity<List<PersonalTask>> getTasks(
-                      @RequestParam(defaultValue = "1") Long companyId) {
-                  return ResponseEntity.ok(personalTaskService.getTasks(companyId));
-        }
+@GetMapping
+    public ResponseEntity<List<PersonalTask>> getTasks(
+      @RequestParam(defaultValue = "1") Long companyId,
+      @RequestParam(required = false) String date) {
+      LocalDate parsedDate = (date == null || date.isBlank()) ? null : LocalDate.parse(date);
+      return ResponseEntity.ok(personalTaskService.getTasks(companyId, parsedDate));
+    }
 
-    @PostMapping
-        public ResponseEntity<PersonalTask> createTask(
-                      @RequestParam(defaultValue = "1") Long companyId,
-                      @RequestParam(required = false) String createdBy,
-                      @RequestBody PersonalTask payload) {
-                  return ResponseEntity.ok(personalTaskService.createTask(companyId, createdBy, payload));
-        }
+@GetMapping("/dates")
+    public ResponseEntity<List<LocalDate>> getHistoryDates(
+      @RequestParam(defaultValue = "1") Long companyId) {
+      return ResponseEntity.ok(personalTaskService.getHistoryDates(companyId));
+    }
 
-    @PutMapping("/{id}")
-        public ResponseEntity<PersonalTask> updateTask(
-                      @RequestParam(defaultValue = "1") Long companyId,
-                      @PathVariable Long id,
-                      @RequestBody PersonalTask payload) {
-                  return ResponseEntity.ok(personalTaskService.updateContent(companyId, id, payload));
-        }
+@PostMapping
+    public ResponseEntity<PersonalTask> createTask(
+      @RequestParam(defaultValue = "1") Long companyId,
+      @RequestParam(required = false) String createdBy,
+      @RequestBody PersonalTask payload) {
+      return ResponseEntity.ok(personalTaskService.createTask(companyId, createdBy, payload));
+    }
 
-    @PutMapping("/{id}/category")
-        public ResponseEntity<PersonalTask> moveTask(
-                      @RequestParam(defaultValue = "1") Long companyId,
-                      @PathVariable Long id,
-                      @RequestBody Map<String, String> payload) {
-                  return ResponseEntity.ok(personalTaskService.moveTask(companyId, id, payload.get("category")));
-        }
+@PutMapping("/{id}")
+    public ResponseEntity<PersonalTask> updateTask(
+      @RequestParam(defaultValue = "1") Long companyId,
+      @PathVariable Long id,
+      @RequestBody PersonalTask payload) {
+      return ResponseEntity.ok(personalTaskService.updateContent(companyId, id, payload));
+    }
 
-    @DeleteMapping("/{id}")
-        public ResponseEntity<Map<String, String>> deleteTask(
-                      @RequestParam(defaultValue = "1") Long companyId,
-                      @PathVariable Long id) {
-                  personalTaskService.deleteTask(companyId, id);
-                  return ResponseEntity.ok(Map.of("message", "deleted"));
-        }
+@PutMapping("/{id}/category")
+    public ResponseEntity<PersonalTask> moveTask(
+      @RequestParam(defaultValue = "1") Long companyId,
+      @PathVariable Long id,
+      @RequestBody Map<String, String> payload) {
+      return ResponseEntity.ok(personalTaskService.moveTask(companyId, id, payload.get("category")));
+    }
+
+@DeleteMapping("/{id}")
+    public ResponseEntity<Map<String, String>> deleteTask(
+      @RequestParam(defaultValue = "1") Long companyId,
+      @PathVariable Long id) {
+      personalTaskService.deleteTask(companyId, id);
+      return ResponseEntity.ok(Map.of("message", "deleted"));
+    }
   }
