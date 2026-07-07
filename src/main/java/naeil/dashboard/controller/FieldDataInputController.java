@@ -9,8 +9,11 @@ import naeil.dashboard.entity.FieldInventoryOrderEntry;
 import naeil.dashboard.entity.FieldOtherCostEntry;
 import naeil.dashboard.entity.FieldSalesEntry;
 import naeil.dashboard.service.FieldDataAggregationService;
+import naeil.dashboard.service.FieldDataExcelUploadService;
 import naeil.dashboard.service.FieldDataInputService;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,14 +24,15 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
- * L0 field-input layer REST API. Lets operations staff type in raw sales,
-   * ad-cost, inventory/order and other-cost data, and exposes an L1/L2 summary
-   * endpoint used by the new "field input" dashboard page.
-   *
-   * Additive-only controller: does not modify any existing endpoint.
-   */
+* L0 field-input layer REST API. Lets operations staff type in raw sales,
+  * ad-cost, inventory/order and other-cost data, and exposes an L1/L2 summary
+  * endpoint used by the new "field input" dashboard page.
+  *
+  * Additive-only controller: does not modify any existing endpoint.
+  */
 @RestController
   @RequestMapping("/api/field-input")
   @RequiredArgsConstructor
@@ -36,6 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 private final FieldDataInputService fieldDataInputService;
     private final FieldDataAggregationService fieldDataAggregationService;
+    private final FieldDataExcelUploadService fieldDataExcelUploadService;
 
 // Sales entries
 
@@ -67,6 +72,21 @@ private final FieldDataInputService fieldDataInputService;
       @PathVariable Long id) {
       fieldDataInputService.deleteSalesEntry(companyId, id);
       return ResponseEntity.ok(Map.of("message", "deleted"));
+    }
+
+@PostMapping(value = "/sales/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Map<String, Object>> uploadSalesExcel(
+      @RequestParam(defaultValue = "1") Long companyId,
+      @RequestParam(required = false) String createdBy,
+      @RequestParam("file") MultipartFile file) {
+      FieldDataExcelUploadService.UploadResult result =
+        fieldDataExcelUploadService.uploadSales(file, companyId, createdBy);
+      return ResponseEntity.ok(Map.of("insertedCount", result.insertedCount(), "errors", result.errors()));
+    }
+
+@GetMapping("/sales/template")
+    public ResponseEntity<byte[]> downloadSalesTemplate() {
+      return excelFileResponse(fieldDataExcelUploadService.buildSalesTemplate(), "sales_template.xlsx");
     }
 
 // Ad cost entries
@@ -101,6 +121,21 @@ private final FieldDataInputService fieldDataInputService;
       return ResponseEntity.ok(Map.of("message", "deleted"));
     }
 
+@PostMapping(value = "/ad-costs/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Map<String, Object>> uploadAdCostExcel(
+      @RequestParam(defaultValue = "1") Long companyId,
+      @RequestParam(required = false) String createdBy,
+      @RequestParam("file") MultipartFile file) {
+      FieldDataExcelUploadService.UploadResult result =
+        fieldDataExcelUploadService.uploadAdCosts(file, companyId, createdBy);
+      return ResponseEntity.ok(Map.of("insertedCount", result.insertedCount(), "errors", result.errors()));
+    }
+
+@GetMapping("/ad-costs/template")
+    public ResponseEntity<byte[]> downloadAdCostTemplate() {
+      return excelFileResponse(fieldDataExcelUploadService.buildAdCostTemplate(), "ad_costs_template.xlsx");
+    }
+
 // Inventory / order entries
 
 @GetMapping("/inventory")
@@ -131,6 +166,21 @@ private final FieldDataInputService fieldDataInputService;
       @PathVariable Long id) {
       fieldDataInputService.deleteInventoryEntry(companyId, id);
       return ResponseEntity.ok(Map.of("message", "deleted"));
+    }
+
+@PostMapping(value = "/inventory/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Map<String, Object>> uploadInventoryExcel(
+      @RequestParam(defaultValue = "1") Long companyId,
+      @RequestParam(required = false) String createdBy,
+      @RequestParam("file") MultipartFile file) {
+      FieldDataExcelUploadService.UploadResult result =
+        fieldDataExcelUploadService.uploadInventory(file, companyId, createdBy);
+      return ResponseEntity.ok(Map.of("insertedCount", result.insertedCount(), "errors", result.errors()));
+    }
+
+@GetMapping("/inventory/template")
+    public ResponseEntity<byte[]> downloadInventoryTemplate() {
+      return excelFileResponse(fieldDataExcelUploadService.buildInventoryTemplate(), "inventory_template.xlsx");
     }
 
 // Other cost entries
@@ -165,6 +215,21 @@ private final FieldDataInputService fieldDataInputService;
       return ResponseEntity.ok(Map.of("message", "deleted"));
     }
 
+@PostMapping(value = "/other-costs/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Map<String, Object>> uploadOtherCostExcel(
+      @RequestParam(defaultValue = "1") Long companyId,
+      @RequestParam(required = false) String createdBy,
+      @RequestParam("file") MultipartFile file) {
+      FieldDataExcelUploadService.UploadResult result =
+        fieldDataExcelUploadService.uploadOtherCosts(file, companyId, createdBy);
+      return ResponseEntity.ok(Map.of("insertedCount", result.insertedCount(), "errors", result.errors()));
+    }
+
+@GetMapping("/other-costs/template")
+    public ResponseEntity<byte[]> downloadOtherCostTemplate() {
+      return excelFileResponse(fieldDataExcelUploadService.buildOtherCostTemplate(), "other_costs_template.xlsx");
+    }
+
 // L1/L2 summary
 
 @GetMapping("/summary")
@@ -174,4 +239,11 @@ private final FieldDataInputService fieldDataInputService;
       @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
       return ResponseEntity.ok(fieldDataAggregationService.getSummary(companyId, startDate, endDate));
     }
+
+private ResponseEntity<byte[]> excelFileResponse(byte[] content, String filename) {
+  return ResponseEntity.ok()
+    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+    .body(content);
+}
   }
