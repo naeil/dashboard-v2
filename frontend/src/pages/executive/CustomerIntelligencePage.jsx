@@ -554,6 +554,7 @@ export default function CustomerIntelligencePage({ role = 'EXECUTIVE' }) {
   const [dateEnd, setDateEnd] = useState(def.end)
   const [activePreset, setActivePreset] = useState(90)
   const [showContact, setShowContact] = useState(false)
+  const [nameSearch, setNameSearch] = useState('')
   const canAccess = role === 'EXECUTIVE' || role === 'MANAGER'
 
   function fetchData(start, end) {
@@ -614,8 +615,11 @@ export default function CustomerIntelligencePage({ role = 'EXECUTIVE' }) {
 
   const filteredRows = useMemo(() => {
     const base = [...rows].sort((a,b)=>Number(b.total_purchase_amount)-Number(a.total_purchase_amount))
-    return (gradeFilter === 'all' ? base : base.filter(r=>getGrade(r)===gradeFilter)).slice(0, 30)
-  }, [rows, gradeFilter])
+    const graded = gradeFilter === 'all' ? base : base.filter(r=>getGrade(r)===gradeFilter)
+    const q = nameSearch.trim().toLowerCase()
+    const searched = q ? graded.filter(r=>(r.customer_name||'').toLowerCase().includes(q)) : graded
+    return q ? searched : searched.slice(0, 30)
+  }, [rows, gradeFilter, nameSearch])
 
   const handleSync = async () => {
     if (syncing) return
@@ -748,10 +752,11 @@ export default function CustomerIntelligencePage({ role = 'EXECUTIVE' }) {
           <div className="rounded-xl border border-slate-100 bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
               <div>
-                <span className="text-sm font-black text-slate-900">고객별 가치 분석 (상위 30명 · 실제 플레이오토 데이터)</span>
+                <span className="text-sm font-black text-slate-900">고객별 가치 분석 ({nameSearch.trim() ? `검색결과 ${filteredRows.length}명` : '상위 30명'} · 실제 플레이오토 데이터)</span>
                 <span className="ml-2 text-[11px] text-slate-400">{dateStart} ~ {dateEnd} · 전체 {rows.length}명</span>
               </div>
               <div className="flex items-center gap-2">
+                <input type="text" value={nameSearch} onChange={e=>setNameSearch(e.target.value)} placeholder="고객명 검색" className="w-40 rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-700 focus:border-sky-400 focus:outline-none"/>
                 {/* 등급 필터 */}
                 <div className="flex gap-1 rounded-lg bg-slate-50 p-1">
                   {['all','VIP','GOLD','DORMANT'].map(g=>(
