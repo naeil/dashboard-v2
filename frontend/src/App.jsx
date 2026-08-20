@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import ExecutiveHeader from './components/ExecutiveHeader'
-import Sidebar from './components/Sidebar'
+import Sidebar, { useVisibleMenuSections } from './components/Sidebar'
+import TopNav from './components/TopNav'
 import AccountSecurityPage from './pages/executive/AccountSecurityPage'
 import AdPerformancePage from './pages/executive/AdPerformancePage'
 import AttendanceAdminPage from './pages/executive/AttendanceAdminPage'
@@ -289,9 +290,15 @@ function MobileLayout({ activePage, setPage, session, userRole }) {
 export default function App() {
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true)
   const [page, setPage] = useState('platform')
+  const [activeSectionId, setActiveSectionId] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [session, setSession] = useState(null)
   const isMobile = useIsMobile()
+  const visibleSections = useVisibleMenuSections({
+    role: session?.role ?? 'EMPLOYEE',
+    department: session?.department,
+    allowedMenuSections: session?.allowedMenuSections,
+  })
 
   useEffect(() => {
     const token = getAuthToken()
@@ -361,40 +368,64 @@ export default function App() {
   }
 
   const PageComponent = pages[page] || PlatformOverviewPage
+
+  const handleNavigate = (id) => {
+    setPage(id)
+    const owningSection = visibleSections.find((section) => section.items.some((item) => item.id === id))
+    if (owningSection) setActiveSectionId(owningSection.id)
+  }
+
+  const handleSelectSection = (sectionId) => {
+    setActiveSectionId(sectionId)
+    setIsSidebarExpanded(true)
+  }
+
+  const effectiveSectionId = visibleSections.some((section) => section.id === activeSectionId)
+    ? activeSectionId
+    : (visibleSections.find((section) => section.items.some((item) => item.id === page))?.id ?? visibleSections[0]?.id ?? null)
+
   return (
-    <div className="app-light flex h-screen overflow-hidden bg-slate-50 text-slate-900">
-      <Sidebar
-        activePage={page}
-        onNavigate={setPage}
-        isExpanded={isSidebarExpanded}
-        onToggle={() => setIsSidebarExpanded((value) => !value)}
-        username={session.username}
-        displayName={session.displayName}
-        department={session.department}
-        role={userRole}
-        onLogout={handleLogout}
-        allowedMenuSections={session.allowedMenuSections}
+    <div className="app-light flex h-screen flex-col overflow-hidden bg-slate-50 text-slate-900">
+      <TopNav
+        sections={visibleSections}
+        activeSectionId={effectiveSectionId}
+        onSelectSection={handleSelectSection}
       />
-      <div className={`flex flex-1 flex-col overflow-hidden transition-all duration-300 ${isSidebarExpanded ? 'ml-72' : 'ml-20'}`}>
-        <ExecutiveHeader
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar
+          activePage={page}
+          onNavigate={handleNavigate}
+          isExpanded={isSidebarExpanded}
+          onToggle={() => setIsSidebarExpanded((value) => !value)}
           username={session.username}
           displayName={session.displayName}
-          session={session}
+          department={session.department}
+          role={userRole}
           onLogout={handleLogout}
-          onNavigate={setPage}
-          userRole={userRole}
+          sections={visibleSections}
+          activeSectionId={effectiveSectionId}
         />
-        <main className="flex-1 overflow-y-auto px-6 py-6">
-          <PageComponent
-            onNavigate={setPage}
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <ExecutiveHeader
             username={session.username}
             displayName={session.displayName}
-            department={session.department}
-            positionName={session.positionName}
-            role={userRole}
-            accessPermissions={session.allowedMenuSections}
+            session={session}
+            onLogout={handleLogout}
+            onNavigate={handleNavigate}
+            userRole={userRole}
           />
-        </main>
+          <main className="flex-1 overflow-y-auto px-6 py-6">
+            <PageComponent
+              onNavigate={handleNavigate}
+              username={session.username}
+              displayName={session.displayName}
+              department={session.department}
+              positionName={session.positionName}
+              role={userRole}
+              accessPermissions={session.allowedMenuSections}
+            />
+          </main>
+        </div>
       </div>
     </div>
   )

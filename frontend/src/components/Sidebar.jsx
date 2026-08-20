@@ -219,38 +219,17 @@ function MenuLabel({ isExpanded, children }) {
   )
 }
 
-function getInitialCollapsed() {
+function getMenuOverrides() {
   try {
-    const saved = localStorage.getItem('sidebar_collapsed_sections')
-    if (saved) return JSON.parse(saved)
-  } catch {}
-  return {}
+    const saved = localStorage.getItem('menu_config_overrides')
+    return saved ? JSON.parse(saved) : {}
+  } catch {
+    return {}
+  }
 }
 
-export default function Sidebar({
-  isExpanded,
-  onToggle,
-  activePage,
-  onNavigate,
-  username,
-  displayName,
-  department,
-  role = 'EXECUTIVE',
-  onLogout,
-  allowedMenuSections = null,
-}) {
-  const [collapsed, setCollapsed] = useState(getInitialCollapsed)
+export function useVisibleMenuSections({ role = 'EXECUTIVE', department, allowedMenuSections = null }) {
   const [, setMenuVersion] = useState(0)
-  const personalBaseLabel = displayName || username || '내'
-
-  function getMenuOverrides() {
-    try {
-      const saved = localStorage.getItem('menu_config_overrides')
-      return saved ? JSON.parse(saved) : {}
-    } catch {
-      return {}
-    }
-  }
 
   useEffect(() => {
     const refresh = () => setMenuVersion((v) => v + 1)
@@ -280,21 +259,13 @@ export default function Sidebar({
       .catch(() => {})
   }, [])
 
-  function toggleSection(title) {
-    setCollapsed((prev) => {
-      const next = { ...prev, [title]: !prev[title] }
-      try { localStorage.setItem('sidebar_collapsed_sections', JSON.stringify(next)) } catch {}
-      return next
-    })
-  }
-
   const allowedMenuIds = role === 'EXECUTIVE'
     ? null
     : getAllowedMenus(parseAccessPermissions(allowedMenuSections))
   const hasItemLevelPermissions = Array.isArray(allowedMenuIds)
   const overrides = getMenuOverrides()
 
-  const visibleSections = getOrderedMenuSections()
+  return getOrderedMenuSections()
     .map((section) => {
       const sectionOverride = overrides[section.id] || {}
       if (sectionOverride.deleted || sectionOverride.hidden) return null
@@ -322,32 +293,49 @@ export default function Sidebar({
       return { ...sectionWithOverride, items }
     })
     .filter(Boolean)
+}
 
-  const executiveSections = visibleSections.filter((section) => section.group === 'executive')
-  const staffSections = visibleSections.filter((section) => section.group === 'staff')
-  const systemSections = visibleSections.filter((section) => section.group === 'system')
-  const showExecutiveGroup = executiveSections.length > 0
-  const showStaffGroup = staffSections.length > 0
+export default function Sidebar({
+  isExpanded,
+  onToggle,
+  activePage,
+  onNavigate,
+  username,
+  displayName,
+  department,
+  role = 'EXECUTIVE',
+  onLogout,
+  sections = [],
+  activeSectionId = null,
+}) {
+  const personalBaseLabel = displayName || username || '내'
 
-  function renderSection(section) {
-    const isCollapsed = collapsed[section.title]
-    return (
-      <div key={section.title}>
-        {isExpanded ? (
-          <button type="button" onClick={() => toggleSection(section.title)} className="mb-1 flex w-full items-center justify-between rounded px-4 py-1 transition-colors hover:bg-slate-50">
-            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">{section.title}</span>
-            <span className="material-symbols-outlined text-sm text-slate-300 transition-transform duration-200" style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', fontSize: '16px' }}>expand_more</span>
-          </button>
-        ) : null}
+  const activeSection =
+    sections.find((section) => section.id === activeSectionId) ||
+    sections.find((section) => section.items.some((item) => item.id === activePage)) ||
+    sections[0] ||
+    null
 
-        {(!isCollapsed || !isExpanded) && (
+  return (
+    <aside className={`relative z-30 flex h-full shrink-0 flex-col border-r border-slate-200 bg-white text-slate-600 shadow-sm transition-all duration-300 ${isExpanded ? 'w-72' : 'w-20'}`}>
+      <div className={`flex items-center px-3 py-4 ${isExpanded ? 'justify-between' : 'justify-center'}`}>
+        {isExpanded && activeSection && (
+          <span className="truncate px-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">{activeSection.title}</span>
+        )}
+        <button type="button" onClick={onToggle} className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950" aria-label={isExpanded ? '사이드바 접기' : '사이드바 펼치기'}>
+          <span className="material-symbols-outlined">{isExpanded ? 'menu_open' : 'menu'}</span>
+        </button>
+      </div>
+
+      <nav className="flex-1 overflow-y-auto px-3 py-1">
+        {activeSection && (
           <div className="space-y-1">
-            {section.items.map((item) => {
+            {activeSection.items.map((item) => {
               const isActive = activePage === item.id
               const isBold = item.bold || item.emphasis
               return (
                 <a
-                  key={`${section.title}-${item.id}`}
+                  key={`${activeSection.id}-${item.id}`}
                   href="#"
                   onClick={(event) => {
                     event.preventDefault()
@@ -360,42 +348,6 @@ export default function Sidebar({
                 </a>
               )
             })}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  return (
-    <aside className={`fixed left-0 top-0 z-50 flex h-full flex-col border-r border-slate-200 bg-white text-slate-600 shadow-sm transition-all duration-300 ${isExpanded ? 'w-72' : 'w-20'}`}>
-      <div className={`flex items-center p-5 ${isExpanded ? 'justify-between' : 'justify-center'}`}>
-        <div className={`min-w-0 ${isExpanded ? 'block' : 'hidden'}`}>
-          <p className="text-xs font-black uppercase tracking-[0.22em] text-sky-600">Naeil Group</p>
-          <h1 className="mt-1 truncate text-lg font-black text-slate-950">Business Platform</h1>
-        </div>
-        <button type="button" onClick={onToggle} className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950" aria-label={isExpanded ? '사이드바 접기' : '사이드바 펼치기'}>
-          <span className="material-symbols-outlined">{isExpanded ? 'menu_open' : 'menu'}</span>
-        </button>
-      </div>
-
-      <nav className="flex-1 overflow-y-auto px-3 py-2">
-        {showExecutiveGroup && (
-          <div className="space-y-3">
-            {executiveSections.map(renderSection)}
-          </div>
-        )}
-
-        {showStaffGroup && (
-          <div className="mt-4 space-y-3">
-            {staffSections.map(renderSection)}
-          </div>
-        )}
-
-        {systemSections.length > 0 && (
-          <div className="mt-4 space-y-3">
-            {isExpanded && <div className="my-2 border-t border-slate-200" />}
-            {!isExpanded && <div className="my-2 border-t border-slate-200" />}
-            {systemSections.map(renderSection)}
           </div>
         )}
       </nav>
