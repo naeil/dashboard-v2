@@ -84,7 +84,8 @@ public class AuthInterceptor implements HandlerInterceptor {
     }
 
     private boolean isManagerOnlyPath(String path) {
-        return path.matches("^/api/executive/payment-requests/\\d+/approve$")
+        return path.startsWith("/api/executive/cfo")
+                || path.matches("^/api/executive/payment-requests/\\d+/approve$")
                 || path.startsWith("/api/executive/product-movements/sync-playauto")
                 || path.startsWith("/api/executive/receivables")
                 || path.startsWith("/api/executive/cash-accounts")

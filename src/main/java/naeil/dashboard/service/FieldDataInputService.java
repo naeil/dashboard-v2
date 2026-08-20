@@ -50,6 +50,7 @@ public FieldSalesEntry updateSalesEntry(Long companyId, Long id, FieldSalesEntry
   existing.setEntryDate(payload.getEntryDate());
   existing.setQuantity(payload.getQuantity());
   existing.setSalesAmount(payload.getSalesAmount());
+  existing.setCostAmount(payload.getCostAmount());
   existing.setMemo(payload.getMemo());
   return salesRepository.save(existing);
 }

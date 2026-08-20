@@ -8,6 +8,7 @@ import BrandHealthPage from './pages/executive/BrandHealthPage'
 import FieldDataInputPage from './pages/executive/FieldDataInputPage'
 import PersonalTaskBoardPage from './pages/executive/PersonalTaskBoardPage'
 import CashFlowPage from './pages/executive/CashFlowPage'
+import CfoDashboardPage from './pages/executive/cfo/CfoDashboardPage'
 import ChannelCredentialPage from './pages/executive/ChannelCredentialPage'
 import ChannelOperationsPage from './pages/executive/ChannelOperationsPage'
 import ChannelSalesPage from './pages/executive/ChannelSalesPage'
@@ -74,6 +75,7 @@ const pages = {
   account: AccountSecurityPage,
   'attendance-admin': AttendanceAdminPage,
   'ceo-dashboard': CEOStrategicDashboard,
+  'cfo-dashboard': CfoDashboardPage,
   summary: ExecutiveSummary,
   'cash-flow': CashFlowPage,
   'channel-credentials': ChannelCredentialPage,
@@ -169,6 +171,7 @@ function MobileLayout({ activePage, setPage, session, userRole }) {
   const navItems = [
     { id: 'platform', label: '업무 홈', icon: 'apps' },
     { id: 'ceo-dashboard', label: 'CEO 전략 대시보드', icon: 'monitoring' },
+    { id: 'cfo-dashboard', label: 'CFO 재무관리', icon: 'account_balance' },
     { id: 'cash-flow', label: '현금 흐름', icon: 'account_balance_wallet' },
     { id: 'channel-sales', label: '실시간 매출', icon: 'leaderboard' },
     { id: 'settlement-schedule', label: '정산 예정', icon: 'payments' },

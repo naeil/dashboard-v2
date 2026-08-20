@@ -589,7 +589,7 @@ public class ExecutiveDashboardService {
                         company_id, flow_date, flow_type, category, counterparty, amount,
                         status, confidence_level, recurring_rule, source_type, source_key, memo
                     )
-                    VALUES (?, ?, 'INFLOW', '?⑤씪??梨꾨꼸 ?뺤궛', ?, ?, 'EXPECTED', 'EXPECTED', 'NONE',
+                    VALUES (?, ?, 'INFLOW', '온라인 채널 정산', ?, ?, 'EXPECTED', 'EXPECTED', 'NONE',
                             'ONLINE_SETTLEMENT', ?, ?)
                     ON CONFLICT (source_key) DO NOTHING
                     """,
@@ -598,7 +598,7 @@ public class ExecutiveDashboardService {
                     row.get("shop_name"),
                     row.get("settlement_amount"),
                     sourceKey,
-                    "?⑤씪??二쇰Ц " + row.get("order_count") + "嫄?湲곗? ?먮룞 ?앹꽦"
+                    "온라인 주문 " + row.get("order_count") + "건 기준 자동 생성"
             );
 
             if (updated > 0) {

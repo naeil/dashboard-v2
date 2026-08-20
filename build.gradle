@@ -68,8 +68,17 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 
-tasks.withType(Test).configureEach {
+// 기존 테스트 스위트는 비활성 상태를 유지한다 (기존 배포 파이프라인과 동일).
+tasks.named('test') {
     enabled = false
+}
+
+// CFO 중앙 계산 모듈 단위 테스트 전용 태스크: ./gradlew cfoTest
+tasks.register('cfoTest', Test) {
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    include '**/FinanceCalculatorTest*'
 }
 
 bootRun {
