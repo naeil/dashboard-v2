@@ -47,3 +47,33 @@ export async function syncChannel(channelType, month) {
   if (!res.ok) throw new Error(`Failed to sync channel: ${channelType}`)
   return res.json()
 }
+
+// ==================== 일별 매출 수집 (CFO/CEO 대시보드 연동) ====================
+
+function dailyRangeQuery(from, to) {
+  const params = new URLSearchParams()
+  if (from) params.set('from', from)
+  if (to) params.set('to', to)
+  const qs = params.toString()
+  return qs ? `?${qs}` : ''
+}
+
+export async function syncDailyAll(from, to) {
+  const res = await fetch(buildApiUrl(`/channel-sync/sync-daily/all${dailyRangeQuery(from, to)}`), {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  const body = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(body?.message || 'Failed to run daily sync')
+  return body
+}
+
+export async function syncDailyChannel(channelType, from, to) {
+  const res = await fetch(buildApiUrl(`/channel-sync/sync-daily/${channelType}${dailyRangeQuery(from, to)}`), {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  const body = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(body?.message || `Failed to run daily sync: ${channelType}`)
+  return body
+}

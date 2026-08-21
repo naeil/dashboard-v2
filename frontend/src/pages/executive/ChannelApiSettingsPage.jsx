@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getChannelCredentials, saveChannelCredentials, syncAllChannels, syncChannel } from '../../api/channelSyncApi'
+import { getChannelCredentials, saveChannelCredentials, syncAllChannels, syncChannel, syncDailyAll, syncDailyChannel } from '../../api/channelSyncApi'
 
 const CHANNELS = [
   {
     type: 'SMARTSTORE',
     name: '스마트스토어',
     icon: '🛒',
-    description: '네이버 스마트스토어 API 연동',
+    description: '네이버 커머스API 연동 (커머스API센터에서 애플리케이션 등록 후 발급)',
     fields: [
       { key: 'key1', label: 'Client ID', placeholder: '스마트스토어 Client ID 입력', type: 'text' },
       { key: 'key2', label: 'Client Secret', placeholder: '스마트스토어 Client Secret 입력', type: 'password' },
@@ -16,10 +16,20 @@ const CHANNELS = [
     type: 'COUPANG',
     name: '쿠팡',
     icon: '📦',
-    description: '쿠팡 Wing API 연동',
+    description: '쿠팡 Wing OpenAPI 연동 (Wing → 판매자정보 → 오픈API 키 발급)',
     fields: [
       { key: 'key1', label: 'Access Key', placeholder: '쿠팡 Access Key 입력', type: 'text' },
       { key: 'key2', label: 'Secret Key', placeholder: '쿠팡 Secret Key 입력', type: 'password' },
+      { key: 'key3', label: '업체코드 (Vendor ID)', placeholder: 'A로 시작하는 업체코드 (예: A00123456)', type: 'text' },
+    ],
+  },
+  {
+    type: 'ELEVENST',
+    name: '11번가',
+    icon: '🛍️',
+    description: '11번가 오픈API 연동 (셀러오피스 → 오픈API 키 발급)',
+    fields: [
+      { key: 'key1', label: 'OpenAPI Key', placeholder: '11번가 오픈API 키 입력', type: 'password' },
     ],
   },
   {
@@ -45,8 +55,8 @@ function formatDateTime(dt) {
   return new Date(dt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
 }
 
-function ChannelCard({ channel, credential, onSave, onSync, syncing }) {
-  const [form, setForm] = useState({ key1: '', key2: '', isActive: true })
+function ChannelCard({ channel, credential, onSave, onSync, onDailySync, syncing }) {
+  const [form, setForm] = useState({ key1: '', key2: '', key3: '', isActive: true })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [showSecret, setShowSecret] = useState(false)
@@ -56,6 +66,7 @@ function ChannelCard({ channel, credential, onSave, onSync, syncing }) {
       setForm({
         key1: credential.credentialKey1 || '',
         key2: credential.credentialKey2 ? '****' : '',
+        key3: credential.credentialKey3 || '',
         isActive: credential.isActive !== false,
       })
     }
@@ -67,6 +78,7 @@ function ChannelCard({ channel, credential, onSave, onSync, syncing }) {
       await onSave(channel.type, {
         key1: form.key1.includes('****') ? null : form.key1,
         key2: form.key2.includes('****') ? null : form.key2,
+        key3: form.key3 && !form.key3.includes('****') ? form.key3 : null,
         isActive: form.isActive,
       })
       setSaved(true)
@@ -143,7 +155,16 @@ function ChannelCard({ channel, credential, onSave, onSync, syncing }) {
           className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
         >
           <span className={'material-symbols-outlined text-[16px]' + (syncing === channel.type ? ' animate-spin' : '')}>{syncing === channel.type ? 'refresh' : 'sync'}</span>
-          {syncing === channel.type ? '동기화 중...' : '지금 동기화'}
+          {syncing === channel.type ? '동기화 중...' : '월 동기화'}
+        </button>
+        <button
+          onClick={() => onDailySync(channel.type)}
+          disabled={syncing !== null || !credential?.credentialKey1}
+          className="flex items-center gap-1.5 rounded-lg border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+          title="선택한 기간의 일별 매출을 수집해 CFO·CEO 대시보드에 반영합니다"
+        >
+          <span className="material-symbols-outlined text-[16px]">calendar_month</span>
+          일별 수집
         </button>
       </div>
 
@@ -173,6 +194,14 @@ export default function ChannelApiSettingsPage() {
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
+  const [dailyFrom, setDailyFrom] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+  })
+  const [dailyTo, setDailyTo] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   })
 
   const loadCredentials = useCallback(async () => {
@@ -223,6 +252,34 @@ export default function ChannelApiSettingsPage() {
     }
   }
 
+  const handleDailySyncOne = async (channelType) => {
+    setSyncing(channelType)
+    setSyncResult(null)
+    try {
+      const result = await syncDailyChannel(channelType, dailyFrom, dailyTo)
+      setSyncResult({ channel: channelType, ...result })
+      await loadCredentials()
+    } catch (e) {
+      setSyncResult({ channel: channelType, success: false, message: e.message })
+    } finally {
+      setSyncing(null)
+    }
+  }
+
+  const handleDailySyncAll = async () => {
+    setSyncing('ALL_DAILY')
+    setSyncResult(null)
+    try {
+      const result = await syncDailyAll(dailyFrom, dailyTo)
+      setSyncResult({ channel: 'ALL', success: true, results: result.results })
+      await loadCredentials()
+    } catch (e) {
+      setSyncResult({ channel: 'ALL', success: false, message: e.message })
+    } finally {
+      setSyncing(null)
+    }
+  }
+
   const getCredentialFor = (channelType) => credentials.find(c => c.channelType === channelType)
 
   return (
@@ -253,13 +310,54 @@ export default function ChannelApiSettingsPage() {
         </div>
       </div>
 
+      {/* 일별 수집 (CFO/CEO 대시보드 반영) */}
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-emerald-800 flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[18px]">calendar_month</span>
+              일별 매출 수집 → CFO·CEO 대시보드 반영
+            </h3>
+            <p className="mt-0.5 text-xs text-emerald-700">
+              기간을 선택해 일별 매출을 수집합니다 (최대 62일). 수집 데이터는 실무 입력의 매출 항목(자동수집)으로 저장됩니다.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={dailyFrom}
+              onChange={e => setDailyFrom(e.target.value)}
+              className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none"
+            />
+            <span className="text-sm text-emerald-700">~</span>
+            <input
+              type="date"
+              value={dailyTo}
+              onChange={e => setDailyTo(e.target.value)}
+              className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none"
+            />
+            <button
+              onClick={handleDailySyncAll}
+              disabled={syncing !== null}
+              className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 shadow-sm"
+            >
+              <span className={`material-symbols-outlined text-[18px]${syncing === 'ALL_DAILY' ? ' animate-spin' : ''}`}>
+                {syncing === 'ALL_DAILY' ? 'refresh' : 'download'}
+              </span>
+              {syncing === 'ALL_DAILY' ? '수집 중...' : '전체 채널 일별 수집'}
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Info Banner */}
       <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-700">
         <div className="flex items-start gap-2">
           <span className="material-symbols-outlined text-[18px] mt-0.5">info</span>
           <div>
-            <strong>자동 동기화 안내:</strong> 매일 새벽 3시에 등록된 모든 채널의 매출 데이터가 자동으로 수집됩니다.
-            수집된 데이터는 <strong>온라인 성과 탭</strong>에 자동으로 반영되며 인센티브 계산에 활용됩니다.
+            <strong>자동 동기화 안내:</strong> 매일 새벽 3시에 등록된 모든 채널의 매출 데이터가 자동으로 수집됩니다 (최근 4일 일별 매출 포함).
+            수집된 데이터는 <strong>CFO 재무관리 · CEO 전략 대시보드 · 온라인 성과</strong>에 자동 반영됩니다.
+            자동수집 채널은 실무 입력에서 같은 채널 매출을 수기로 입력하지 마세요 (이중집계 방지).
           </div>
         </div>
       </div>
@@ -301,11 +399,30 @@ export default function ChannelApiSettingsPage() {
               credential={getCredentialFor(channel.type)}
               onSave={handleSave}
               onSync={handleSyncOne}
+              onDailySync={handleDailySyncOne}
               syncing={syncing}
             />
           ))}
         </div>
       )}
+
+      {/* 지마켓/옥션 (ESM) 안내 */}
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+        <h3 className="text-sm font-semibold text-amber-800 mb-2 flex items-center gap-2">
+          <span className="material-symbols-outlined text-[18px]">pending_actions</span>
+          지마켓 · 옥션 (ESM) — API 키 발급 신청 필요
+        </h3>
+        <p className="text-sm text-amber-700">
+          지마켓/옥션은 ESM Trading API 키를 <strong>이메일 심사</strong>로 발급합니다. 아래 내용을 담아
+          <strong> etapihelp@gmail.com</strong>으로 신청하세요. 키가 발급되면 이 화면에 연동 카드가 추가됩니다.
+        </p>
+        <ul className="mt-2 space-y-1 text-sm text-amber-700 list-disc pl-5">
+          <li>필요 API 범위: 주문 조회 (RequestOrders)</li>
+          <li>ESM PLUS 마스터 ID (ESM+ 로그인 계정)</li>
+          <li>서비스 URL: https://naeil-dashboard.vercel.app</li>
+          <li>최근 3개월 매출 규모</li>
+        </ul>
+      </div>
 
       {/* Schedule Info */}
       <div className="rounded-xl border border-slate-200 bg-white p-5">
@@ -320,11 +437,11 @@ export default function ChannelApiSettingsPage() {
           </div>
           <div className="rounded-lg bg-slate-50 p-3">
             <div className="font-medium text-slate-700">수집 대상</div>
-            <div className="text-slate-500 mt-0.5">스마트스토어, 쿠팡, 아임웹</div>
+            <div className="text-slate-500 mt-0.5">스마트스토어, 쿠팡, 11번가, 아임웹</div>
           </div>
           <div className="rounded-lg bg-slate-50 p-3">
             <div className="font-medium text-slate-700">저장 위치</div>
-            <div className="text-slate-500 mt-0.5">온라인 성과 → 자동 저장</div>
+            <div className="text-slate-500 mt-0.5">CFO·CEO 대시보드 + 온라인 성과</div>
           </div>
         </div>
       </div>

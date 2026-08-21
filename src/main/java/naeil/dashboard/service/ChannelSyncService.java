@@ -25,6 +25,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
@@ -44,6 +46,12 @@ public class ChannelSyncService {
         log.info("[ChannelSync] Starting scheduled daily sync...");
         syncAllChannels(YearMonth.now().toString());
         syncAllInquiries();
+        try {
+            LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
+            syncDailyAll(today.minusDays(3), today);
+        } catch (Exception e) {
+            log.error("[ChannelSync] Scheduled daily sales sync failed: {}", e.getMessage(), e);
+        }
         log.info("[ChannelSync] Scheduled daily sync completed.");
     }
 
@@ -77,6 +85,7 @@ public class ChannelSyncService {
                 case "SMARTSTORE": syncResult = syncSmartStore(cred, targetMonth); break;
                 case "COUPANG":    syncResult = syncCoupang(cred, targetMonth);    break;
                 case "IMWEB":      syncResult = syncImweb(cred, targetMonth);      break;
+                case "ELEVENST":   syncResult = syncElevenStMonthly(cred, targetMonth); break;
                 default: syncResult = new SyncResult(false, "Unknown channel type: " + cred.getChannelType(), 0, 0);
             }
             cred.setLastSyncAt(LocalDateTime.now());
@@ -512,6 +521,349 @@ public class ChannelSyncService {
             }
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 일별 매출 수집 → field_sales_entry 적재 (CFO·CEO 대시보드 / 실무 입력 화면 연동)
+    // - created_by='API_SYNC' 행만 갱신하므로 직원 수기 입력과 충돌하지 않는다.
+    //   (단, 자동수집 채널은 같은 채널명으로 수기 입력하지 않을 것 — 이중집계 방지)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private static final Long DEFAULT_COMPANY_ID = 1L;
+    private static final String SYNC_CREATED_BY = "API_SYNC";
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+    private static final Map<String, String> CHANNEL_DISPLAY_NAMES = Map.of(
+            "SMARTSTORE", "스마트스토어",
+            "COUPANG", "쿠팡",
+            "IMWEB", "자사몰",
+            "ELEVENST", "11번가");
+
+    public Map<String, Object> syncDailyAll(LocalDate from, LocalDate to) {
+        Map<String, Object> results = new LinkedHashMap<>();
+        for (ChannelApiCredential cred : credentialRepo.findAllByOrderByChannelTypeAsc()) {
+            if (!Boolean.TRUE.equals(cred.getIsActive())) continue;
+            if (cred.getCredentialKey1() == null || cred.getCredentialKey1().isBlank()) continue;
+            if (!CHANNEL_DISPLAY_NAMES.containsKey(cred.getChannelType().toUpperCase())) continue;
+            results.put(cred.getChannelType(), syncDailyChannel(cred.getChannelType(), from, to));
+        }
+        return results;
+    }
+
+    public Map<String, Object> syncDailyChannel(String channelType, LocalDate from, LocalDate to) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        ChannelApiCredential cred = credentialRepo.findByChannelType(channelType.toUpperCase())
+                .orElseThrow(() -> new RuntimeException("등록된 인증정보 없음: " + channelType));
+        long totalAmount = 0L;
+        int totalOrders = 0;
+        int daysOk = 0;
+        List<String> errors = new ArrayList<>();
+        try {
+            String naverToken = null;
+            if ("SMARTSTORE".equalsIgnoreCase(channelType)) {
+                naverToken = getNaverAccessToken(cred.getCredentialKey1(), cred.getCredentialKey2());
+                if (naverToken == null) throw new RuntimeException("스마트스토어 인증 실패 (Client ID/Secret 확인)");
+            }
+            for (LocalDate day = from; !day.isAfter(to); day = day.plusDays(1)) {
+                try {
+                    DailySales sales;
+                    switch (channelType.toUpperCase()) {
+                        case "SMARTSTORE" -> sales = fetchSmartStoreDaily(naverToken, day);
+                        case "COUPANG" -> sales = fetchCoupangDaily(cred, day);
+                        case "IMWEB" -> sales = fetchImwebDaily(cred, day);
+                        case "ELEVENST" -> sales = fetchElevenStDaily(cred, day);
+                        default -> throw new RuntimeException("일별 수집 미지원 채널: " + channelType);
+                    }
+                    upsertDailySales(channelType, day, sales);
+                    totalAmount += sales.amount();
+                    totalOrders += sales.orderCount();
+                    daysOk++;
+                } catch (Exception e) {
+                    errors.add(day + ": " + e.getMessage());
+                    log.warn("[DailySync] {} {} failed: {}", channelType, day, e.getMessage());
+                }
+            }
+            for (YearMonth ym = YearMonth.from(from); !ym.isAfter(YearMonth.from(to)); ym = ym.plusMonths(1)) {
+                refreshMonthlyPerformanceFromDaily(channelType, ym);
+            }
+            boolean success = errors.isEmpty() || daysOk > 0;
+            String message = String.format("일별 수집 %d일 완료, 합계 %,d원 / 주문 %d건%s",
+                    daysOk, totalAmount, totalOrders,
+                    errors.isEmpty() ? "" : " (실패 " + errors.size() + "일: " + String.join("; ", errors.subList(0, Math.min(3, errors.size()))) + ")");
+            cred.setLastSyncAt(LocalDateTime.now());
+            cred.setLastSyncStatus(success ? "SUCCESS" : "FAILED");
+            cred.setLastSyncMessage(message);
+            credentialRepo.save(cred);
+            result.put("success", success);
+            result.put("message", message);
+            result.put("salesAmount", totalAmount);
+            result.put("orderCount", totalOrders);
+            result.put("daysSynced", daysOk);
+            result.put("errors", errors);
+        } catch (Exception e) {
+            log.error("[DailySync] {} error: {}", channelType, e.getMessage(), e);
+            cred.setLastSyncAt(LocalDateTime.now());
+            cred.setLastSyncStatus("ERROR");
+            cred.setLastSyncMessage(e.getMessage());
+            credentialRepo.save(cred);
+            result.put("success", false);
+            result.put("message", e.getMessage());
+        }
+        return result;
+    }
+
+    // ── 스마트스토어: 결제일 기준 일별 매출 (변경상태 PAYED 조회 → 상세 금액 조회) ──
+    private DailySales fetchSmartStoreDaily(String accessToken, LocalDate day) throws Exception {
+        List<String> productOrderIds = new ArrayList<>();
+        String lastChangedFrom = URLEncoder.encode(
+                day.atStartOfDay().atOffset(ZoneOffset.ofHours(9)).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME), StandardCharsets.UTF_8);
+        String lastChangedTo = URLEncoder.encode(
+                day.atTime(23, 59, 59).atOffset(ZoneOffset.ofHours(9)).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME), StandardCharsets.UTF_8);
+        Long moreSequence = null;
+        String moreFrom = null;
+        for (int page = 0; page < 30; page++) {
+            StringBuilder url = new StringBuilder("https://api.commerce.naver.com/external/v1/pay-order/seller/product-orders/last-changed-statuses")
+                    .append("?lastChangedFrom=").append(moreFrom != null ? URLEncoder.encode(moreFrom, StandardCharsets.UTF_8) : lastChangedFrom)
+                    .append("&lastChangedTo=").append(lastChangedTo)
+                    .append("&lastChangedType=PAYED");
+            if (moreSequence != null) url.append("&moreSequence=").append(moreSequence);
+            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url.toString()))
+                    .header("Authorization", "Bearer " + accessToken).GET().build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                throw new RuntimeException("스마트스토어 주문조회 HTTP " + response.statusCode() + ": " + truncate(response.body(), 200));
+            }
+            JsonNode data = objectMapper.readTree(response.body()).path("data");
+            JsonNode statuses = data.path("lastChangeStatuses");
+            if (statuses.isArray()) {
+                for (JsonNode s : statuses) {
+                    String id = s.path("productOrderId").asText("");
+                    if (!id.isBlank()) productOrderIds.add(id);
+                }
+            }
+            JsonNode more = data.path("more");
+            if (more.isMissingNode() || more.isNull()) break;
+            moreSequence = more.path("moreSequence").isMissingNode() ? null : more.path("moreSequence").asLong();
+            moreFrom = more.path("moreFrom").asText(null);
+            if (moreFrom == null) break;
+        }
+        long total = 0L;
+        int count = 0;
+        for (int i = 0; i < productOrderIds.size(); i += 300) {
+            List<String> chunk = productOrderIds.subList(i, Math.min(i + 300, productOrderIds.size()));
+            String body = objectMapper.writeValueAsString(Map.of("productOrderIds", chunk));
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.commerce.naver.com/external/v1/pay-order/seller/product-orders/query"))
+                    .header("Authorization", "Bearer " + accessToken)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body)).build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                throw new RuntimeException("스마트스토어 주문상세 HTTP " + response.statusCode() + ": " + truncate(response.body(), 200));
+            }
+            JsonNode data = objectMapper.readTree(response.body()).path("data");
+            if (data.isArray()) {
+                for (JsonNode n : data) {
+                    JsonNode po = n.path("productOrder");
+                    long amt = po.path("totalPaymentAmount").asLong(0);
+                    if (amt == 0) amt = n.path("order").path("generalPaymentAmount").asLong(0);
+                    total += amt;
+                    count++;
+                }
+            }
+        }
+        return new DailySales(total, count);
+    }
+
+    // ── 쿠팡: 주문 생성일 기준 일별 매출 (상태별 발주서 조회 합산, nextToken 페이지네이션) ──
+    private DailySales fetchCoupangDaily(ChannelApiCredential cred, LocalDate day) throws Exception {
+        String accessKey = cred.getCredentialKey1();
+        String secretKey = cred.getCredentialKey2();
+        String vendorId = cred.getCredentialKey3();
+        if (vendorId == null || vendorId.isBlank()) {
+            throw new RuntimeException("쿠팡 업체코드(Vendor ID, A로 시작)를 인증정보 3번 칸에 등록 필요");
+        }
+        String[] statuses = {"ACCEPT", "INSTRUCT", "DEPARTURE", "DELIVERING", "FINAL_DELIVERY"};
+        long total = 0L;
+        Set<String> orderIds = new HashSet<>();
+        for (String status : statuses) {
+            String nextToken = null;
+            for (int page = 0; page < 30; page++) {
+                String path = "/v2/providers/openapi/apis/api/v4/vendors/" + vendorId + "/ordersheets";
+                StringBuilder query = new StringBuilder("?createdAtFrom=").append(day)
+                        .append("&createdAtTo=").append(day)
+                        .append("&status=").append(status)
+                        .append("&maxPerPage=50");
+                if (nextToken != null && !nextToken.isBlank()) query.append("&nextToken=").append(nextToken);
+                java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyMMdd'T'HHmmss'Z'");
+                sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
+                String datetime = sdf.format(new java.util.Date());
+                String message = datetime + "GET" + path + query;
+                String signature = hmacSha256Hex(message, secretKey);
+                String authorization = String.format("CEA algorithm=HmacSHA256, access-key=%s, signed-date=%s, signature=%s",
+                        accessKey, datetime, signature);
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create("https://api-gateway.coupang.com" + path + query))
+                        .header("Authorization", authorization)
+                        .header("Content-Type", "application/json").GET().build();
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() != 200) {
+                    throw new RuntimeException("쿠팡 발주서조회(" + status + ") HTTP " + response.statusCode() + ": " + truncate(response.body(), 200));
+                }
+                JsonNode json = objectMapper.readTree(response.body());
+                JsonNode data = json.path("data");
+                if (data.isArray()) {
+                    for (JsonNode sheet : data) {
+                        long sheetAmount = 0L;
+                        JsonNode items = sheet.path("orderItems");
+                        if (items.isArray()) {
+                            for (JsonNode item : items) {
+                                long orderPrice = item.path("orderPrice").asLong(0);
+                                if (orderPrice == 0) {
+                                    orderPrice = item.path("salesPrice").asLong(0) * Math.max(1, item.path("shippingCount").asInt(1));
+                                }
+                                sheetAmount += orderPrice;
+                            }
+                        }
+                        total += sheetAmount;
+                        String orderId = sheet.path("orderId").asText("");
+                        if (!orderId.isBlank()) orderIds.add(orderId);
+                    }
+                }
+                nextToken = json.path("nextToken").asText(null);
+                if (nextToken == null || nextToken.isBlank()) break;
+            }
+        }
+        return new DailySales(total, orderIds.size());
+    }
+
+    // ── 아임웹: 기존 월별 로직의 일 단위 버전 ──
+    private DailySales fetchImwebDaily(ChannelApiCredential cred, LocalDate day) throws Exception {
+        String apiKey = cred.getCredentialKey1();
+        String tokenBody = "{\"key\":\"" + apiKey + "\",\"secret\":\"" + (cred.getCredentialKey2() != null ? cred.getCredentialKey2() : "") + "\"}";
+        HttpRequest tokenReq = HttpRequest.newBuilder().uri(URI.create("https://api.imweb.me/v2/auth"))
+                .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(tokenBody)).build();
+        HttpResponse<String> tokenResp = httpClient.send(tokenReq, HttpResponse.BodyHandlers.ofString());
+        if (tokenResp.statusCode() != 200) throw new RuntimeException("아임웹 인증 실패 HTTP " + tokenResp.statusCode());
+        String accessToken = objectMapper.readTree(tokenResp.body()).path("data").path("access_token").asText();
+        if (accessToken == null || accessToken.isBlank()) throw new RuntimeException("아임웹 access_token 없음");
+        long startTs = day.atStartOfDay(KST).toEpochSecond();
+        long endTs = day.atTime(23, 59, 59).atZone(KST).toEpochSecond();
+        String ordersUrl = String.format("https://api.imweb.me/v2/shop/orders?order_status=pay_done&date_type=order_date&start_date=%d&end_date=%d", startTs, endTs);
+        HttpRequest ordersReq = HttpRequest.newBuilder().uri(URI.create(ordersUrl)).header("access-token", accessToken).GET().build();
+        HttpResponse<String> ordersResp = httpClient.send(ordersReq, HttpResponse.BodyHandlers.ofString());
+        long total = 0L;
+        int count = 0;
+        if (ordersResp.statusCode() == 200) {
+            JsonNode list = objectMapper.readTree(ordersResp.body()).path("data").path("list");
+            if (list.isArray()) {
+                for (JsonNode o : list) { total += o.path("order_price").asLong(0); count++; }
+            }
+        } else {
+            throw new RuntimeException("아임웹 주문조회 HTTP " + ordersResp.statusCode());
+        }
+        return new DailySales(total, count);
+    }
+
+    // ── 11번가: 결제완료 주문조회 (오픈API, XML 응답) ──
+    private DailySales fetchElevenStDaily(ChannelApiCredential cred, LocalDate day) throws Exception {
+        String apiKey = cred.getCredentialKey1();
+        DateTimeFormatter hourFmt = DateTimeFormatter.ofPattern("yyyyMMddHH");
+        String start = day.atStartOfDay().format(hourFmt);
+        String end = day.atTime(23, 0).format(hourFmt);
+        String url = "https://openapi.11st.co.kr/rest/ordservices/complete/" + start + "/" + end;
+        HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url))
+                .header("openapikey", apiKey)
+                .header("Content-Type", "text/xml").GET().build();
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            throw new RuntimeException("11번가 주문조회 HTTP " + response.statusCode() + ": " + truncate(response.body(), 200));
+        }
+        String body = response.body();
+        if (body.contains("<ErrorMessage>") || body.contains("<message>") && body.contains("ERROR")) {
+            throw new RuntimeException("11번가 API 오류: " + truncate(body.replaceAll("<[^>]+>", " ").trim(), 200));
+        }
+        javax.xml.parsers.DocumentBuilderFactory dbf = javax.xml.parsers.DocumentBuilderFactory.newInstance();
+        dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        dbf.setNamespaceAware(true);
+        org.w3c.dom.Document doc = dbf.newDocumentBuilder()
+                .parse(new java.io.ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8)));
+        org.w3c.dom.NodeList orders = doc.getElementsByTagNameNS("*", "order");
+        if (orders.getLength() == 0) orders = doc.getElementsByTagName("order");
+        long total = 0L;
+        int count = 0;
+        for (int i = 0; i < orders.getLength(); i++) {
+            org.w3c.dom.Element order = (org.w3c.dom.Element) orders.item(i);
+            long amt = readXmlLong(order, "ordAmt");
+            if (amt == 0) amt = readXmlLong(order, "ordPayAmt");
+            if (amt == 0) amt = readXmlLong(order, "selPrc") * Math.max(1, (int) readXmlLong(order, "ordQty"));
+            total += amt;
+            count++;
+        }
+        return new DailySales(total, count);
+    }
+
+    private long readXmlLong(org.w3c.dom.Element parent, String tagName) {
+        org.w3c.dom.NodeList nodes = parent.getElementsByTagNameNS("*", tagName);
+        if (nodes.getLength() == 0) nodes = parent.getElementsByTagName(tagName);
+        if (nodes.getLength() == 0) return 0L;
+        String text = nodes.item(0).getTextContent();
+        if (text == null || text.isBlank()) return 0L;
+        try {
+            return new java.math.BigDecimal(text.trim()).longValue();
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
+    }
+
+    private SyncResult syncElevenStMonthly(ChannelApiCredential cred, String targetMonth) throws Exception {
+        YearMonth ym = YearMonth.parse(targetMonth);
+        LocalDate from = ym.atDay(1);
+        LocalDate to = ym.atEndOfMonth().isAfter(LocalDate.now(KST)) ? LocalDate.now(KST) : ym.atEndOfMonth();
+        long total = 0L;
+        int count = 0;
+        for (LocalDate day = from; !day.isAfter(to); day = day.plusDays(1)) {
+            DailySales sales = fetchElevenStDaily(cred, day);
+            upsertDailySales("ELEVENST", day, sales);
+            total += sales.amount();
+            count += sales.orderCount();
+        }
+        saveOrUpdateChannelPerformance("11번가", targetMonth, total, count, "ELEVENST");
+        return new SyncResult(true, String.format("11번가 sync OK: %d orders, %d won", count, total), total, count);
+    }
+
+    @Transactional
+    protected void upsertDailySales(String channelType, LocalDate day, DailySales sales) {
+        String channelName = CHANNEL_DISPLAY_NAMES.getOrDefault(channelType.toUpperCase(), channelType);
+        jdbcTemplate.update(
+                "DELETE FROM field_sales_entry WHERE company_id = ? AND channel_name = ? AND entry_date = ? AND created_by = ?",
+                DEFAULT_COMPANY_ID, channelName, java.sql.Date.valueOf(day), SYNC_CREATED_BY);
+        if (sales.amount() > 0 || sales.orderCount() > 0) {
+            jdbcTemplate.update(
+                    "INSERT INTO field_sales_entry (company_id, channel_name, entry_date, quantity, sales_amount, memo, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    DEFAULT_COMPANY_ID, channelName, java.sql.Date.valueOf(day), sales.orderCount(), sales.amount(),
+                    "채널 API 자동수집 (주문 " + sales.orderCount() + "건)", SYNC_CREATED_BY);
+        }
+    }
+
+    private void refreshMonthlyPerformanceFromDaily(String channelType, YearMonth ym) {
+        String channelName = CHANNEL_DISPLAY_NAMES.getOrDefault(channelType.toUpperCase(), channelType);
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+                "SELECT COALESCE(SUM(sales_amount), 0) AS total, COALESCE(SUM(quantity), 0) AS orders " +
+                        "FROM field_sales_entry WHERE company_id = ? AND channel_name = ? AND created_by = ? AND entry_date BETWEEN ? AND ?",
+                DEFAULT_COMPANY_ID, channelName, SYNC_CREATED_BY,
+                java.sql.Date.valueOf(ym.atDay(1)), java.sql.Date.valueOf(ym.atEndOfMonth()));
+        long total = ((Number) row.getOrDefault("total", 0)).longValue();
+        int orders = ((Number) row.getOrDefault("orders", 0)).intValue();
+        if (total > 0 || orders > 0) {
+            saveOrUpdateChannelPerformance(channelName, ym.toString(), total, orders, channelType.toUpperCase());
+        }
+    }
+
+    private String truncate(String value, int max) {
+        if (value == null) return "";
+        return value.length() <= max ? value : value.substring(0, max) + "…";
+    }
+
+    private record DailySales(long amount, int orderCount) {}
 
     private record SyncResult(boolean success, String message, long salesAmount, int orderCount) {}
 }
