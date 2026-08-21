@@ -82,7 +82,8 @@ public class ChannelSyncService {
         try {
             SyncResult syncResult;
             switch (cred.getChannelType().toUpperCase()) {
-                case "SMARTSTORE": syncResult = syncSmartStore(cred, targetMonth); break;
+                case "SMARTSTORE":
+                case "SMARTSTORE_2": syncResult = syncSmartStore(cred, targetMonth); break;
                 case "COUPANG":    syncResult = syncCoupang(cred, targetMonth);    break;
                 case "IMWEB":      syncResult = syncImweb(cred, targetMonth);      break;
                 case "ELEVENST":   syncResult = syncElevenStMonthly(cred, targetMonth); break;
@@ -158,7 +159,7 @@ public class ChannelSyncService {
             log.warn("[SmartStore] Orders API {} | body: {}", ordersResponse.statusCode(), ordersResponse.body());
         }
 
-        saveOrUpdateChannelPerformance("스마트스토어", targetMonth, totalSales, orderCount, "SMARTSTORE");
+        saveOrUpdateChannelPerformance(displayName(cred.getChannelType()), targetMonth, totalSales, orderCount, cred.getChannelType().toUpperCase());
         return new SyncResult(true, String.format("SmartStore sync OK: %d orders, %d won", orderCount, totalSales), totalSales, orderCount);
     }
 
@@ -168,15 +169,15 @@ public class ChannelSyncService {
         List<ChannelApiCredential> credentials = credentialRepo.findAllByOrderByChannelTypeAsc();
         for (ChannelApiCredential cred : credentials) {
             if (!Boolean.TRUE.equals(cred.getIsActive())) continue;
-            if (!"SMARTSTORE".equalsIgnoreCase(cred.getChannelType())) continue;
+            if (!cred.getChannelType().toUpperCase().startsWith("SMARTSTORE")) continue;
             if (cred.getCredentialKey1() == null || cred.getCredentialKey1().isBlank()) continue;
             try {
                 int synced = syncSmartStoreInquiries(cred);
-                results.put("SMARTSTORE", Map.of("success", true, "synced", synced));
-                log.info("[InquirySync] SmartStore: {} inquiries synced", synced);
+                results.put(cred.getChannelType(), Map.of("success", true, "synced", synced));
+                log.info("[InquirySync] {}: {} inquiries synced", cred.getChannelType(), synced);
             } catch (Exception e) {
-                log.error("[InquirySync] SmartStore error: {}", e.getMessage(), e);
-                results.put("SMARTSTORE", Map.of("success", false, "message", e.getMessage()));
+                log.error("[InquirySync] {} error: {}", cred.getChannelType(), e.getMessage(), e);
+                results.put(cred.getChannelType(), Map.of("success", false, "message", e.getMessage()));
             }
         }
         return results;
@@ -337,7 +338,20 @@ public class ChannelSyncService {
 
         if (tokenResponse.statusCode() != 200) {
             log.error("[Naver API Error] HTTP={} body={}", tokenResponse.statusCode(), tokenResponse.body());
-            return null;
+            String hint = "";
+            try {
+                JsonNode err = objectMapper.readTree(tokenResponse.body());
+                String code = err.path("code").asText("");
+                String msg = err.path("message").asText("");
+                if ("GW.IP_NOT_ALLOWED".equals(code)) {
+                    hint = " — 커머스API센터 애플리케이션의 'API 호출 IP'에 서버 IP(74.220.52.0/24, 74.220.60.0/24)를 등록하세요";
+                }
+                throw new RuntimeException("네이버 인증 실패 [" + code + "] " + msg + hint);
+            } catch (RuntimeException re) {
+                throw re;
+            } catch (Exception parseError) {
+                throw new RuntimeException("네이버 인증 실패 HTTP " + tokenResponse.statusCode());
+            }
         }
 
         JsonNode tokenJson = objectMapper.readTree(tokenResponse.body());
@@ -423,8 +437,8 @@ public class ChannelSyncService {
     public ChannelApiCredential saveCredentials(String channelType, String key1, String key2, String key3, String key4, Boolean isActive) {
         ChannelApiCredential cred = credentialRepo.findByChannelType(channelType.toUpperCase())
                 .orElse(ChannelApiCredential.builder().channelType(channelType.toUpperCase()).build());
-        if (key1 != null) cred.setCredentialKey1(key1); if (key2 != null) cred.setCredentialKey2(key2);
-        if (key3 != null) cred.setCredentialKey3(key3); if (key4 != null) cred.setCredentialKey4(key4);
+        if (key1 != null) cred.setCredentialKey1(key1.trim()); if (key2 != null) cred.setCredentialKey2(key2.trim());
+        if (key3 != null) cred.setCredentialKey3(key3.trim()); if (key4 != null) cred.setCredentialKey4(key4.trim());
         if (isActive != null) cred.setIsActive(isActive);
         return credentialRepo.save(cred);
     }
@@ -432,8 +446,12 @@ public class ChannelSyncService {
     // ── 네이버 전자서명: BCrypt(clientId_timestamp, clientSecret) → Base64(URL-safe) ──
     private String generateNaverSign(String clientId, String clientSecret, long timestamp) {
         String password = clientId + "_" + timestamp;
-        String hashed = BCrypt.hashpw(password, clientSecret);
-        return Base64.getUrlEncoder().encodeToString(hashed.getBytes(StandardCharsets.UTF_8));
+        try {
+            String hashed = BCrypt.hashpw(password, clientSecret);
+            return Base64.getUrlEncoder().encodeToString(hashed.getBytes(StandardCharsets.UTF_8));
+        } catch (IllegalArgumentException e) {
+            throw new RuntimeException("Client Secret 형식 오류 — 커머스API센터에서 발급된 '$2a$'로 시작하는 Client Secret인지 확인하세요 (" + e.getMessage() + ")");
+        }
     }
 
     // HmacSHA256 → HEX (쿠팡 전용)
@@ -532,10 +550,15 @@ public class ChannelSyncService {
     private static final String SYNC_CREATED_BY = "API_SYNC";
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private static final Map<String, String> CHANNEL_DISPLAY_NAMES = Map.of(
-            "SMARTSTORE", "스마트스토어",
+            "SMARTSTORE", "스마트스토어(하이프리)",
+            "SMARTSTORE_2", "스마트스토어(국민한상)",
             "COUPANG", "쿠팡",
             "IMWEB", "자사몰",
             "ELEVENST", "11번가");
+
+    private String displayName(String channelType) {
+        return CHANNEL_DISPLAY_NAMES.getOrDefault(channelType.toUpperCase(), channelType);
+    }
 
     public Map<String, Object> syncDailyAll(LocalDate from, LocalDate to) {
         Map<String, Object> results = new LinkedHashMap<>();
@@ -558,7 +581,7 @@ public class ChannelSyncService {
         List<String> errors = new ArrayList<>();
         try {
             String naverToken = null;
-            if ("SMARTSTORE".equalsIgnoreCase(channelType)) {
+            if (channelType.toUpperCase().startsWith("SMARTSTORE")) {
                 naverToken = getNaverAccessToken(cred.getCredentialKey1(), cred.getCredentialKey2());
                 if (naverToken == null) throw new RuntimeException("스마트스토어 인증 실패 (Client ID/Secret 확인)");
             }
@@ -566,7 +589,7 @@ public class ChannelSyncService {
                 try {
                     DailySales sales;
                     switch (channelType.toUpperCase()) {
-                        case "SMARTSTORE" -> sales = fetchSmartStoreDaily(naverToken, day);
+                        case "SMARTSTORE", "SMARTSTORE_2" -> sales = fetchSmartStoreDaily(naverToken, day);
                         case "COUPANG" -> sales = fetchCoupangDaily(cred, day);
                         case "IMWEB" -> sales = fetchImwebDaily(cred, day);
                         case "ELEVENST" -> sales = fetchElevenStDaily(cred, day);

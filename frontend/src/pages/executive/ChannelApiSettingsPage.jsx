@@ -4,12 +4,22 @@ import { getChannelCredentials, saveChannelCredentials, syncAllChannels, syncCha
 const CHANNELS = [
   {
     type: 'SMARTSTORE',
-    name: '스마트스토어',
+    name: '스마트스토어 (하이프리)',
     icon: '🛒',
-    description: '네이버 커머스API 연동 (커머스API센터에서 애플리케이션 등록 후 발급)',
+    description: '하이프리 계정 — 네이버 커머스API 연동',
     fields: [
-      { key: 'key1', label: 'Client ID', placeholder: '스마트스토어 Client ID 입력', type: 'text' },
-      { key: 'key2', label: 'Client Secret', placeholder: '스마트스토어 Client Secret 입력', type: 'password' },
+      { key: 'key1', label: 'Client ID', placeholder: '하이프리 계정 Client ID 입력', type: 'text' },
+      { key: 'key2', label: 'Client Secret', placeholder: '하이프리 계정 Client Secret 입력', type: 'password' },
+    ],
+  },
+  {
+    type: 'SMARTSTORE_2',
+    name: '스마트스토어 (국민한상)',
+    icon: '🛒',
+    description: '국민한상 계정 — 네이버 커머스API 연동',
+    fields: [
+      { key: 'key1', label: 'Client ID', placeholder: '국민한상 계정 Client ID 입력', type: 'text' },
+      { key: 'key2', label: 'Client Secret', placeholder: '국민한상 계정 Client Secret 입력', type: 'password' },
     ],
   },
   {
@@ -405,6 +415,25 @@ export default function ChannelApiSettingsPage() {
           ))}
         </div>
       )}
+
+      {/* 네이버 IP 등록 안내 */}
+      <div className="rounded-xl border border-sky-200 bg-sky-50 p-5">
+        <h3 className="text-sm font-semibold text-sky-800 mb-2 flex items-center gap-2">
+          <span className="material-symbols-outlined text-[18px]">lan</span>
+          스마트스토어 필수 설정 — API 호출 IP 등록
+        </h3>
+        <p className="text-sm text-sky-700">
+          커머스API센터(apicenter.commerce.naver.com) → 내 애플리케이션 → <strong>API 호출 IP</strong>에 아래 서버 IP 대역을 등록해야
+          인증이 통과됩니다 (미등록 시 <code>GW.IP_NOT_ALLOWED</code> 오류).
+        </p>
+        <div className="mt-2 flex gap-2">
+          <code className="rounded bg-white px-2 py-1 text-sm text-sky-800 border border-sky-200">74.220.52.0/24</code>
+          <code className="rounded bg-white px-2 py-1 text-sm text-sky-800 border border-sky-200">74.220.60.0/24</code>
+        </div>
+        <p className="mt-2 text-xs text-sky-600">
+          대역(/24) 입력이 안 되는 경우 고정 IP(Render Dedicated IP) 추가가 필요합니다 — 관리자에게 문의.
+        </p>
+      </div>
 
       {/* 지마켓/옥션 (ESM) 안내 */}
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
