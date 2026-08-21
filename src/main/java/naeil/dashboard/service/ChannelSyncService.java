@@ -67,7 +67,32 @@ public class ChannelSyncService {
     }
 
     private HttpResponse<String> sendNaver(HttpRequest request) throws Exception {
-        return naverClient().send(request, HttpResponse.BodyHandlers.ofString());
+        for (int attempt = 0; ; attempt++) {
+            naverThrottle();
+            HttpResponse<String> response = naverClient().send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 429 && attempt < 4) {
+                long backoffMs = 1000L * (1L << attempt); // 1s, 2s, 4s, 8s
+                log.warn("[NaverThrottle] 429 rate limit — {}ms 대기 후 재시도 ({}차)", backoffMs, attempt + 1);
+                Thread.sleep(backoffMs);
+                continue;
+            }
+            return response;
+        }
+    }
+
+    // 네이버 커머스API 호출 간 최소 간격 보장 (초당 호출 제한 대응)
+    private long lastNaverCallAt = 0L;
+
+    private synchronized void naverThrottle() {
+        long wait = 400 - (System.currentTimeMillis() - lastNaverCallAt);
+        if (wait > 0) {
+            try {
+                Thread.sleep(wait);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        lastNaverCallAt = System.currentTimeMillis();
     }
 
     @Scheduled(cron = "0 0 3 * * *", zone = "Asia/Seoul")
