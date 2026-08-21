@@ -16,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.net.InetSocketAddress;
+import java.net.ProxySelector;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -40,6 +42,33 @@ public class ChannelSyncService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient = HttpClient.newHttpClient();
+    private volatile HttpClient naverHttpClient;
+
+    // ── 네이버 커머스API 전용 클라이언트 ──────────────────────────────────────
+    // 네이버는 API 호출 IP를 최대 3개까지만 허용 → 고정 IP 프록시(VPS) 경유가 필요하다.
+    // 환경변수 NAVER_PROXY_HOST / NAVER_PROXY_PORT 가 설정되면 네이버 호출만 프록시를 통과하고,
+    // 미설정 시 기존과 동일하게 직접 호출한다 (다른 채널 API는 항상 직접 호출).
+    private HttpClient naverClient() {
+        HttpClient client = naverHttpClient;
+        if (client == null) {
+            HttpClient.Builder builder = HttpClient.newBuilder();
+            String proxyHost = System.getenv("NAVER_PROXY_HOST");
+            String proxyPort = System.getenv("NAVER_PROXY_PORT");
+            if (proxyHost != null && !proxyHost.isBlank()) {
+                int port = 8888;
+                try { port = Integer.parseInt(proxyPort.trim()); } catch (Exception ignored) {}
+                builder.proxy(ProxySelector.of(new InetSocketAddress(proxyHost.trim(), port)));
+                log.info("[NaverProxy] 네이버 API 호출을 고정 IP 프록시 {}:{} 경유로 전환", proxyHost.trim(), port);
+            }
+            client = builder.build();
+            naverHttpClient = client;
+        }
+        return client;
+    }
+
+    private HttpResponse<String> sendNaver(HttpRequest request) throws Exception {
+        return naverClient().send(request, HttpResponse.BodyHandlers.ofString());
+    }
 
     @Scheduled(cron = "0 0 3 * * *", zone = "Asia/Seoul")
     public void scheduledDailySync() {
@@ -137,7 +166,7 @@ public class ChannelSyncService {
                 .header("Content-Type", "application/json")
                 .GET().build();
 
-        HttpResponse<String> ordersResponse = httpClient.send(ordersRequest, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> ordersResponse = sendNaver(ordersRequest);
 
         long totalSales = 0L;
         int orderCount = 0;
@@ -210,7 +239,7 @@ public class ChannelSyncService {
                 .header("Authorization", "Bearer " + accessToken)
                 .GET().build();
 
-        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> resp = sendNaver(req);
         log.info("[InquirySync] QnA API status={} body(앞200)={}", resp.statusCode(),
                 resp.body().substring(0, Math.min(200, resp.body().length())));
 
@@ -252,7 +281,7 @@ public class ChannelSyncService {
                 .header("Authorization", "Bearer " + accessToken)
                 .GET().build();
 
-        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> resp = sendNaver(req);
         log.info("[InquirySync] PayUserInquiry API status={} body(앞200)={}", resp.statusCode(),
                 resp.body().substring(0, Math.min(200, resp.body().length())));
 
@@ -332,7 +361,7 @@ public class ChannelSyncService {
                 .POST(HttpRequest.BodyPublishers.ofString(tokenBody))
                 .build();
 
-        HttpResponse<String> tokenResponse = httpClient.send(tokenRequest, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> tokenResponse = sendNaver(tokenRequest);
         log.info("[Naver Token] HTTP={} body(앞100)={}", tokenResponse.statusCode(),
                 tokenResponse.body().substring(0, Math.min(100, tokenResponse.body().length())));
 
@@ -518,7 +547,7 @@ public class ChannelSyncService {
                     .header("Authorization", "Bearer " + accessToken)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body)).build();
-            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> resp = sendNaver(req);
             log.info("[AnswerInquiry] pay-merchant answer HTTP={} body={}", resp.statusCode(), resp.body());
             if (resp.statusCode() >= 300) {
                 throw new RuntimeException("네이버 구매자 문의 답변 실패: HTTP " + resp.statusCode() + " | " + resp.body());
@@ -532,7 +561,7 @@ public class ChannelSyncService {
                     .header("Authorization", "Bearer " + accessToken)
                     .header("Content-Type", "application/json")
                     .method("PUT", HttpRequest.BodyPublishers.ofString(body)).build();
-            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> resp = sendNaver(req);
             log.info("[AnswerInquiry] qna answer HTTP={} body={}", resp.statusCode(), resp.body());
             if (resp.statusCode() >= 300) {
                 throw new RuntimeException("네이버 상품 문의 답변 실패: HTTP " + resp.statusCode() + " | " + resp.body());
@@ -650,7 +679,7 @@ public class ChannelSyncService {
             if (moreSequence != null) url.append("&moreSequence=").append(moreSequence);
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url.toString()))
                     .header("Authorization", "Bearer " + accessToken).GET().build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendNaver(request);
             if (response.statusCode() != 200) {
                 throw new RuntimeException("스마트스토어 주문조회 HTTP " + response.statusCode() + ": " + truncate(response.body(), 200));
             }
@@ -678,7 +707,7 @@ public class ChannelSyncService {
                     .header("Authorization", "Bearer " + accessToken)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body)).build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendNaver(request);
             if (response.statusCode() != 200) {
                 throw new RuntimeException("스마트스토어 주문상세 HTTP " + response.statusCode() + ": " + truncate(response.body(), 200));
             }
