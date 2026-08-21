@@ -690,10 +690,11 @@ public class ChannelSyncService {
     // ── 스마트스토어: 결제일 기준 일별 매출 (변경상태 PAYED 조회 → 상세 금액 조회) ──
     private DailySales fetchSmartStoreDaily(String accessToken, LocalDate day) throws Exception {
         List<String> productOrderIds = new ArrayList<>();
+        DateTimeFormatter naverIso = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
         String lastChangedFrom = URLEncoder.encode(
-                day.atStartOfDay().atOffset(ZoneOffset.ofHours(9)).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME), StandardCharsets.UTF_8);
+                day.atStartOfDay().atOffset(ZoneOffset.ofHours(9)).format(naverIso), StandardCharsets.UTF_8);
         String lastChangedTo = URLEncoder.encode(
-                day.atTime(23, 59, 59).atOffset(ZoneOffset.ofHours(9)).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME), StandardCharsets.UTF_8);
+                day.atTime(23, 59, 59).atOffset(ZoneOffset.ofHours(9)).format(naverIso), StandardCharsets.UTF_8);
         Long moreSequence = null;
         String moreFrom = null;
         for (int page = 0; page < 30; page++) {
