@@ -933,7 +933,25 @@ public class ChannelSyncService {
         int orders = ((Number) row.getOrDefault("orders", 0)).intValue();
         if (total > 0 || orders > 0) {
             saveOrUpdateChannelPerformance(channelName, ym.toString(), total, orders, channelType.toUpperCase());
+            upsertExecutiveChannelPerformance(channelName, ym, total, orders);
         }
+    }
+
+    // 실시간 매출 페이지(executive_channel_performance)에도 월별 합계 반영
+    private void upsertExecutiveChannelPerformance(String channelName, YearMonth ym, long total, int orders) {
+        java.sql.Date reportMonth = java.sql.Date.valueOf(ym.atDay(1));
+        long avg = orders > 0 ? total / orders : 0L;
+        int updated = jdbcTemplate.update(
+                "UPDATE executive_channel_performance SET sales_amount = ?, order_count = ?, average_order_value = ? " +
+                        "WHERE company_id = ? AND channel_name = ? AND report_month = ?",
+                total, orders, avg, DEFAULT_COMPANY_ID, channelName, reportMonth);
+        if (updated == 0) {
+            jdbcTemplate.update(
+                    "INSERT INTO executive_channel_performance (company_id, channel_name, sales_amount, order_count, average_order_value, report_month) " +
+                            "VALUES (?, ?, ?, ?, ?, ?)",
+                    DEFAULT_COMPANY_ID, channelName, total, orders, avg, reportMonth);
+        }
+        log.info("[ChannelSync] 실시간 매출 반영: {} {} {}원/{}건", channelName, ym, total, orders);
     }
 
     private String truncate(String value, int max) {
