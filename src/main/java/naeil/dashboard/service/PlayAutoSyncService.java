@@ -604,6 +604,66 @@ public class PlayAutoSyncService {
         }
     }
 
+    /**
+     * 채널 직연동(네이버/쿠팡 등) 주문 상세를 orders 테이블에 적재한다.
+     * PlayAuto와 동일한 상점/상품/브랜드 매핑을 재사용하므로 판매 분석 페이지에 그대로 반영된다.
+     */
+    @Transactional
+    public void upsertDirectOrder(
+            Long companyId,
+            String uniq,
+            String shopCode,
+            String shopName,
+            String productName,
+            String skuCd,
+            Integer quantity,
+            BigDecimal payAmt,
+            LocalDateTime payTime,
+            String ordStatus
+    ) {
+        String safeSku = isBlank(skuCd) ? uniq : skuCd;
+        Shop shop = resolveShop(companyId, shopCode, shopName);
+        Product product = resolveProduct(companyId, null, safeSku).orElseGet(() -> {
+            Brand brand = ensureDefaultBrand(companyId);
+            return productRepository.save(Product.builder()
+                    .companyId(companyId)
+                    .brandId(brand.getId())
+                    .productName(isBlank(productName) ? "직연동 상품" : productName)
+                    .skuCd(blankToNull(safeSku))
+                    .build());
+        });
+        Orders existing = ordersRepository.findByUniq(uniq).orElse(null);
+        if (existing != null) {
+            existing.refreshFromSync(product.getBrandId(), shop.getId(), product.getId(), safeSku,
+                    payAmt, BigDecimal.ZERO, BigDecimal.ZERO, payAmt, quantity,
+                    payTime, payTime, payTime, ordStatus);
+            ordersRepository.save(existing);
+            return;
+        }
+        Orders order = Orders.builder()
+                .uniq(uniq)
+                .companyId(companyId)
+                .brandId(product.getBrandId())
+                .shopId(shop.getId())
+                .productId(product.getId())
+                .skuCd(safeSku)
+                .grossAmt(payAmt)
+                .discountAmt(BigDecimal.ZERO)
+                .shippingFee(BigDecimal.ZERO)
+                .payAmt(payAmt)
+                .orderQuantity(quantity)
+                .ordStatus(ordStatus)
+                .ordTime(payTime)
+                .wdate(payTime)
+                .payTime(payTime)
+                .build();
+        try {
+            ordersRepository.save(order);
+        } catch (DataIntegrityViolationException e) {
+            log.warn("[DirectOrder] duplicate uniq={} — skip", uniq);
+        }
+    }
+
     private Brand resolveBrand(Long companyId, String brandName) {
         String normalizedBrandName = normalizeBrandName(brandName);
         return brandRepository.findByCompanyIdAndBrandName(companyId, normalizedBrandName)

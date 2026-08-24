@@ -40,6 +40,7 @@ public class ChannelSyncService {
     private final ChannelApiCredentialRepository credentialRepo;
     private final OnlineChannelPerformanceRepository onlineRepo;
     private final JdbcTemplate jdbcTemplate;
+    private final PlayAutoSyncService playAutoSyncService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private volatile HttpClient naverHttpClient;
@@ -643,7 +644,7 @@ public class ChannelSyncService {
                 try {
                     DailySales sales;
                     switch (channelType.toUpperCase()) {
-                        case "SMARTSTORE", "SMARTSTORE_2" -> sales = fetchSmartStoreDaily(naverToken, day);
+                        case "SMARTSTORE", "SMARTSTORE_2" -> sales = fetchSmartStoreDaily(naverToken, day, channelType);
                         case "COUPANG" -> sales = fetchCoupangDaily(cred, day);
                         case "IMWEB" -> sales = fetchImwebDaily(cred, day);
                         case "ELEVENST" -> sales = fetchElevenStDaily(cred, day);
@@ -688,7 +689,7 @@ public class ChannelSyncService {
     }
 
     // ── 스마트스토어: 결제일 기준 일별 매출 (변경상태 PAYED 조회 → 상세 금액 조회) ──
-    private DailySales fetchSmartStoreDaily(String accessToken, LocalDate day) throws Exception {
+    private DailySales fetchSmartStoreDaily(String accessToken, LocalDate day, String channelType) throws Exception {
         List<String> productOrderIds = new ArrayList<>();
         DateTimeFormatter naverIso = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
         String lastChangedFrom = URLEncoder.encode(
@@ -745,6 +746,29 @@ public class ChannelSyncService {
                     if (amt == 0) amt = n.path("order").path("generalPaymentAmount").asLong(0);
                     total += amt;
                     count++;
+                    // 주문 상세를 orders 테이블에 적재 → 판매 분석 페이지 반영
+                    try {
+                        String productOrderId = po.path("productOrderId").asText("");
+                        if (!productOrderId.isBlank()) {
+                            String pname = po.path("productName").asText("");
+                            if (pname.isBlank()) pname = n.path("order").path("productName").asText("네이버 상품");
+                            String option = po.path("productOption").asText("");
+                            if (!option.isBlank()) pname = pname + " / " + option;
+                            String sku = po.path("sellerProductCode").asText("");
+                            int qty = Math.max(1, po.path("quantity").asInt(1));
+                            java.time.LocalDateTime paidAt = day.atStartOfDay();
+                            String paymentDate = n.path("order").path("paymentDate").asText("");
+                            if (!paymentDate.isBlank()) {
+                                try { paidAt = java.time.OffsetDateTime.parse(paymentDate).toLocalDateTime(); } catch (Exception ignored) {}
+                            }
+                            playAutoSyncService.upsertDirectOrder(DEFAULT_COMPANY_ID, "NV-" + productOrderId,
+                                    "DIRECT_" + channelType.toUpperCase(), displayName(channelType),
+                                    pname, sku, qty, java.math.BigDecimal.valueOf(amt), paidAt,
+                                    po.path("productOrderStatus").asText("PAYED"));
+                        }
+                    } catch (Exception e) {
+                        log.warn("[DirectOrder] 네이버 주문 적재 실패: {}", e.getMessage());
+                    }
                 }
             }
         }
@@ -791,6 +815,12 @@ public class ChannelSyncService {
                 if (data.isArray()) {
                     for (JsonNode sheet : data) {
                         long sheetAmount = 0L;
+                        String orderId = sheet.path("orderId").asText("");
+                        java.time.LocalDateTime paidAt = day.atStartOfDay();
+                        String paidAtText = sheet.path("paidAt").asText("");
+                        if (!paidAtText.isBlank()) {
+                            try { paidAt = java.time.LocalDateTime.parse(paidAtText.length() > 19 ? paidAtText.substring(0, 19) : paidAtText); } catch (Exception ignored) {}
+                        }
                         JsonNode items = sheet.path("orderItems");
                         if (items.isArray()) {
                             for (JsonNode item : items) {
@@ -799,10 +829,23 @@ public class ChannelSyncService {
                                     orderPrice = item.path("salesPrice").asLong(0) * Math.max(1, item.path("shippingCount").asInt(1));
                                 }
                                 sheetAmount += orderPrice;
+                                // 주문 상세를 orders 테이블에 적재 → 판매 분석 페이지 반영
+                                try {
+                                    String vendorItemId = item.path("vendorItemId").asText("");
+                                    if (!orderId.isBlank() && !vendorItemId.isBlank()) {
+                                        String pname = item.path("vendorItemName").asText("쿠팡 상품");
+                                        String sku = item.path("externalVendorSkuCode").asText("");
+                                        int qty = Math.max(1, item.path("shippingCount").asInt(1));
+                                        playAutoSyncService.upsertDirectOrder(DEFAULT_COMPANY_ID, "CP-" + orderId + "-" + vendorItemId,
+                                                "DIRECT_COUPANG", "쿠팡", pname, sku, qty,
+                                                java.math.BigDecimal.valueOf(orderPrice), paidAt, status);
+                                    }
+                                } catch (Exception e) {
+                                    log.warn("[DirectOrder] 쿠팡 주문 적재 실패: {}", e.getMessage());
+                                }
                             }
                         }
                         total += sheetAmount;
-                        String orderId = sheet.path("orderId").asText("");
                         if (!orderId.isBlank()) orderIds.add(orderId);
                     }
                 }
