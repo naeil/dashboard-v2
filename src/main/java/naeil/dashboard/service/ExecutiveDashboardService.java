@@ -1221,7 +1221,7 @@ public class ExecutiveDashboardService {
                         ROUND(COALESCE(SUM(net_profit), 0), 0) AS estimated_operating_profit
                     FROM executive_channel_performance
                     WHERE company_id = ?
-                      AND COALESCE(source_type, 'MANUAL') <> 'PLAYAUTO'
+                      AND COALESCE(source_type, 'MANUAL') NOT IN ('PLAYAUTO', 'DIRECT_API')
                       AND report_month BETWEEN ? AND ?
                       AND (?::text IS NULL)
                       AND (?::text IS NULL)
@@ -1532,7 +1532,7 @@ public class ExecutiveDashboardService {
                         COALESCE(SUM(order_count), 0)::int AS order_count
                     FROM executive_channel_performance
                     WHERE company_id = ?
-                      AND COALESCE(source_type, 'MANUAL') <> 'PLAYAUTO'
+                      AND COALESCE(source_type, 'MANUAL') NOT IN ('PLAYAUTO', 'DIRECT_API')
                       AND report_month BETWEEN ? AND ?
                       AND (?::text IS NULL)
                       AND (?::text IS NULL)
@@ -3239,7 +3239,7 @@ public class ExecutiveDashboardService {
                 FROM executive_channel_performance
                 WHERE company_id = ?
                   AND report_month BETWEEN ? AND ?
-                  AND COALESCE(source_type, 'MANUAL') <> 'PLAYAUTO'
+                  AND COALESCE(source_type, 'MANUAL') NOT IN ('PLAYAUTO', 'DIRECT_API')
                   AND NOT (COALESCE(source_type, 'MANUAL') IN ('OFFLINE', 'OVERSEAS', 'EXPORT')
                        OR channel_name ILIKE '%수출%' OR channel_name ILIKE '%해외%'
                        OR channel_name ILIKE '%오프라인%' OR channel_name ILIKE '%매장%')
@@ -3270,7 +3270,7 @@ public class ExecutiveDashboardService {
                 FROM executive_channel_performance
                 WHERE company_id = ?
                   AND report_month BETWEEN ? AND ?
-                  AND COALESCE(source_type, 'MANUAL') <> 'PLAYAUTO'
+                  AND COALESCE(source_type, 'MANUAL') NOT IN ('PLAYAUTO', 'DIRECT_API')
                   AND (
                       COALESCE(source_type, 'MANUAL') IN ('OVERSEAS', 'EXPORT')
                       OR channel_name ILIKE '%수출%'
@@ -3283,7 +3283,7 @@ public class ExecutiveDashboardService {
                 FROM executive_channel_performance
                 WHERE company_id = ?
                   AND report_month BETWEEN ? AND ?
-                  AND COALESCE(source_type, 'MANUAL') <> 'PLAYAUTO'
+                  AND COALESCE(source_type, 'MANUAL') NOT IN ('PLAYAUTO', 'DIRECT_API')
                   AND (
                       COALESCE(source_type, 'MANUAL') = 'OFFLINE'
                       OR channel_name ILIKE '%오프라인%'

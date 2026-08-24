@@ -688,89 +688,62 @@ public class ChannelSyncService {
         return result;
     }
 
-    // ── 스마트스토어: 결제일 기준 일별 매출 (변경상태 PAYED 조회 → 상세 금액 조회) ──
+    // ── 스마트스토어: 결제일 기준 일별 매출 (조건형 주문 조회 — 최대 180일 백필 가능) ──
     private DailySales fetchSmartStoreDaily(String accessToken, LocalDate day, String channelType) throws Exception {
-        List<String> productOrderIds = new ArrayList<>();
         DateTimeFormatter naverIso = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
-        String lastChangedFrom = URLEncoder.encode(
-                day.atStartOfDay().atOffset(ZoneOffset.ofHours(9)).format(naverIso), StandardCharsets.UTF_8);
-        String lastChangedTo = URLEncoder.encode(
-                day.atTime(23, 59, 59).atOffset(ZoneOffset.ofHours(9)).format(naverIso), StandardCharsets.UTF_8);
-        Long moreSequence = null;
-        String moreFrom = null;
-        for (int page = 0; page < 30; page++) {
-            StringBuilder url = new StringBuilder("https://api.commerce.naver.com/external/v1/pay-order/seller/product-orders/last-changed-statuses")
-                    .append("?lastChangedFrom=").append(moreFrom != null ? URLEncoder.encode(moreFrom, StandardCharsets.UTF_8) : lastChangedFrom)
-                    .append("&lastChangedTo=").append(lastChangedTo)
-                    .append("&lastChangedType=PAYED");
-            if (moreSequence != null) url.append("&moreSequence=").append(moreSequence);
-            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url.toString()))
+        String from = URLEncoder.encode(day.atStartOfDay().atOffset(ZoneOffset.ofHours(9)).format(naverIso), StandardCharsets.UTF_8);
+        String to = URLEncoder.encode(day.plusDays(1).atStartOfDay().atOffset(ZoneOffset.ofHours(9)).format(naverIso), StandardCharsets.UTF_8);
+        long total = 0L;
+        int count = 0;
+        for (int page = 1; page <= 40; page++) {
+            String url = "https://api.commerce.naver.com/external/v1/pay-order/seller/product-orders"
+                    + "?from=" + from + "&to=" + to
+                    + "&rangeType=PAYED_DATETIME&pageSize=300&page=" + page;
+            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url))
                     .header("Authorization", "Bearer " + accessToken).GET().build();
             HttpResponse<String> response = sendNaver(request);
             if (response.statusCode() != 200) {
                 throw new RuntimeException("스마트스토어 주문조회 HTTP " + response.statusCode() + ": " + truncate(response.body(), 200));
             }
             JsonNode data = objectMapper.readTree(response.body()).path("data");
-            JsonNode statuses = data.path("lastChangeStatuses");
-            if (statuses.isArray()) {
-                for (JsonNode s : statuses) {
-                    String id = s.path("productOrderId").asText("");
-                    if (!id.isBlank()) productOrderIds.add(id);
-                }
-            }
-            JsonNode more = data.path("more");
-            if (more.isMissingNode() || more.isNull()) break;
-            moreSequence = more.path("moreSequence").isMissingNode() ? null : more.path("moreSequence").asLong();
-            moreFrom = more.path("moreFrom").asText(null);
-            if (moreFrom == null) break;
-        }
-        long total = 0L;
-        int count = 0;
-        for (int i = 0; i < productOrderIds.size(); i += 300) {
-            List<String> chunk = productOrderIds.subList(i, Math.min(i + 300, productOrderIds.size()));
-            String body = objectMapper.writeValueAsString(Map.of("productOrderIds", chunk));
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("https://api.commerce.naver.com/external/v1/pay-order/seller/product-orders/query"))
-                    .header("Authorization", "Bearer " + accessToken)
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(body)).build();
-            HttpResponse<String> response = sendNaver(request);
-            if (response.statusCode() != 200) {
-                throw new RuntimeException("스마트스토어 주문상세 HTTP " + response.statusCode() + ": " + truncate(response.body(), 200));
-            }
-            JsonNode data = objectMapper.readTree(response.body()).path("data");
-            if (data.isArray()) {
-                for (JsonNode n : data) {
-                    JsonNode po = n.path("productOrder");
-                    long amt = po.path("totalPaymentAmount").asLong(0);
-                    if (amt == 0) amt = n.path("order").path("generalPaymentAmount").asLong(0);
-                    total += amt;
-                    count++;
-                    // 주문 상세를 orders 테이블에 적재 → 판매 분석 페이지 반영
-                    try {
-                        String productOrderId = po.path("productOrderId").asText("");
-                        if (!productOrderId.isBlank()) {
-                            String pname = po.path("productName").asText("");
-                            if (pname.isBlank()) pname = n.path("order").path("productName").asText("네이버 상품");
-                            String option = po.path("productOption").asText("");
-                            if (!option.isBlank()) pname = pname + " / " + option;
-                            String sku = po.path("sellerProductCode").asText("");
-                            int qty = Math.max(1, po.path("quantity").asInt(1));
-                            java.time.LocalDateTime paidAt = day.atStartOfDay();
-                            String paymentDate = n.path("order").path("paymentDate").asText("");
-                            if (!paymentDate.isBlank()) {
-                                try { paidAt = java.time.OffsetDateTime.parse(paymentDate).toLocalDateTime(); } catch (Exception ignored) {}
-                            }
-                            playAutoSyncService.upsertDirectOrder(DEFAULT_COMPANY_ID, "NV-" + productOrderId,
-                                    "DIRECT_" + channelType.toUpperCase(), displayName(channelType),
-                                    pname, sku, qty, java.math.BigDecimal.valueOf(amt), paidAt,
-                                    po.path("productOrderStatus").asText("PAYED"));
+            JsonNode contents = data.path("contents");
+            if (!contents.isArray()) contents = data.path("content");
+            if (!contents.isArray() || contents.size() == 0) break;
+            for (JsonNode n : contents) {
+                JsonNode po = n.path("content").isMissingNode() ? n.path("productOrder") : n.path("content").path("productOrder");
+                JsonNode orderNode = n.path("content").isMissingNode() ? n.path("order") : n.path("content").path("order");
+                if (po.isMissingNode() || po.isNull()) continue;
+                String status = po.path("productOrderStatus").asText("");
+                if ("CANCELED".equals(status) || "CANCELED_BY_NOPAYMENT".equals(status)) continue;
+                long amt = po.path("totalPaymentAmount").asLong(0);
+                if (amt == 0) amt = orderNode.path("generalPaymentAmount").asLong(0);
+                total += amt;
+                count++;
+                // 주문 상세를 orders 테이블에 적재 → 판매 분석 페이지 반영
+                try {
+                    String productOrderId = po.path("productOrderId").asText("");
+                    if (!productOrderId.isBlank()) {
+                        String pname = po.path("productName").asText("");
+                        if (pname.isBlank()) pname = orderNode.path("productName").asText("네이버 상품");
+                        String option = po.path("productOption").asText("");
+                        if (!option.isBlank()) pname = pname + " / " + option;
+                        String sku = po.path("sellerProductCode").asText("");
+                        int qty = Math.max(1, po.path("quantity").asInt(1));
+                        java.time.LocalDateTime paidAt = day.atStartOfDay();
+                        String paymentDate = orderNode.path("paymentDate").asText("");
+                        if (!paymentDate.isBlank()) {
+                            try { paidAt = java.time.OffsetDateTime.parse(paymentDate).toLocalDateTime(); } catch (Exception ignored) {}
                         }
-                    } catch (Exception e) {
-                        log.warn("[DirectOrder] 네이버 주문 적재 실패: {}", e.getMessage());
+                        playAutoSyncService.upsertDirectOrder(DEFAULT_COMPANY_ID, "NV-" + productOrderId,
+                                "DIRECT_" + channelType.toUpperCase(), displayName(channelType),
+                                pname, sku, qty, java.math.BigDecimal.valueOf(amt), paidAt,
+                                status.isBlank() ? "PAYED" : status);
                     }
+                } catch (Exception e) {
+                    log.warn("[DirectOrder] 네이버 주문 적재 실패: {}", e.getMessage());
                 }
             }
+            if (contents.size() < 300) break;
         }
         return new DailySales(total, count);
     }
@@ -985,13 +958,13 @@ public class ChannelSyncService {
         java.sql.Date reportMonth = java.sql.Date.valueOf(ym.atDay(1));
         long avg = orders > 0 ? total / orders : 0L;
         int updated = jdbcTemplate.update(
-                "UPDATE executive_channel_performance SET sales_amount = ?, order_count = ?, average_order_value = ? " +
+                "UPDATE executive_channel_performance SET sales_amount = ?, order_count = ?, average_order_value = ?, source_type = 'DIRECT_API' " +
                         "WHERE company_id = ? AND channel_name = ? AND report_month = ?",
                 total, orders, avg, DEFAULT_COMPANY_ID, channelName, reportMonth);
         if (updated == 0) {
             jdbcTemplate.update(
-                    "INSERT INTO executive_channel_performance (company_id, channel_name, sales_amount, order_count, average_order_value, report_month) " +
-                            "VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO executive_channel_performance (company_id, channel_name, sales_amount, order_count, average_order_value, report_month, source_type) " +
+                            "VALUES (?, ?, ?, ?, ?, ?, 'DIRECT_API')",
                     DEFAULT_COMPANY_ID, channelName, total, orders, avg, reportMonth);
         }
         log.info("[ChannelSync] 실시간 매출 반영: {} {} {}원/{}건", channelName, ym, total, orders);
