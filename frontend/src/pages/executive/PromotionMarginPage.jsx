@@ -1,367 +1,849 @@
-import { useEffect, useMemo, useState } from 'react'
-import { getAllCostData } from '../../api/productCostApi'
-import { getExecutiveChannelSalesAnalytics, importPlayAutoChannelSales } from '../../api/executiveApi'
-import { savePromotionForm, submitPromotionForm } from '../../api/promotionMarginApi'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  getChannelDefaults, searchPromoProducts, listPromoEvents, getPromoEvent,
+  createPromoEvent, updatePromoEvent, updatePromoStatus, deletePromoEvent, getPromoRealtime,
+} from '../../api/promoV2Api'
 
-const STORAGE_KEY = 'naeil.promotionMarginPlans'
+/* ─────────────────────────── 상수 ─────────────────────────── */
 
-const today = new Date()
-const toDateInput = (date) => {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
+const BRANDS = ['하이프리', '단백깡', '프리하닭', '국민한상']
+const PROMO_TYPES = ['할인', '증정', '할인+증정', '노출형']
+const STATUS_LIST = ['기획', '진행중', '종료', '취소']
+const STATUS_STYLE = {
+  기획: 'bg-slate-100 text-slate-600',
+  진행중: 'bg-blue-50 text-blue-600',
+  종료: 'bg-emerald-50 text-emerald-600',
+  취소: 'bg-rose-50 text-rose-500',
 }
-const firstDay = toDateInput(new Date(today.getFullYear(), today.getMonth(), 1))
-const todayText = toDateInput(today)
 
-const won = (value) => `${Math.round(Number(value || 0)).toLocaleString('ko-KR')}원`
-const count = (value) => Number(value || 0).toLocaleString('ko-KR')
-const pct = (value) => Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : '-'
-const num = (value) => { const p = Number(String(value ?? 0).replace(/,/g, '')); return Number.isFinite(p) ? p : 0 }
-const rate = (value) => num(value) / 100
+const EMPTY_BENEFIT = {
+  discountType: 'none', discountValue: 0,
+  couponAmount: 0, couponBearer: 'seller',
+  giftProductCode: '', giftName: '', giftQty: 0, giftUnitCost: 0,
+  freeShipping: false,
+}
 
-const promoTypes = [
-  { id: 'discount', label: '할인' },
-  { id: 'onePlusOne', label: '1+1' },
-  { id: 'bundle', label: '묶음 구성' },
-  { id: 'coupon', label: '쿠폰' },
-  { id: 'offlineEvent', label: '오프라인 행사' },
-]
+/* ─────────────────────────── 숫자/포맷 ─────────────────────────── */
 
-const channelOptions = ['스마트스토어', '쿠팡', '카카오쇼핑', '자사몰', '오프라인 행사', '국내 오프라인 유통', '해외 수출', 'B2B/납품', '기타']
+const num = (v) => { const x = Number(String(v ?? 0).replace(/,/g, '')); return Number.isFinite(x) ? x : 0 }
+const won = (v) => `${Math.round(num(v)).toLocaleString('ko-KR')}원`
+const comma = (v) => Math.round(num(v)).toLocaleString('ko-KR')
+const pct1 = (v) => `${Number(num(v)).toFixed(1)}%`
 
-function flattenCostRows(data) {
-  return Object.entries(data?.channels || {}).flatMap(([channelName, rows]) =>
-    (rows || []).map((row, index) => ({
-      ...row, channelName,
-      rowKey: `${channelName}-${row.id || row.product_code || row.sku_code || index}`,
+const thisMonth = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+const todayStr = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/* ─────────────────────────── 계산식 (기능정의서 5장) ─────────────────────────── */
+
+function calcOption(opt, ev) {
+  const listPrice = num(opt.listPrice)
+  const b = opt.benefit || {}
+  const discount = b.discountType === 'rate'
+    ? listPrice * num(b.discountValue) / 100
+    : b.discountType === 'amount' ? num(b.discountValue) : 0
+  const sellerCoupon = b.couponBearer === 'seller' ? num(b.couponAmount) : 0
+  const netPrice = Math.max(0, listPrice - discount - sellerCoupon)
+  const giftCost = num(b.giftUnitCost) * num(b.giftQty)
+  const shipCost = b.freeShipping ? num(ev.shippingCost) : 0
+  const netCost = num(opt.unitCost) + giftCost + shipCost
+  const fee = netPrice * num(ev.feeRate) / 100
+  const ad = netPrice * num(ev.adRate) / 100
+  const sga = netPrice * num(ev.sgaRate) / 100
+  const contribution = netPrice - netCost - fee
+  const profit = contribution - ad - sga
+  const margin = netPrice > 0 ? (profit / netPrice) * 100 : 0
+  const qty = Math.round(num(ev.expectedOrders) * num(opt.mixRate) / 100)
+  return { listPrice, discount, sellerCoupon, netPrice, giftCost, shipCost, netCost, fee, ad, sga, contribution, profit, margin, qty }
+}
+
+function calcEvent(ev) {
+  const flat = (ev.blocks || []).flatMap((blk) => (blk.options || []).map((o) => ({ o, r: calcOption(o, ev) })))
+  const mixTotal = flat.reduce((s, { o }) => s + num(o.mixRate), 0)
+  const revenue = flat.reduce((s, { r }) => s + r.netPrice * r.qty, 0)
+  const optionProfit = flat.reduce((s, { r }) => s + r.profit * r.qty, 0)
+  const fixedCost = num(ev.fixedCost)
+  const eventProfit = optionProfit - fixedCost
+  const weightedMargin = revenue > 0 ? (eventProfit / revenue) * 100 : 0
+  const perOrderProfit = flat.reduce((s, { o, r }) => s + r.profit * num(o.mixRate) / 100, 0)
+  const bep = fixedCost > 0 && perOrderProfit > 0 ? Math.ceil(fixedCost / perOrderProfit) : null
+  const target = num(ev.targetMarginRate)
+  let verdict = '재검토'
+  if (revenue > 0) {
+    if (weightedMargin >= target) verdict = '진행 가능'
+    else if (weightedMargin >= target - 5) verdict = '조건부 진행'
+  }
+  return { mixTotal, revenue, optionProfit, eventProfit, weightedMargin, perOrderProfit, bep, verdict }
+}
+
+/* 신호등 (기능정의서 6장) */
+function optionLight(margin, target) {
+  const t = num(target)
+  if (margin >= t) return { color: 'bg-emerald-500', text: 'text-emerald-600', label: '양호' }
+  if (margin >= t * 0.7) return { color: 'bg-amber-400', text: 'text-amber-600', label: '주의' }
+  return { color: 'bg-rose-500', text: 'text-rose-600', label: '미달' }
+}
+function verdictStyle(verdict) {
+  if (verdict === '진행 가능') return 'bg-emerald-50 text-emerald-600 border-emerald-200'
+  if (verdict === '조건부 진행') return 'bg-amber-50 text-amber-600 border-amber-200'
+  return 'bg-rose-50 text-rose-600 border-rose-200'
+}
+
+/* ─────────────────────────── 서버 ↔ 편집모델 변환 ─────────────────────────── */
+
+function fromServer(row) {
+  return {
+    id: row.id,
+    brandName: row.brand_name || BRANDS[0],
+    channelName: row.channel_name || '',
+    title: row.title || '',
+    startDate: String(row.start_date || '').slice(0, 10),
+    endDate: String(row.end_date || '').slice(0, 10),
+    promoType: row.promo_type || '할인',
+    isAlwaysOn: !!row.is_always_on,
+    status: row.status || '기획',
+    feeRate: num(row.fee_rate),
+    adRate: num(row.ad_rate),
+    sgaRate: num(row.sga_rate),
+    shippingCost: num(row.shipping_cost),
+    fixedCost: num(row.fixed_cost),
+    targetMarginRate: num(row.target_margin_rate) || 20,
+    expectedOrders: num(row.expected_orders),
+    blocks: (row.blocks || []).map((blk) => ({
+      productCode: blk.product_code,
+      productName: blk.product_name,
+      options: (blk.options || []).map((opt) => ({
+        optionName: opt.option_name,
+        unitCost: num(opt.unit_cost),
+        unitCostOverridden: !!opt.unit_cost_overridden,
+        masterUnitCost: opt.master_unit_cost == null ? null : num(opt.master_unit_cost),
+        listPrice: num(opt.list_price),
+        benefit: { ...EMPTY_BENEFIT, ...(opt.benefit || {}) },
+        mixRate: num(opt.mix_rate),
+      })),
     })),
+  }
+}
+
+function newEvent(defaults) {
+  return {
+    id: null,
+    brandName: BRANDS[0],
+    channelName: defaults?.channel_name || '스마트스토어',
+    title: '',
+    startDate: todayStr(),
+    endDate: todayStr(),
+    promoType: '할인',
+    isAlwaysOn: false,
+    status: '기획',
+    feeRate: num(defaults?.fee_rate),
+    adRate: num(defaults?.ad_rate),
+    sgaRate: num(defaults?.sga_rate),
+    shippingCost: num(defaults?.shipping_cost),
+    fixedCost: 0,
+    targetMarginRate: 20,
+    expectedOrders: 100,
+    blocks: [],
+  }
+}
+
+/* ─────────────────────────── 작은 UI 조각 ─────────────────────────── */
+
+function Field({ label, children, className = '' }) {
+  return (
+    <label className={`flex flex-col gap-1 ${className}`}>
+      <span className="text-[11px] font-bold text-slate-500">{label}</span>
+      {children}
+    </label>
   )
 }
 
-function productLabel(row) {
-  return [row.product_name, row.qty_per_unit ? `${row.qty_per_unit}입` : '', row.sku_code || row.product_code].filter(Boolean).join(' / ')
-}
+const inputCls = 'h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-800 focus:border-blue-400 focus:outline-none'
+const cellInputCls = 'w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-right text-[13px] text-slate-800 hover:border-slate-200 focus:border-blue-400 focus:bg-white focus:outline-none'
 
-function matchSalesProduct(costRow, products) {
-  if (!costRow) return null
-  const names = [costRow.product_name, costRow.product_code, costRow.sku_code].filter(Boolean).map(v => String(v).toLowerCase())
-  return (products || []).find(row => {
-    const h = [row.product_name, row.productName, row.option_name, row.optionName, row.product_code, row.sku_code].filter(Boolean).join(' ').toLowerCase()
-    return names.some(n => n && h.includes(n))
-  })
-}
-
-function deriveInitialForm(row) {
-  const basePrice = num(row?.consumer_price) || num(row?.list_price)
-  return {
-    channel: '스마트스토어', promoType: 'discount', promoName: '',
-    expectedOrders: 100, unitsPerOrder: 1, basePrice, promoPrice: basePrice,
-    channelFeeRate: Math.round(num(row?.channel_fee_rate) * 1000) / 10,
-    marketingRate: Math.round(num(row?.marketing_rate) * 1000) / 10,
-    adRate: Math.round(num(row?.ad_rate) * 1000) / 10,
-    opexRate: Math.round(num(row?.opex_rate) * 1000) / 10,
-    logisticsPerOrder: num(row?.consumer_ship_fee) + num(row?.storage_fee_unit),
-    extraSupportPerUnit: 0, fixedEventCost: 0,
-    promoStartDate: firstDay, promoEndDate: todayText, status: '신청',
-  }
-}
-
-function calculateScenario(row, form) {
-  const unitsPerOrder = form.promoType === 'onePlusOne' ? 2 : Math.max(1, num(form.unitsPerOrder))
-  const expectedOrders = Math.max(0, num(form.expectedOrders))
-  const promoPrice = Math.max(0, num(form.promoPrice))
-  const revenue = promoPrice * expectedOrders
-  const productionCost = num(row?.production_cost) * unitsPerOrder * expectedOrders
-  const logisticsCost = num(form.logisticsPerOrder) * expectedOrders
-  const channelFee = revenue * rate(form.channelFeeRate)
-  const marketingCost = revenue * rate(form.marketingRate)
-  const adCost = revenue * rate(form.adRate)
-  const opexCost = revenue * rate(form.opexRate)
-  const supportCost = num(form.extraSupportPerUnit) * unitsPerOrder * expectedOrders
-  const fixedEventCost = num(form.fixedEventCost)
-  const variableCost = productionCost + logisticsCost + channelFee + marketingCost + adCost + opexCost + supportCost
-  const grossProfit = revenue - productionCost
-  const operatingProfit = revenue - variableCost - fixedEventCost
-  const profitPerOrder = expectedOrders > 0 ? (revenue - variableCost) / expectedOrders : 0
-  const breakEvenOrders = profitPerOrder > 0 ? Math.ceil(fixedEventCost / profitPerOrder) : null
-  return {
-    unitsPerOrder, expectedOrders, revenue, productionCost, logisticsCost, channelFee,
-    marketingCost, adCost, opexCost, supportCost, fixedEventCost, grossProfit, operatingProfit,
-    grossMargin: revenue > 0 ? (grossProfit / revenue) * 100 : null,
-    operatingMargin: revenue > 0 ? (operatingProfit / revenue) * 100 : null,
-    breakEvenOrders,
-  }
-}
-
-function decisionFor(result) {
-  if ((result.operatingMargin ?? -999) >= 15) return { label: '진행 가능', className: 'bg-blue-50 text-blue-700 border-blue-200' }
-  if ((result.operatingMargin ?? -999) >= 5) return { label: '조건 확인', className: 'bg-amber-50 text-amber-700 border-amber-200' }
-  return { label: '손실 위험', className: 'bg-rose-50 text-rose-700 border-rose-200' }
-}
-
-function Field({ label, children }) {
-  return <label className="space-y-1 text-sm font-black text-slate-700"><span>{label}</span>{children}</label>
-}
-
-function NumberInput({ value, onChange, suffix = '' }) {
+function NumInput({ value, onChange, className = inputCls, align = 'text-right' }) {
+  const [text, setText] = useState(comma(value))
+  useEffect(() => { setText(comma(value)) }, [value])
   return (
-    <div className="flex items-center rounded border border-slate-300 bg-white px-3">
-      <input value={value} onChange={e => onChange(e.target.value)} className="h-10 w-full bg-transparent text-sm font-black text-slate-950 outline-none" inputMode="decimal" />
-      {suffix && <span className="ml-2 text-xs font-black text-slate-500">{suffix}</span>}
+    <input
+      className={`${className} ${align}`}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => onChange(num(text))}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+      inputMode="numeric"
+    />
+  )
+}
+
+/* ─────────────────────────── 혜택 팝오버 ─────────────────────────── */
+
+function benefitSummary(benefit) {
+  const b = { ...EMPTY_BENEFIT, ...(benefit || {}) }
+  const parts = []
+  if (b.discountType === 'rate' && num(b.discountValue) > 0) parts.push(`${num(b.discountValue)}% 할인`)
+  if (b.discountType === 'amount' && num(b.discountValue) > 0) parts.push(`${comma(b.discountValue)}원 할인`)
+  if (num(b.couponAmount) > 0) parts.push(`쿠폰 ${comma(b.couponAmount)}(${b.couponBearer === 'seller' ? '셀러' : '채널'})`)
+  if (num(b.giftQty) > 0) parts.push(`증정 ${b.giftName || b.giftProductCode || ''} ${num(b.giftQty)}개`.trim())
+  if (b.freeShipping) parts.push('무료배송')
+  return parts.length ? parts.join(' · ') : '혜택 없음'
+}
+
+function BenefitPopover({ benefit, onChange, onClose }) {
+  const b = { ...EMPTY_BENEFIT, ...(benefit || {}) }
+  const set = (patch) => onChange({ ...b, ...patch })
+  return (
+    <div className="absolute right-0 top-7 z-30 w-72 rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-xs font-black text-slate-700">혜택 설정</p>
+        <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600">
+          <span className="material-symbols-outlined text-[18px]">close</span>
+        </button>
+      </div>
+      <div className="space-y-2.5">
+        <div>
+          <p className="mb-1 text-[11px] font-bold text-slate-500">할인</p>
+          <div className="flex gap-1.5">
+            <select className={`${inputCls} h-8 flex-1 text-xs`} value={b.discountType}
+              onChange={(e) => set({ discountType: e.target.value })}>
+              <option value="none">없음</option>
+              <option value="rate">정률(%)</option>
+              <option value="amount">정액(원)</option>
+            </select>
+            {b.discountType !== 'none' && (
+              <NumInput value={b.discountValue} onChange={(v) => set({ discountValue: v })}
+                className={`${inputCls} h-8 w-24 text-xs`} />
+            )}
+          </div>
+        </div>
+        <div>
+          <p className="mb-1 text-[11px] font-bold text-slate-500">쿠폰</p>
+          <div className="flex gap-1.5">
+            <NumInput value={b.couponAmount} onChange={(v) => set({ couponAmount: v })}
+              className={`${inputCls} h-8 flex-1 text-xs`} />
+            <select className={`${inputCls} h-8 w-24 text-xs`} value={b.couponBearer}
+              onChange={(e) => set({ couponBearer: e.target.value })}>
+              <option value="seller">셀러 부담</option>
+              <option value="channel">채널 부담</option>
+            </select>
+          </div>
+          <p className="mt-0.5 text-[10px] text-slate-400">채널 부담 쿠폰은 마진 계산에서 제외됩니다.</p>
+        </div>
+        <div>
+          <p className="mb-1 text-[11px] font-bold text-slate-500">증정품</p>
+          <div className="flex gap-1.5">
+            <input className={`${inputCls} h-8 flex-1 text-xs`} placeholder="증정품명"
+              value={b.giftName} onChange={(e) => set({ giftName: e.target.value })} />
+            <NumInput value={b.giftQty} onChange={(v) => set({ giftQty: v })}
+              className={`${inputCls} h-8 w-14 text-xs`} />
+          </div>
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <span className="text-[10px] text-slate-400">개당 원가</span>
+            <NumInput value={b.giftUnitCost} onChange={(v) => set({ giftUnitCost: v })}
+              className={`${inputCls} h-8 flex-1 text-xs`} />
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
+          <input type="checkbox" checked={b.freeShipping}
+            onChange={(e) => set({ freeShipping: e.target.checked })} />
+          무료배송 (배송단가를 실원가에 가산)
+        </label>
+      </div>
     </div>
   )
 }
 
-export default function PromotionMarginPage() {
-  const [costData, setCostData] = useState({ channels: {} })
-  const [analytics, setAnalytics] = useState({ summary: {}, products: [] })
-  const [startDate, setStartDate] = useState(firstDay)
-  const [endDate, setEndDate] = useState(todayText)
-  const [selectedRowKey, setSelectedRowKey] = useState('')
-  const [search, setSearch] = useState('')
-  const [form, setForm] = useState(deriveInitialForm())
-  const [plans, setPlans] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [syncing, setSyncing] = useState(false)
-  const [message, setMessage] = useState('')
+/* ─────────────────────────── 상품 검색 모달 ─────────────────────────── */
 
-  const costRows = useMemo(() => flattenCostRows(costData), [costData])
-  const filteredCostRows = useMemo(() => {
-    const keyword = search.trim().toLowerCase()
-    if (!keyword) return costRows
-    return costRows.filter(row => productLabel(row).toLowerCase().includes(keyword))
-  }, [costRows, search])
-  const selectedRow = useMemo(
-    () => costRows.find(row => row.rowKey === selectedRowKey) || filteredCostRows[0] || costRows[0],
-    [costRows, filteredCostRows, selectedRowKey],
-  )
-  const matchedSales = useMemo(() => matchSalesProduct(selectedRow, analytics.products), [selectedRow, analytics.products])
-  const result = useMemo(() => calculateScenario(selectedRow, form), [selectedRow, form])
-  const decision = decisionFor(result)
-  const updateForm = (key, value) => setForm(prev => ({ ...prev, [key]: value }))
+function ProductPicker({ onPick, onClose }) {
+  const [q, setQ] = useState('')
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(false)
+  const timer = useRef(null)
 
-  const load = async () => {
+  const search = useCallback((keyword) => {
     setLoading(true)
-    try {
-      const [costRes, salesRes] = await Promise.all([getAllCostData(), getExecutiveChannelSalesAnalytics({ startDate, endDate })])
-      setCostData(costRes.data || { channels: {} })
-      setAnalytics(salesRes.data || { summary: {}, products: [] })
-    } catch (err) {
-      setMessage(err?.response?.data?.message || '프로모션 데이터를 불러오지 못했습니다.')
-    } finally { setLoading(false) }
-  }
-
-  useEffect(() => {
-    load()
-    try {
-      const saved = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '[]')
-      if (Array.isArray(saved)) setPlans(saved)
-    } catch { setPlans([]) }
+    searchPromoProducts(keyword)
+      .then((data) => setRows(data || []))
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false))
   }, [])
 
   useEffect(() => {
-    if (!selectedRow) return
-    setForm(prev => ({
-      ...deriveInitialForm(selectedRow),
-      promoName: prev.promoName, channel: prev.channel, promoType: prev.promoType,
-      expectedOrders: prev.expectedOrders, unitsPerOrder: prev.unitsPerOrder,
-      promoStartDate: prev.promoStartDate, promoEndDate: prev.promoEndDate, status: prev.status,
-    }))
-  }, [selectedRow?.rowKey])
-
-  useEffect(() => { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(plans)) }, [plans])
-
-  const refreshSales = async () => {
-    setSyncing(true); setMessage('')
-    try {
-      await importPlayAutoChannelSales({ startDate, endDate })
-      const res = await getExecutiveChannelSalesAnalytics({ startDate, endDate })
-      setAnalytics(res.data || { summary: {}, products: [] })
-      setMessage('실시간 판매 현황을 갱신했습니다.')
-    } catch (err) { setMessage(err?.response?.data?.message || '실시간 판매 현황 갱신에 실패했습니다.') }
-    finally { setSyncing(false) }
-  }
-
-  // fix: save to API so all users can see in PromotionHistoryPage
-  const savePlan = async () => {
-    if (!selectedRow) return
-    const currentUser = (() => {
-      try {
-        const s = JSON.parse(window.localStorage.getItem('naeil.session') || '{}')
-        return s.username || s.name || s.displayName || '작성자'
-      } catch { return '작성자' }
-    })()
-    const plan = {
-      id: `${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      createdBy: currentUser,
-      productName: selectedRow.product_name || '상품명 없음',
-      productCode: selectedRow.product_code || '',
-      skuCode: selectedRow.sku_code || '',
-      sourceChannel: selectedRow.channelName || '',
-      channel: form.channel,
-      promoType: promoTypes.find(item => item.id === form.promoType)?.label || form.promoType,
-      promoTypeId: form.promoType,
-      promoName: form.promoName || `${selectedRow.product_name || '상품'} 프로모션`,
-      startDate: form.promoStartDate || startDate,
-      endDate: form.promoEndDate || endDate,
-      expectedOrders: result.expectedOrders,
-      unitsPerOrder: result.unitsPerOrder,
-      promoPrice: num(form.promoPrice),
-      basePrice: num(form.basePrice),
-      channelFeeRate: num(form.channelFeeRate),
-      adRate: num(form.adRate),
-      marketingRate: num(form.marketingRate),
-      opexRate: num(form.opexRate),
-      logisticsPerOrder: num(form.logisticsPerOrder),
-      fixedEventCost: num(form.fixedEventCost),
-      extraSupportPerUnit: num(form.extraSupportPerUnit),
-      targetRevenue: result.revenue,
-      revenue: result.revenue,
-      grossProfit: result.grossProfit,
-      grossMargin: result.grossMargin,
-      operatingMargin: result.operatingMargin,
-      operatingProfit: result.operatingProfit,
-      breakEvenOrders: result.breakEvenOrders,
-      decision: decision.label,
-      status: form.status || '신청',
-    }
-    setPlans(prev => [plan, ...prev].slice(0, 100))
-
-    // fix: API 저장 - DB에 저장하여 전체 직원이 프로모션 내역에서 볼 수 있게 함
-    try {
-      const formPayload = {
-        companyId: 1,
-        formName: plan.promoName,
-        channel: plan.channel,
-        promotionType: plan.promoType,
-        productName: plan.productName,
-        skuCode: plan.skuCode || null,
-        salePrice: plan.promoPrice || 0,
-        discountRate: 0,
-        discountAmount: plan.basePrice > 0 ? Math.max(0, plan.basePrice - plan.promoPrice) : 0,
-        cogs: selectedRow?.production_cost || 0,
-        logisticsCost: plan.logisticsPerOrder * plan.expectedOrders,
-        marketingCost: result.marketingCost || 0,
-        platformFeeRate: plan.channelFeeRate || 0,
-        otherCost: (result.adCost || 0) + (result.opexCost || 0) + (result.supportCost || 0) + plan.fixedEventCost,
-        targetQty: plan.expectedOrders,
-        promoStartDate: plan.startDate,
-        promoEndDate: plan.endDate,
-        memo: `결정: ${plan.decision}, 영업이익률: ${plan.operatingMargin?.toFixed(1) ?? '-'}%`,
-      }
-      const saved = await savePromotionForm(formPayload)
-      if (saved?.formId) {
-        await submitPromotionForm(saved.formId, 1)
-      }
-    } catch (apiErr) {
-      console.warn('프로모션 API 저장 실패 (로컬 저장은 완료됨):', apiErr?.message || apiErr)
-    }
-
-    setMessage('프로모션 마진 서식을 저장했고, 프로모션 내역에 연동했습니다.')
-  }
-
-  if (loading) return <div className="p-8 text-sm font-black text-slate-600">프로모션 마진 데이터를 불러오는 중입니다.</div>
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => search(q), q ? 300 : 0)
+    return () => clearTimeout(timer.current)
+  }, [q, search])
 
   return (
-    <div className="space-y-6 bg-slate-50 text-slate-950">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="mt-1 text-2xl font-black tracking-tight">프로모션 마진 / 실시간 판매 판단</h1>
-          <p className="mt-2 text-sm font-bold text-slate-600">MD가 할인, 1+1, 오프라인 행사를 설계할 때 원가와 실시간 판매 흐름 기준으로 손익을 바로 확인합니다.</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
+      <div className="flex max-h-[70vh] w-full max-w-lg flex-col rounded-2xl bg-white p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-sm font-black text-slate-800">상품 선택</p>
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <span className="material-symbols-outlined text-[20px]">close</span>
+          </button>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-10 rounded border border-slate-300 px-3 text-sm font-black" />
-          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="h-10 rounded border border-slate-300 px-3 text-sm font-black" />
-          <button onClick={load} className="h-10 rounded border border-slate-300 bg-white px-4 text-sm font-black text-slate-700">조회</button>
-          <button onClick={refreshSales} disabled={syncing} className="h-10 rounded bg-blue-600 px-4 text-sm font-black text-white disabled:opacity-50">{syncing ? '갱신 중' : '실시간 판매 업데이트'}</button>
+        <input autoFocus className={`${inputCls} mb-2`} placeholder="상품명 / SKU 검색"
+          value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-slate-100">
+          {loading && <p className="p-4 text-center text-xs text-slate-400">검색 중…</p>}
+          {!loading && rows.length === 0 && <p className="p-4 text-center text-xs text-slate-400">검색 결과가 없습니다.</p>}
+          {!loading && rows.map((row) => (
+            <button key={row.id} type="button" onClick={() => onPick(row)}
+              className="flex w-full items-center justify-between border-b border-slate-50 px-3 py-2.5 text-left last:border-b-0 hover:bg-blue-50/60">
+              <span className="min-w-0">
+                <span className="block truncate text-[13px] font-bold text-slate-800">{row.product_name}</span>
+                <span className="block text-[11px] text-slate-400">{row.product_code}</span>
+              </span>
+              <span className="ml-3 shrink-0 text-[12px] font-bold text-slate-500">
+                원가 {num(row.unit_cost) > 0 ? won(row.unit_cost) : '미등록'}
+              </span>
+            </button>
+          ))}
         </div>
-      </header>
-      {message && <div className="rounded border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-black text-blue-700">{message}</div>}
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-4">
-        <div className="rounded border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs font-black text-slate-500">기간 실시간 매출</p><strong className="mt-4 block text-2xl font-black">{won(analytics.summary?.salesAmount)}</strong><p className="mt-2 text-xs font-bold text-slate-500">PlayAuto 주문 현황 기준</p></div>
-        <div className="rounded border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs font-black text-slate-500">기간 주문수</p><strong className="mt-4 block text-2xl font-black">{count(analytics.summary?.orderCount)}건</strong><p className="mt-2 text-xs font-bold text-slate-500">선택 기간 합계</p></div>
-        <div className="rounded border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs font-black text-slate-500">예상 행사 매출</p><strong className="mt-4 block text-2xl font-black">{won(result.revenue)}</strong><p className="mt-2 text-xs font-bold text-slate-500">{count(result.expectedOrders)}건 기준</p></div>
-        <div className={`rounded border p-5 shadow-sm ${decision.className}`}><p className="text-xs font-black">행사 판단</p><strong className="mt-4 block text-2xl font-black">{decision.label}</strong><p className="mt-2 text-xs font-black">영업이익률 {pct(result.operatingMargin)}</p></div>
-      </section>
-      <section className="grid grid-cols-1 gap-5 xl:grid-cols-[420px_1fr]">
-        <aside className="rounded border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-xl font-black">프로모션 서식</h2>
-          <div className="mt-4 space-y-4">
-            <Field label="상품 검색"><input value={search} onChange={e => setSearch(e.target.value)} placeholder="상품명, SKU, 코드 검색" className="h-10 w-full rounded border border-slate-300 px-3 text-sm font-bold outline-none" /></Field>
-            <Field label="상품 선택"><select value={selectedRow?.rowKey || ''} onChange={e => setSelectedRowKey(e.target.value)} className="h-11 w-full rounded border border-slate-300 px-3 text-sm font-black outline-none">{filteredCostRows.map(row => <option key={row.rowKey} value={row.rowKey}>{productLabel(row)}</option>)}</select></Field>
-            <Field label="행사명"><input value={form.promoName} onChange={e => updateForm('promoName', e.target.value)} placeholder="예: 쿠팡 1+1 주말 특가" className="h-10 w-full rounded border border-slate-300 px-3 text-sm font-bold outline-none" /></Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="채널"><select value={form.channel} onChange={e => updateForm('channel', e.target.value)} className="h-10 w-full rounded border border-slate-300 px-3 text-sm font-black outline-none">{channelOptions.map(item => <option key={item}>{item}</option>)}</select></Field>
-              <Field label="행사 유형"><select value={form.promoType} onChange={e => updateForm('promoType', e.target.value)} className="h-10 w-full rounded border border-slate-300 px-3 text-sm font-black outline-none">{promoTypes.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="정상 판매가"><NumberInput value={form.basePrice} onChange={v => updateForm('basePrice', v)} suffix="원" /></Field>
-              <Field label="행사 판매가"><NumberInput value={form.promoPrice} onChange={v => updateForm('promoPrice', v)} suffix="원" /></Field>
-              <Field label="예상 주문수"><NumberInput value={form.expectedOrders} onChange={v => updateForm('expectedOrders', v)} suffix="건" /></Field>
-              <Field label="주문당 구성수"><NumberInput value={form.promoType === 'onePlusOne' ? 2 : form.unitsPerOrder} onChange={v => updateForm('unitsPerOrder', v)} suffix="개" /></Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="채널 수수료"><NumberInput value={form.channelFeeRate} onChange={v => updateForm('channelFeeRate', v)} suffix="%" /></Field>
-              <Field label="광고비"><NumberInput value={form.adRate} onChange={v => updateForm('adRate', v)} suffix="%" /></Field>
-              <Field label="마케팅비"><NumberInput value={form.marketingRate} onChange={v => updateForm('marketingRate', v)} suffix="%" /></Field>
-              <Field label="판관비"><NumberInput value={form.opexRate} onChange={v => updateForm('opexRate', v)} suffix="%" /></Field>
-              <Field label="주문당 물류비"><NumberInput value={form.logisticsPerOrder} onChange={v => updateForm('logisticsPerOrder', v)} suffix="원" /></Field>
-              <Field label="행사 고정비"><NumberInput value={form.fixedEventCost} onChange={v => updateForm('fixedEventCost', v)} suffix="원" /></Field>
-              <Field label="개당 쿠폰/지원금"><NumberInput value={form.extraSupportPerUnit} onChange={v => updateForm('extraSupportPerUnit', v)} suffix="원" /></Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="행사 시작일"><input type="date" value={form.promoStartDate || startDate} onChange={e => updateForm('promoStartDate', e.target.value)} className="h-10 w-full rounded border border-slate-300 px-3 text-sm font-black outline-none" /></Field>
-              <Field label="행사 종료일"><input type="date" value={form.promoEndDate || endDate} onChange={e => updateForm('promoEndDate', e.target.value)} className="h-10 w-full rounded border border-slate-300 px-3 text-sm font-black outline-none" /></Field>
-            </div>
-            <Field label="상태">
-              <select value={form.status || '신청'} onChange={e => updateForm('status', e.target.value)} className="h-10 w-full rounded border border-slate-300 px-3 text-sm font-black outline-none">
-                <option>신청</option><option>진행 가능</option><option>조건 확인</option>
-                <option>손실 위험</option><option>진행중</option><option>완료</option><option>취소</option>
-              </select>
-            </Field>
-            <button onClick={savePlan} className="h-11 w-full rounded bg-slate-950 text-sm font-black text-white">서식 저장</button>
+        <p className="mt-2 text-[11px] text-slate-400">원가는 제품 원가 관리(마스터)에서 자동 참조됩니다.</p>
+      </div>
+    </div>
+  )
+}
+
+/* ─────────────────────────── 옵션 행 ─────────────────────────── */
+
+function OptionRow({ opt, ev, onChange, onRemove }) {
+  const [benefitOpen, setBenefitOpen] = useState(false)
+  const r = calcOption(opt, ev)
+  const light = optionLight(r.margin, ev.targetMarginRate)
+  const overridden = opt.unitCostOverridden
+
+  const setUnitCost = (v) => {
+    const master = opt.masterUnitCost
+    onChange({ ...opt, unitCost: v, unitCostOverridden: master != null && v !== master })
+  }
+
+  return (
+    <tr className="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/50">
+      <td className="px-2 py-1.5">
+        <input className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-[13px] text-slate-800 hover:border-slate-200 focus:border-blue-400 focus:bg-white focus:outline-none"
+          value={opt.optionName} placeholder="옵션명"
+          onChange={(e) => onChange({ ...opt, optionName: e.target.value })} />
+      </td>
+      <td className="px-2 py-1.5"><NumInput value={opt.listPrice} onChange={(v) => onChange({ ...opt, listPrice: v })} className={cellInputCls} align="" /></td>
+      <td className="px-2 py-1.5">
+        <div className="flex items-center justify-end gap-1">
+          {overridden && (
+            <button type="button" title={`마스터 원가 ${won(opt.masterUnitCost)} — 클릭 시 되돌리기`}
+              onClick={() => onChange({ ...opt, unitCost: num(opt.masterUnitCost), unitCostOverridden: false })}
+              className="h-2 w-2 shrink-0 rounded-full bg-orange-400" />
+          )}
+          <NumInput value={opt.unitCost} onChange={setUnitCost} className={cellInputCls} align="" />
+        </div>
+      </td>
+      <td className="relative px-2 py-1.5">
+        <button type="button" onClick={() => setBenefitOpen((v) => !v)}
+          className={`w-full truncate rounded px-1.5 py-1 text-left text-[12px] ${benefitSummary(opt.benefit) === '혜택 없음' ? 'text-slate-400' : 'bg-blue-50/70 font-bold text-blue-600'} hover:bg-blue-50`}>
+          {benefitSummary(opt.benefit)}
+        </button>
+        {benefitOpen && (
+          <BenefitPopover benefit={opt.benefit}
+            onChange={(b) => onChange({ ...opt, benefit: b })}
+            onClose={() => setBenefitOpen(false)} />
+        )}
+      </td>
+      <td className="px-2 py-1.5 text-right text-[13px] font-bold text-slate-800">{comma(r.netPrice)}</td>
+      <td className="px-2 py-1.5 text-right text-[13px] text-slate-500">{comma(r.netCost)}</td>
+      <td className="px-2 py-1.5 text-right text-[13px] text-slate-500">{comma(r.fee)}</td>
+      <td className="px-2 py-1.5 text-right text-[13px] text-slate-600">{comma(r.contribution)}</td>
+      <td className={`px-2 py-1.5 text-right text-[13px] font-bold ${r.profit >= 0 ? 'text-slate-800' : 'text-rose-500'}`}>{comma(r.profit)}</td>
+      <td className="px-2 py-1.5">
+        <span className={`flex items-center justify-end gap-1.5 text-[13px] font-black ${light.text}`}>
+          <span className={`h-2.5 w-2.5 rounded-full ${light.color}`} />
+          {pct1(r.margin)}
+        </span>
+      </td>
+      <td className="px-2 py-1.5"><NumInput value={opt.mixRate} onChange={(v) => onChange({ ...opt, mixRate: v })} className={cellInputCls} align="" /></td>
+      <td className="px-1 py-1.5 text-center">
+        <button type="button" onClick={onRemove} className="text-slate-300 hover:text-rose-500">
+          <span className="material-symbols-outlined text-[16px]">delete</span>
+        </button>
+      </td>
+    </tr>
+  )
+}
+
+/* ─────────────────────────── 상품 블록 ─────────────────────────── */
+
+function BlockCard({ block, ev, onChange, onRemove }) {
+  const setOption = (idx, opt) => {
+    const options = block.options.map((o, i) => (i === idx ? opt : o))
+    onChange({ ...block, options })
+  }
+  const addOption = () => onChange({
+    ...block,
+    options: [...block.options, {
+      optionName: '', unitCost: block.options[0]?.masterUnitCost ?? 0,
+      unitCostOverridden: false, masterUnitCost: block.options[0]?.masterUnitCost ?? null,
+      listPrice: 0, benefit: { ...EMPTY_BENEFIT }, mixRate: 0,
+    }],
+  })
+  const removeOption = (idx) => onChange({ ...block, options: block.options.filter((_, i) => i !== idx) })
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white">
+      <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <span className="material-symbols-outlined text-[18px] text-blue-500">inventory_2</span>
+          <p className="text-[13px] font-black text-slate-800">{block.productName || block.productCode}</p>
+          <span className="text-[11px] text-slate-400">{block.productCode}</span>
+        </div>
+        <button type="button" onClick={onRemove} className="text-slate-300 hover:text-rose-500">
+          <span className="material-symbols-outlined text-[18px]">delete</span>
+        </button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[880px] table-fixed">
+          <colgroup>
+            <col className="w-40" /><col className="w-20" /><col className="w-24" /><col className="w-44" />
+            <col className="w-20" /><col className="w-20" /><col className="w-20" /><col className="w-20" />
+            <col className="w-20" /><col className="w-24" /><col className="w-16" /><col className="w-8" />
+          </colgroup>
+          <thead>
+            <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400">
+              <th className="px-2 py-1.5 text-left">옵션</th>
+              <th className="px-2 py-1.5 text-right">정상가</th>
+              <th className="px-2 py-1.5 text-right">원가</th>
+              <th className="px-2 py-1.5 text-left">혜택</th>
+              <th className="px-2 py-1.5 text-right">판매가</th>
+              <th className="px-2 py-1.5 text-right">실원가</th>
+              <th className="px-2 py-1.5 text-right">수수료</th>
+              <th className="px-2 py-1.5 text-right">공헌이익</th>
+              <th className="px-2 py-1.5 text-right">영업이익</th>
+              <th className="px-2 py-1.5 text-right">마진율</th>
+              <th className="px-2 py-1.5 text-right">믹스%</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {block.options.map((opt, idx) => (
+              <OptionRow key={idx} opt={opt} ev={ev}
+                onChange={(o) => setOption(idx, o)} onRemove={() => removeOption(idx)} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <button type="button" onClick={addOption}
+        className="flex w-full items-center gap-1 rounded-b-xl border-t border-slate-100 px-3 py-1.5 text-[12px] font-bold text-blue-500 hover:bg-blue-50/50">
+        <span className="material-symbols-outlined text-[16px]">add</span> 옵션 추가
+      </button>
+    </div>
+  )
+}
+
+/* ─────────────────────────── 행사 편집기 ─────────────────────────── */
+
+function EventEditor({ initial, channelDefaults, onSaved, onCancel }) {
+  const [ev, setEv] = useState(initial)
+  const [costOpen, setCostOpen] = useState(!initial.id)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [realtime, setRealtime] = useState(null)
+  const costTouched = useRef(!!initial.id)
+
+  const set = (patch) => setEv((prev) => ({ ...prev, ...patch }))
+  const summary = useMemo(() => calcEvent(ev), [ev])
+  const mixOk = Math.abs(summary.mixTotal - 100) < 0.01
+  const hasOptions = (ev.blocks || []).some((b) => (b.options || []).length > 0)
+
+  useEffect(() => {
+    if (!initial.id) return
+    getPromoRealtime(initial.id).then(setRealtime).catch(() => setRealtime(null))
+  }, [initial.id])
+
+  const applyChannelDefault = (channelName) => {
+    const d = channelDefaults.find((c) => c.channel_name === channelName)
+    if (!d) { set({ channelName }); return }
+    set({
+      channelName,
+      feeRate: num(d.fee_rate), adRate: num(d.ad_rate),
+      sgaRate: num(d.sga_rate), shippingCost: num(d.shipping_cost),
+    })
+    costTouched.current = false
+  }
+
+  const onChannelChange = (channelName) => {
+    if (!costTouched.current) applyChannelDefault(channelName)
+    else set({ channelName })
+  }
+
+  const addBlock = (product) => {
+    const cost = num(product.unit_cost)
+    set({
+      blocks: [...ev.blocks, {
+        productCode: product.product_code,
+        productName: product.product_name,
+        options: [{
+          optionName: '기본', unitCost: cost, unitCostOverridden: false,
+          masterUnitCost: cost, listPrice: 0, benefit: { ...EMPTY_BENEFIT }, mixRate: 0,
+        }],
+      }],
+    })
+    setPickerOpen(false)
+  }
+
+  const save = async (statusOverride) => {
+    setError('')
+    if (!ev.title.trim()) { setError('행사명을 입력해 주세요.'); return }
+    if (statusOverride === '진행중' && !mixOk) {
+      setError(`행사 확정은 옵션 믹스 합계가 100%여야 합니다. (현재 ${pct1(summary.mixTotal)})`)
+      return
+    }
+    setSaving(true)
+    try {
+      const payload = { ...ev, status: statusOverride || ev.status }
+      const res = ev.id ? await updatePromoEvent(ev.id, payload) : await createPromoEvent(payload)
+      if (res && res.success === false) throw new Error(res.message || '저장 실패')
+      onSaved()
+    } catch (e) {
+      setError(e?.response?.data?.message || e.message || '저장에 실패했습니다.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* C. 행사 헤더 */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-sm font-black text-slate-800">행사 기본 정보</p>
+          <span className={`rounded px-2 py-0.5 text-[11px] font-black ${STATUS_STYLE[ev.status] || STATUS_STYLE['기획']}`}>{ev.status}</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <Field label="브랜드">
+            <select className={inputCls} value={ev.brandName} onChange={(e) => set({ brandName: e.target.value })}>
+              {BRANDS.map((b) => <option key={b}>{b}</option>)}
+            </select>
+          </Field>
+          <Field label="채널">
+            <select className={inputCls} value={ev.channelName} onChange={(e) => onChannelChange(e.target.value)}>
+              {channelDefaults.map((c) => <option key={c.channel_name}>{c.channel_name}</option>)}
+              {!channelDefaults.some((c) => c.channel_name === ev.channelName) && ev.channelName && <option>{ev.channelName}</option>}
+            </select>
+          </Field>
+          <Field label="행사명" className="col-span-2">
+            <input className={inputCls} placeholder="예) 9월 슈퍼세일 하이프리 기획전"
+              value={ev.title} onChange={(e) => set({ title: e.target.value })} />
+          </Field>
+          <Field label="시작일">
+            <input type="date" className={inputCls} value={ev.startDate} onChange={(e) => set({ startDate: e.target.value })} />
+          </Field>
+          <Field label="종료일">
+            <input type="date" className={inputCls} value={ev.endDate} onChange={(e) => set({ endDate: e.target.value })} />
+          </Field>
+          <Field label="행사 유형">
+            <select className={inputCls} value={ev.promoType} onChange={(e) => set({ promoType: e.target.value })}>
+              {PROMO_TYPES.map((t) => <option key={t}>{t}</option>)}
+            </select>
+          </Field>
+          <Field label="예상 총주문수">
+            <NumInput value={ev.expectedOrders} onChange={(v) => set({ expectedOrders: v })} />
+          </Field>
+        </div>
+        <label className="mt-3 flex items-center gap-2 text-xs font-bold text-slate-600">
+          <input type="checkbox" checked={ev.isAlwaysOn} onChange={(e) => set({ isAlwaysOn: e.target.checked })} />
+          상시 운영 (기간 종료 없이 계속 노출)
+        </label>
+      </div>
+
+      {/* D. 비용 조건 */}
+      <div className="rounded-xl border border-slate-200 bg-white">
+        <button type="button" onClick={() => setCostOpen((v) => !v)}
+          className="flex w-full items-center justify-between px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-black text-slate-800">비용 조건</p>
+            <span className="text-[11px] text-slate-400">
+              수수료 {pct1(ev.feeRate)} · 광고 {pct1(ev.adRate)} · 판관 {pct1(ev.sgaRate)} · 배송 {won(ev.shippingCost)} · 고정비 {won(ev.fixedCost)}
+            </span>
           </div>
-        </aside>
-        <main className="space-y-5">
-          <section className="rounded border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div><p className="text-xs font-black text-slate-500">선택 상품</p><h2 className="mt-1 text-xl font-black">{selectedRow?.product_name || '상품을 선택하세요'}</h2><p className="mt-1 text-xs font-bold text-slate-500">{selectedRow?.channelName || '-'} / SKU {selectedRow?.sku_code || '-'}</p></div>
-              <span className={`rounded-full border px-4 py-2 text-sm font-black ${decision.className}`}>{decision.label}</span>
+          <span className="material-symbols-outlined text-[20px] text-slate-400">{costOpen ? 'expand_less' : 'expand_more'}</span>
+        </button>
+        {costOpen && (
+          <div className="border-t border-slate-100 px-4 py-3">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-6" onInput={() => { costTouched.current = true }}>
+              <Field label="수수료율 (%)"><NumInput value={ev.feeRate} onChange={(v) => set({ feeRate: v })} /></Field>
+              <Field label="광고비율 (%)"><NumInput value={ev.adRate} onChange={(v) => set({ adRate: v })} /></Field>
+              <Field label="판관비율 (%)"><NumInput value={ev.sgaRate} onChange={(v) => set({ sgaRate: v })} /></Field>
+              <Field label="배송단가 (원)"><NumInput value={ev.shippingCost} onChange={(v) => set({ shippingCost: v })} /></Field>
+              <Field label="행사 고정비 (원)"><NumInput value={ev.fixedCost} onChange={(v) => set({ fixedCost: v })} /></Field>
+              <Field label="목표 마진율 (%)"><NumInput value={ev.targetMarginRate} onChange={(v) => set({ targetMarginRate: v })} /></Field>
             </div>
-            <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <div className="rounded bg-slate-50 p-4"><p className="text-xs font-black text-slate-500">제품 원가</p><b className="mt-2 block text-xl">{won(selectedRow?.production_cost)}</b></div>
-              <div className="rounded bg-blue-50 p-4"><p className="text-xs font-black text-blue-700">공헌이익</p><b className="mt-2 block text-xl text-blue-700">{won(result.grossProfit)}</b><span className="text-xs font-black text-blue-600">{pct(result.grossMargin)}</span></div>
-              <div className={`rounded p-4 ${result.operatingProfit >= 0 ? 'bg-blue-50' : 'bg-rose-50'}`}><p className="text-xs font-black text-slate-500">영업이익</p><b className={`mt-2 block text-xl ${result.operatingProfit >= 0 ? 'text-blue-700' : 'text-rose-600'}`}>{won(result.operatingProfit)}</b><span className="text-xs font-black">{pct(result.operatingMargin)}</span></div>
-              <div className="rounded bg-slate-50 p-4"><p className="text-xs font-black text-slate-500">손익분기 주문</p><b className="mt-2 block text-xl">{result.breakEvenOrders == null ? '-' : `${count(result.breakEvenOrders)}건`}</b><span className="text-xs font-bold text-slate-500">행사 고정비 기준</span></div>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[11px] text-slate-400">채널을 바꾸면 해당 채널 기본값이 자동 적용됩니다. (수정한 뒤에는 유지)</p>
+              <button type="button" onClick={() => applyChannelDefault(ev.channelName)}
+                className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-bold text-slate-500 hover:bg-slate-50">
+                채널 기본값 다시 불러오기
+              </button>
             </div>
-          </section>
-          <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-            <div className="rounded border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-xl font-black">선택 상품 실시간 판매</h2>
-              <div className="mt-4 grid grid-cols-3 gap-3">
-                <div className="rounded bg-slate-50 p-4"><p className="text-xs font-black text-slate-500">매출</p><b className="mt-2 block">{won(matchedSales?.sales_amount)}</b></div>
-                <div className="rounded bg-slate-50 p-4"><p className="text-xs font-black text-slate-500">주문</p><b className="mt-2 block">{count(matchedSales?.order_count)}건</b></div>
-                <div className="rounded bg-slate-50 p-4"><p className="text-xs font-black text-slate-500">객단가</p><b className="mt-2 block">{won(matchedSales?.average_order_value || (num(matchedSales?.sales_amount) / Math.max(1, num(matchedSales?.order_count))))}</b></div>
-              </div>
-            </div>
-            <div className="rounded border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-xl font-black">저장한 마진 서식</h2>
-              <div className="mt-4 max-h-56 space-y-2 overflow-auto">
-                {plans.length === 0 ? <p className="rounded bg-slate-50 p-4 text-sm font-bold text-slate-500">저장된 서식이 없습니다.</p> : plans.map(plan => (
-                  <div key={plan.id} className="rounded border border-slate-200 p-3">
-                    <div className="flex items-center justify-between gap-3"><b className="text-sm">{plan.promoName}</b><button onClick={() => setPlans(prev => prev.filter(item => item.id !== plan.id))} className="text-xs font-black text-rose-600">삭제</button></div>
-                    <p className="mt-1 text-xs font-bold text-slate-500">{plan.productName} / {plan.channel} / {plan.promoType}</p>
-                    <p className="mt-2 text-xs font-black">매출 {won(plan.targetRevenue || plan.revenue)} · 이익 {won(plan.operatingProfit)} · 이익률 {pct(plan.operatingMargin)}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-        </main>
-      </section>
+            {num(ev.fixedCost) === 0 && (
+              <p className="mt-2 rounded-lg bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-600">
+                행사 고정비가 0원입니다. 사은품 제작비·촬영비·입점비 등 고정 지출이 있다면 입력해 주세요.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* E. 상품 블록 */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-black text-slate-800">행사 상품 <span className="text-slate-400">({ev.blocks.length})</span></p>
+          <button type="button" onClick={() => setPickerOpen(true)}
+            className="flex items-center gap-1 rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-black text-white hover:bg-blue-600">
+            <span className="material-symbols-outlined text-[16px]">add</span> 상품 추가
+          </button>
+        </div>
+        {ev.blocks.length === 0 && (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-8 text-center text-sm text-slate-400">
+            상품을 추가하면 옵션별 마진이 자동 계산됩니다.
+          </div>
+        )}
+        {ev.blocks.map((block, idx) => (
+          <BlockCard key={idx} block={block} ev={ev}
+            onChange={(b) => set({ blocks: ev.blocks.map((x, i) => (i === idx ? b : x)) })}
+            onRemove={() => set({ blocks: ev.blocks.filter((_, i) => i !== idx) })} />
+        ))}
+        {hasOptions && (
+          <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-[12px] font-bold ${mixOk ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500'}`}>
+            <span className="material-symbols-outlined text-[16px]">{mixOk ? 'check_circle' : 'error'}</span>
+            옵션 믹스 합계 {pct1(summary.mixTotal)} {mixOk ? '— 정상' : '— 100%가 되어야 행사를 확정할 수 있습니다'}
+          </div>
+        )}
+      </div>
+
+      {/* F. 행사 합산 판단 */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-black text-slate-800">행사 합산 판단</p>
+          <span className={`rounded-lg border px-3 py-1 text-[13px] font-black ${verdictStyle(summary.verdict)}`}>
+            {summary.verdict}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+          <div className="rounded-lg bg-slate-50 p-3">
+            <p className="text-[11px] font-bold text-slate-400">예상 매출</p>
+            <p className="mt-1 text-lg font-black text-slate-900">{won(summary.revenue)}</p>
+          </div>
+          <div className="rounded-lg bg-slate-50 p-3">
+            <p className="text-[11px] font-bold text-slate-400">행사 영업이익 (고정비 차감)</p>
+            <p className={`mt-1 text-lg font-black ${summary.eventProfit >= 0 ? 'text-slate-900' : 'text-rose-500'}`}>{won(summary.eventProfit)}</p>
+          </div>
+          <div className="rounded-lg bg-slate-50 p-3">
+            <p className="text-[11px] font-bold text-slate-400">가중평균 마진율 (목표 {pct1(ev.targetMarginRate)})</p>
+            <p className={`mt-1 text-lg font-black ${optionLight(summary.weightedMargin, ev.targetMarginRate).text}`}>{pct1(summary.weightedMargin)}</p>
+          </div>
+          <div className="rounded-lg bg-slate-50 p-3">
+            <p className="text-[11px] font-bold text-slate-400">손익분기 주문수 (BEP)</p>
+            <p className="mt-1 text-lg font-black text-slate-900">{summary.bep != null ? `${comma(summary.bep)}건` : '-'}</p>
+          </div>
+          <div className="rounded-lg bg-slate-50 p-3">
+            <p className="text-[11px] font-bold text-slate-400">실시간 매출 (행사 기간)</p>
+            {realtime ? (
+              <p className="mt-1 text-lg font-black text-blue-600">{won(realtime.salesAmount)} <span className="text-[11px] font-bold text-slate-400">/ {comma(realtime.orderCount)}건</span></p>
+            ) : (
+              <p className="mt-1 text-[12px] font-bold text-slate-400">{ev.id ? '조회 중…' : '저장 후 조회됩니다'}</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {error && (
+        <div className="rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-bold text-rose-500">{error}</div>
+      )}
+
+      <div className="flex flex-wrap items-center justify-end gap-2 pb-6">
+        <button type="button" onClick={onCancel}
+          className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50">
+          목록으로
+        </button>
+        <button type="button" disabled={saving} onClick={() => save()}
+          className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-black text-blue-600 hover:bg-blue-100 disabled:opacity-50">
+          {saving ? '저장 중…' : '임시 저장'}
+        </button>
+        {ev.status === '기획' && (
+          <button type="button" disabled={saving} onClick={() => save('진행중')}
+            className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-black text-white hover:bg-blue-600 disabled:opacity-50">
+            행사 확정 (진행중 전환)
+          </button>
+        )}
+      </div>
+
+      {pickerOpen && <ProductPicker onPick={addBlock} onClose={() => setPickerOpen(false)} />}
+    </div>
+  )
+}
+
+/* ─────────────────────────── 행사 목록 ─────────────────────────── */
+
+function EventList({ events, loading, onEdit, onDelete, onStatus }) {
+  if (loading) return <p className="py-12 text-center text-sm text-slate-400">불러오는 중…</p>
+  if (!events.length) {
+    return (
+      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-10 text-center text-sm text-slate-400">
+        이 달에 등록된 행사가 없습니다. 우측 상단 [새 행사 만들기]로 시작하세요.
+      </div>
+    )
+  }
+  return (
+    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+      <table className="w-full min-w-[760px]">
+        <thead>
+          <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400">
+            <th className="px-3 py-2.5 text-left">행사명</th>
+            <th className="px-3 py-2.5 text-left">브랜드</th>
+            <th className="px-3 py-2.5 text-left">채널</th>
+            <th className="px-3 py-2.5 text-left">기간</th>
+            <th className="px-3 py-2.5 text-right">예상매출</th>
+            <th className="px-3 py-2.5 text-right">가중평균 마진</th>
+            <th className="px-3 py-2.5 text-center">판단</th>
+            <th className="px-3 py-2.5 text-center">상태</th>
+            <th className="px-2 py-2.5" />
+          </tr>
+        </thead>
+        <tbody>
+          {events.map((row) => {
+            const ev = fromServer(row)
+            const s = calcEvent(ev)
+            return (
+              <tr key={row.id} className="cursor-pointer border-b border-slate-50 last:border-b-0 hover:bg-blue-50/40"
+                onClick={() => onEdit(row.id)}>
+                <td className="px-3 py-2.5">
+                  <p className="text-[13px] font-black text-slate-800">{ev.title}</p>
+                  {ev.isAlwaysOn && <span className="text-[10px] font-bold text-slate-400">상시</span>}
+                </td>
+                <td className="px-3 py-2.5 text-[13px] text-slate-600">{ev.brandName}</td>
+                <td className="px-3 py-2.5 text-[13px] text-slate-600">{ev.channelName}</td>
+                <td className="px-3 py-2.5 text-[12px] text-slate-500">{ev.startDate.slice(5)} ~ {ev.endDate.slice(5)}</td>
+                <td className="px-3 py-2.5 text-right text-[13px] font-bold text-slate-800">{won(s.revenue)}</td>
+                <td className={`px-3 py-2.5 text-right text-[13px] font-black ${optionLight(s.weightedMargin, ev.targetMarginRate).text}`}>
+                  {s.revenue > 0 ? pct1(s.weightedMargin) : '-'}
+                </td>
+                <td className="px-3 py-2.5 text-center">
+                  {s.revenue > 0 && (
+                    <span className={`rounded border px-1.5 py-0.5 text-[11px] font-black ${verdictStyle(s.verdict)}`}>{s.verdict}</span>
+                  )}
+                </td>
+                <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                  <select value={ev.status} onChange={(e) => onStatus(row.id, e.target.value)}
+                    className={`rounded px-1.5 py-1 text-[11px] font-black ${STATUS_STYLE[ev.status]} border-0 focus:outline-none`}>
+                    {STATUS_LIST.map((st) => <option key={st}>{st}</option>)}
+                  </select>
+                </td>
+                <td className="px-2 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                  <button type="button" onClick={() => onDelete(row.id)} className="text-slate-300 hover:text-rose-500">
+                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                  </button>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/* ─────────────────────────── 메인 페이지 ─────────────────────────── */
+
+export default function PromotionMarginPage() {
+  const [month, setMonth] = useState(thisMonth())
+  const [brand, setBrand] = useState('')
+  const [channel, setChannel] = useState('')
+  const [events, setEvents] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [channelDefaults, setChannelDefaults] = useState([])
+  const [editing, setEditing] = useState(null)
+  const [loadError, setLoadError] = useState('')
+
+  const load = useCallback(() => {
+    setLoading(true)
+    setLoadError('')
+    listPromoEvents({ month, ...(brand ? { brand } : {}), ...(channel ? { channel } : {}) })
+      .then((data) => setEvents(data || []))
+      .catch((e) => setLoadError(e?.response?.data?.message || '행사 목록을 불러오지 못했습니다.'))
+      .finally(() => setLoading(false))
+  }, [month, brand, channel])
+
+  useEffect(() => {
+    const t = setTimeout(load, 0)
+    return () => clearTimeout(t)
+  }, [load])
+  useEffect(() => {
+    getChannelDefaults().then((data) => setChannelDefaults(data || [])).catch(() => setChannelDefaults([]))
+  }, [])
+
+  const openNew = () => {
+    const d = channelDefaults.find((c) => c.channel_name === '스마트스토어') || channelDefaults[0]
+    setEditing(newEvent(d))
+  }
+  const openEdit = (id) => {
+    getPromoEvent(id).then((row) => setEditing(fromServer(row))).catch(() => {})
+  }
+  const remove = (id) => {
+    if (!window.confirm('이 행사를 삭제할까요? 되돌릴 수 없습니다.')) return
+    deletePromoEvent(id).then(load).catch(() => {})
+  }
+  const changeStatus = (id, status) => {
+    updatePromoStatus(id, status).then(load).catch(() => {})
+  }
+
+  return (
+    <div className="space-y-4 p-4 md:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-black text-slate-900">프로모션 마진 · 행사 설계</h1>
+          <p className="mt-0.5 text-[12px] text-slate-400">
+            채널 조건과 옵션 혜택을 입력하면 마진과 진행 가능 여부가 자동 계산됩니다. (모든 금액 세전 기준)
+          </p>
+        </div>
+        {!editing && (
+          <button type="button" onClick={openNew}
+            className="flex items-center gap-1 rounded-lg bg-blue-500 px-3.5 py-2 text-sm font-black text-white hover:bg-blue-600">
+            <span className="material-symbols-outlined text-[18px]">add</span> 새 행사 만들기
+          </button>
+        )}
+      </div>
+
+      {editing ? (
+        <EventEditor
+          initial={editing}
+          channelDefaults={channelDefaults}
+          onSaved={() => { setEditing(null); load() }}
+          onCancel={() => setEditing(null)}
+        />
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <input type="month" className={inputCls} value={month} onChange={(e) => setMonth(e.target.value)} />
+            <select className={inputCls} value={brand} onChange={(e) => setBrand(e.target.value)}>
+              <option value="">전체 브랜드</option>
+              {BRANDS.map((b) => <option key={b}>{b}</option>)}
+            </select>
+            <select className={inputCls} value={channel} onChange={(e) => setChannel(e.target.value)}>
+              <option value="">전체 채널</option>
+              {channelDefaults.map((c) => <option key={c.channel_name}>{c.channel_name}</option>)}
+            </select>
+          </div>
+          {loadError && <div className="rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-bold text-rose-500">{loadError}</div>}
+          <EventList events={events} loading={loading}
+            onEdit={openEdit} onDelete={remove} onStatus={changeStatus} />
+        </>
+      )}
     </div>
   )
 }
