@@ -139,6 +139,38 @@ const mobileTabs = [
   { id: 'staff-dashboard', label: '더보기', icon: 'menu' },
 ]
 
+// 새 배포 감지: 5분마다 index.html의 번들 해시를 확인해 바뀌면 새로고침 안내
+function UpdateNotice() {
+  const [updateAvailable, setUpdateAvailable] = useState(false)
+
+  useEffect(() => {
+    const currentSrc = document.querySelector('script[src*="assets/index-"]')?.getAttribute('src')
+    if (!currentSrc) return undefined
+    const check = async () => {
+      try {
+        const html = await fetch('/index.html', { cache: 'no-store' }).then((r) => r.text())
+        const match = html.match(/assets\/index-[\w-]+\.js/)
+        if (match && !currentSrc.includes(match[0])) setUpdateAvailable(true)
+      } catch { /* 네트워크 오류 무시 */ }
+    }
+    const id = setInterval(check, 5 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  if (!updateAvailable) return null
+  return (
+    <div className="fixed inset-x-0 bottom-4 z-[100] flex justify-center px-4">
+      <div className="flex items-center gap-3 rounded-full bg-slate-900 px-5 py-3 text-sm font-bold text-white shadow-xl">
+        <span className="material-symbols-outlined text-lg text-sky-400">rocket_launch</span>
+        새 버전이 배포되었습니다
+        <button type="button" onClick={() => window.location.reload()} className="rounded-full bg-sky-500 px-4 py-1.5 font-black text-white hover:bg-sky-400">
+          새로고침
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -191,6 +223,7 @@ function MobileLayout({ activePage, setPage, session, userRole }) {
 
   return (
     <div className="app-light flex h-dvh flex-col bg-slate-50 text-slate-900" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <UpdateNotice />
       <header className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 shadow-sm" style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
         <button
           type="button"
@@ -391,6 +424,7 @@ export default function App() {
         activeSectionId={effectiveSectionId}
         onSelectSection={handleSelectSection}
       />
+      <UpdateNotice />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           activePage={page}
