@@ -57,6 +57,15 @@ public class SettleSheetService {
     /** 2026년 이후에도 시트가 유일한 소스인 매체 (직연동 미커버) */
     private static final Set<String> UNCOVERED_MEDIA = Set.of("위탁판매", "계좌이체", "NS홈쇼핑", "토스", "직접입력");
 
+    /** PlayAuto 중단 후 공백이 생긴 매체 → 시트로 보충 (매체 → 상점명 ILIKE 패턴) */
+    private static final Map<String, String> GAP_MEDIA = Map.of(
+            "카카오톡 스토어", "%카카오%",
+            "쿠팡", "%쿠팡%",
+            "지마켓", "%지마켓%",
+            "옥션", "%옥션%",
+            "11번가", "%11번가%"
+    );
+
     private final JdbcTemplate jdbcTemplate;
     private final ChannelSyncService channelSyncService;
 
@@ -98,7 +107,18 @@ public class SettleSheetService {
             log.info("[SettleSheet] replaceLegacy: {} pre-2026 orders removed (sheet becomes source of truth)", deleted);
         }
 
-        // 필터링: 2025년 전체 + 2026년 미커버 매체
+        // GAP 매체: 직연동/PlayAuto가 멈춘 뒤 시트가 소스인 채널 — 마지막 수집일 이후 시트 기록 수집
+        // (직연동이 다시 데이터를 넣으면 컷오프가 전진하고, 겹치는 시트분은 자동 제거됨)
+        Map<String, LocalDate> gapCutoffs = new HashMap<>();
+        for (Map.Entry<String, String> g : GAP_MEDIA.entrySet()) {
+            java.sql.Date maxDate = jdbcTemplate.query("""
+                    SELECT MAX(o.ord_time)::date AS d FROM orders o JOIN shop s ON s.id = o.shop_id
+                    WHERE o.company_id = ? AND o.uniq NOT LIKE 'LGC-%' AND s.shop_name ILIKE ?
+                    """, rs -> rs.next() ? rs.getDate("d") : null, COMPANY, g.getValue());
+            gapCutoffs.put(g.getKey(), maxDate == null ? LocalDate.of(2025, 12, 31) : maxDate.toLocalDate());
+        }
+
+        // 필터링: 2025년 전체 + 2026년 미커버 매체 + GAP 매체(컷오프 이후)
         record Row(String uniq, LocalDate date, String[] channel, String buyer, String product, long amount, int qty) {}
         List<Row> valid = new ArrayList<>();
         Map<String, Integer> occurrence = new HashMap<>();
@@ -109,8 +129,11 @@ public class SettleSheetService {
             long amount = num(r.get("amount"));
             String product = str(r.get("product"));
             String[] channel = media == null ? null : MEDIA_CHANNELS.get(media);
+            LocalDate gapCutoff = media == null ? null : gapCutoffs.get(media);
             boolean inScope = date != null && channel != null && amount > 0 && notBlank(product)
-                    && (!date.isAfter(LEGACY_END) || UNCOVERED_MEDIA.contains(media));
+                    && (!date.isAfter(LEGACY_END)
+                        || UNCOVERED_MEDIA.contains(media)
+                        || (gapCutoff != null && date.isAfter(gapCutoff)));
             if (!inScope) { skipped++; continue; }
             String buyer = str(r.get("buyer"));
             String baseKey = date + "|" + media + "|" + (buyer == null ? "" : buyer) + "|" + product + "|" + amount;
@@ -148,6 +171,11 @@ public class SettleSheetService {
                 """, batch);
 
         // 일별/월별 실적 재계산 (채널×스냅샷 교체)
+        Set<String> gapDisplayNames = new HashSet<>();
+        for (String media : GAP_MEDIA.keySet()) {
+            String[] ch = MEDIA_CHANNELS.get(media);
+            if (ch != null) gapDisplayNames.add(ch[0]);
+        }
         Map<String, TreeMap<LocalDate, long[]>> daily = new HashMap<>();
         for (Row row : valid) {
             daily.computeIfAbsent(row.channel()[0], k -> new TreeMap<>())
@@ -170,9 +198,36 @@ public class SettleSheetService {
                     "INSERT INTO field_sales_entry (company_id, channel_name, entry_date, quantity, sales_amount, memo, created_by) VALUES (?,?,?,?,?,?,?)",
                     dailyBatch);
             for (Map.Entry<YearMonth, long[]> m : monthly.entrySet()) {
+                // GAP 채널의 2026년 월별 실적은 아래에서 orders 전체 기준으로 재계산하므로 건너뜀
+                if (gapDisplayNames.contains(channelName) && m.getKey().getYear() >= 2026) continue;
                 channelSyncService.saveOrUpdateChannelPerformance(
                         channelName, m.getKey().toString(), m.getValue()[0], (int) m.getValue()[1], "SETTLE_SHEET");
                 upsertExecutivePerformance(channelName, m.getKey(), m.getValue()[0], (int) m.getValue()[1]);
+            }
+        }
+
+        // GAP 채널 정리: 직연동이 다시 채운 기간의 시트분 제거 + 2026 월별 실적을 orders 합산으로 재계산
+        for (Map.Entry<String, String> g : GAP_MEDIA.entrySet()) {
+            String[] channel = MEDIA_CHANNELS.get(g.getKey());
+            LocalDate cutoff = gapCutoffs.get(g.getKey());
+            if (channel == null || cutoff == null) continue;
+            jdbcTemplate.update("""
+                    DELETE FROM orders o USING shop s
+                    WHERE o.shop_id = s.id AND o.company_id = ? AND o.uniq LIKE 'LGC-%'
+                      AND s.shop_code = ? AND o.ord_time >= '2026-01-01' AND o.ord_time::date <= ?
+                    """, COMPANY, channel[1], java.sql.Date.valueOf(cutoff));
+            List<Map<String, Object>> months = jdbcTemplate.queryForList("""
+                    SELECT date_trunc('month', o.ord_time)::date AS m,
+                           ROUND(COALESCE(SUM(o.pay_amt), 0), 0) AS total, COUNT(*)::int AS cnt
+                    FROM orders o JOIN shop s ON s.id = o.shop_id
+                    WHERE o.company_id = ? AND s.shop_name ILIKE ? AND o.ord_time >= '2026-01-01'
+                      AND o.ord_status NOT IN ('취소완료', '반품완료', '교환완료', '맞교환완료', '주문취소')
+                    GROUP BY 1
+                    """, COMPANY, g.getValue());
+            for (Map<String, Object> m : months) {
+                LocalDate month = ((java.sql.Date) m.get("m")).toLocalDate();
+                upsertExecutivePerformance(channel[0], YearMonth.from(month),
+                        ((Number) m.get("total")).longValue(), ((Number) m.get("cnt")).intValue());
             }
         }
 
