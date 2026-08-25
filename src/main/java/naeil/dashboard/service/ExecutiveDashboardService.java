@@ -1176,7 +1176,7 @@ public class ExecutiveDashboardService {
                 WITH playauto AS (
                     SELECT
                         s.shop_name AS channel_name,
-                        'PLAYAUTO' AS source_type,
+                        CASE WHEN s.shop_code LIKE 'OFF-%' THEN 'OFFLINE_SHEET' ELSE 'PLAYAUTO' END AS source_type,
                         ROUND(COALESCE(SUM(o.pay_amt), 0), 0) AS sales_amount,
                         COUNT(*)::int AS order_count,
                         0::numeric AS ad_cost,
@@ -1209,7 +1209,7 @@ public class ExecutiveDashboardService {
                            OR p.sku_cd ILIKE CONCAT('%', ?::text, '%')
                            OR b.brand_name ILIKE CONCAT('%', ?::text, '%'))
                       AND (?::text IS NULL OR p.product_name ILIKE CONCAT('%', ?::text, '%'))
-                    GROUP BY s.shop_name
+                    GROUP BY s.shop_name, CASE WHEN s.shop_code LIKE 'OFF-%' THEN 'OFFLINE_SHEET' ELSE 'PLAYAUTO' END
                 ),
                 manual AS (
                     SELECT
@@ -1488,9 +1488,27 @@ public class ExecutiveDashboardService {
                 .map(r -> decimalValue(r.get("actual_operating_profit")))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        // 온라인/오프라인 분리 합계 (오프라인 = 발주시트 직연동 + 수기 오프라인 채널)
+        BigDecimal offlineSalesTotal = BigDecimal.ZERO;
+        int offlineOrdersTotal = 0;
+        for (Map<String, Object> row : channels) {
+            String srcType = String.valueOf(row.getOrDefault("source_type", "")).toUpperCase();
+            String chName = String.valueOf(row.getOrDefault("channel_name", ""));
+            boolean offline = "OFFLINE_SHEET".equals(srcType) || "OFFLINE".equals(srcType)
+                    || chName.contains("오프라인") || chName.contains("매장");
+            if (offline) {
+                offlineSalesTotal = offlineSalesTotal.add(decimalValue(row.get("sales_amount")));
+                offlineOrdersTotal += ((Number) row.getOrDefault("order_count", 0)).intValue();
+            }
+        }
+
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("salesAmount", totalSales);
         summary.put("orderCount", totalOrders);
+        summary.put("onlineSales", totalSales.subtract(offlineSalesTotal));
+        summary.put("offlineSales", offlineSalesTotal);
+        summary.put("onlineOrders", totalOrders - offlineOrdersTotal);
+        summary.put("offlineOrders", offlineOrdersTotal);
         summary.put("averageOrderValue", totalOrders > 0
                 ? totalSales.divide(BigDecimal.valueOf(totalOrders), 0, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO);
@@ -1507,7 +1525,9 @@ public class ExecutiveDashboardService {
                     SELECT
                         o.ord_time::date AS sales_date,
                         ROUND(COALESCE(SUM(o.pay_amt), 0), 0) AS sales_amount,
-                        COUNT(*)::int AS order_count
+                        COUNT(*)::int AS order_count,
+                        ROUND(COALESCE(SUM(CASE WHEN s.shop_code LIKE 'OFF-%' THEN o.pay_amt ELSE 0 END), 0), 0) AS offline_amount,
+                        COALESCE(SUM(CASE WHEN s.shop_code LIKE 'OFF-%' THEN 1 ELSE 0 END), 0)::int AS offline_orders
                     FROM orders o
                     LEFT JOIN product p ON p.id = o.product_id
                     LEFT JOIN brand b ON b.id = o.brand_id
@@ -1529,7 +1549,9 @@ public class ExecutiveDashboardService {
                     SELECT
                         report_month::date AS sales_date,
                         ROUND(COALESCE(SUM(sales_amount), 0), 0) AS sales_amount,
-                        COALESCE(SUM(order_count), 0)::int AS order_count
+                        COALESCE(SUM(order_count), 0)::int AS order_count,
+                        0::numeric AS offline_amount,
+                        0::int AS offline_orders
                     FROM executive_channel_performance
                     WHERE company_id = ?
                       AND COALESCE(source_type, 'MANUAL') NOT IN ('PLAYAUTO', 'DIRECT_API')
@@ -1546,7 +1568,9 @@ public class ExecutiveDashboardService {
                 SELECT
                     sales_date,
                     ROUND(COALESCE(SUM(sales_amount), 0), 0) AS sales_amount,
-                    COALESCE(SUM(order_count), 0)::int AS order_count
+                    COALESCE(SUM(order_count), 0)::int AS order_count,
+                    ROUND(COALESCE(SUM(offline_amount), 0), 0) AS offline_amount,
+                    COALESCE(SUM(offline_orders), 0)::int AS offline_orders
                 FROM combined
                 GROUP BY sales_date
                 ORDER BY sales_date

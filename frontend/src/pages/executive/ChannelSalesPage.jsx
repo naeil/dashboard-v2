@@ -113,6 +113,7 @@ function getPreset(preset) {
 function sourceGroup(row) {
   const type = String(row.source_type || '').toUpperCase()
   const channel = String(row.channel_name || '')
+  if (type === 'OFFLINE_SHEET') return 'offline'
   if (type === 'PLAYAUTO') return 'online'
   if (type === 'OFFLINE' || channel.includes('오프라인') || channel.includes('매장')) return 'offline'
   if (type === 'OVERSEAS' || channel.includes('해외') || channel.includes('수출') || channel.includes('쇼피') || channel.includes('아마존')) return 'overseas'
@@ -171,9 +172,11 @@ function TrendChart({ rows }) {
   const yOrders = (value) => height - padY - (Number(value || 0) / maxOrders) * (height - padY * 2)
   const salesPath = points.map((row, idx) => `${idx === 0 ? 'M' : 'L'} ${xFor(idx)} ${ySales(row.sales_amount)}`).join(' ')
   const orderPath = points.map((row, idx) => `${idx === 0 ? 'M' : 'L'} ${xFor(idx)} ${yOrders(row.order_count)}`).join(' ')
+  const hasOffline = points.some((row) => Number(row.offline_amount || 0) > 0)
+  const offlinePath = points.map((row, idx) => `${idx === 0 ? 'M' : 'L'} ${xFor(idx)} ${ySales(row.offline_amount || 0)}`).join(' ')
   const hovered = hoverIndex != null ? points[hoverIndex] : null
   const tooltipX = hoverIndex != null ? Math.min(width - 210, Math.max(20, xFor(hoverIndex) + 12)) : 0
-  const tooltipY = hovered ? Math.max(20, Math.min(ySales(hovered.sales_amount), yOrders(hovered.order_count)) - 78) : 0
+  const tooltipY = hovered ? Math.max(20, Math.min(ySales(hovered.sales_amount), yOrders(hovered.order_count)) - 112) : 0
 
   return (
     <section className="rounded border border-slate-200 bg-white p-6">
@@ -184,7 +187,8 @@ function TrendChart({ rows }) {
         </div>
         <div className="flex items-center gap-4 text-xs font-bold">
           <span className="flex items-center gap-1 text-orange-600"><span className="h-3 w-3 rounded bg-orange-500" />판매량</span>
-          <span className="flex items-center gap-1 text-blue-600"><span className="h-3 w-3 rounded bg-blue-500" />실결제 매출</span>
+          <span className="flex items-center gap-1 text-blue-600"><span className="h-3 w-3 rounded bg-blue-500" />전체 매출</span>
+          <span className="flex items-center gap-1 text-emerald-600"><span className="h-3 w-3 rounded bg-emerald-500" />오프라인 매출</span>
         </div>
       </div>
       {points.length ? (
@@ -195,6 +199,7 @@ function TrendChart({ rows }) {
           })}
           <path d={orderPath} fill="none" stroke="#f97316" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
           <path d={salesPath} fill="none" stroke="#2f6bff" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
+          {hasOffline && <path d={offlinePath} fill="none" stroke="#10b981" strokeWidth="2.5" strokeDasharray="6 4" strokeLinejoin="round" strokeLinecap="round" />}
           {points.map((row, idx) => (
             <g key={`${row.sales_date}-${idx}`}>
               <rect
@@ -214,10 +219,12 @@ function TrendChart({ rows }) {
           {hovered && (
             <g pointerEvents="none">
               <line x1={xFor(hoverIndex)} x2={xFor(hoverIndex)} y1={padY} y2={height - padY} stroke="#94a3b8" strokeDasharray="4 4" />
-              <rect x={tooltipX} y={tooltipY} width="190" height="72" rx="8" fill="#0f172a" opacity="0.94" />
+              <rect x={tooltipX} y={tooltipY} width="190" height="110" rx="8" fill="#0f172a" opacity="0.94" />
               <text x={tooltipX + 12} y={tooltipY + 20} className="fill-white text-[12px] font-black">{shortDate(hovered.sales_date)}</text>
-              <text x={tooltipX + 12} y={tooltipY + 42} className="fill-blue-200 text-[12px] font-bold">실결제 매출 {won(hovered.sales_amount)}</text>
-              <text x={tooltipX + 12} y={tooltipY + 61} className="fill-orange-200 text-[12px] font-bold">주문 {count(hovered.order_count, '건')}</text>
+              <text x={tooltipX + 12} y={tooltipY + 42} className="fill-blue-200 text-[12px] font-bold">전체 매출 {won(hovered.sales_amount)}</text>
+              <text x={tooltipX + 12} y={tooltipY + 61} className="fill-sky-200 text-[12px] font-bold">온라인 {won(Number(hovered.sales_amount || 0) - Number(hovered.offline_amount || 0))}</text>
+              <text x={tooltipX + 12} y={tooltipY + 80} className="fill-emerald-200 text-[12px] font-bold">오프라인 {won(hovered.offline_amount || 0)}</text>
+              <text x={tooltipX + 12} y={tooltipY + 99} className="fill-orange-200 text-[12px] font-bold">주문 {count(hovered.order_count, '건')}</text>
             </g>
           )}
         </svg>
@@ -505,16 +512,6 @@ export default function ChannelSalesPage() {
     return rows
   }, [products, productFilter, sortBy])
 
-  const sourceSummary = useMemo(() => {
-    const base = { online: { sales: 0, orders: 0 }, offline: { sales: 0, orders: 0 }, overseas: { sales: 0, orders: 0 }, b2b: { sales: 0, orders: 0 } }
-    channels.forEach((row) => {
-      const group = sourceGroup(row)
-      base[group].sales += Number(row.sales_amount || 0)
-      base[group].orders += Number(row.order_count || 0)
-    })
-    return base
-  }, [channels])
-
   const soldProducts = products.filter((row) => Number(row.sales_amount || 0) > 0).length
   const unsoldProducts = Math.max(0, products.length - soldProducts)
   const lastUpdatedText = lastUpdatedAt ? lastUpdatedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'
@@ -669,8 +666,10 @@ export default function ChannelSalesPage() {
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_290px]">
         <div className="rounded border border-slate-200 bg-white shadow-sm">
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
-            <MetricCard icon="payments" label="실결제 매출" value={Number(summary.salesAmount || 0).toLocaleString('ko-KR')} change={0} active />
+          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-4">
+            <MetricCard icon="payments" label="실결제 매출 (전체)" value={Number(summary.salesAmount || 0).toLocaleString('ko-KR')} change={0} active />
+            <MetricCard icon="shopping_cart" label={`온라인 매출 · ${count(summary.onlineOrders || 0)}건`} value={Number(summary.onlineSales || 0).toLocaleString('ko-KR')} change={0} />
+            <MetricCard icon="store" label={`오프라인 매출 · ${count(summary.offlineOrders || 0)}건`} value={Number(summary.offlineSales || 0).toLocaleString('ko-KR')} change={0} />
             <MetricCard icon="inventory_2" label="주문" value={count(summary.orderCount || 0)} change={0} />
             <MetricCard icon="receipt_long" label="객단가" value={won(summary.averageOrderValue || 0)} change={0} />
             <MetricCard icon="campaign" label="네이버 CPC 광고비" value={won(naverCpc.summary?.cost || 0)} change={0} />
