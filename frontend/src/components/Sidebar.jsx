@@ -117,7 +117,6 @@ export const defaultMenuSections = [
     group: 'staff',
     departments: ['marketing'],
     items: [
-      { id: 'marketing-projects', icon: 'view_kanban', label: '마케팅 프로젝트', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'promotion-margin', icon: 'sell', label: '프로모션 마진', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'promotion-history', icon: 'receipt_long', label: '프로모션 내역', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'ad-performance', icon: 'campaign', label: '광고 성과', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
