@@ -99,6 +99,7 @@ export const defaultMenuSections = [
     group: 'staff',
     departments: ['all'],
     items: [
+      { id: 'kpi-performance', icon: 'military_tech', label: 'KPI 성과급', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'incentive-online', icon: 'bar_chart', label: '온라인 성과', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'incentive-clients', icon: 'handshake', label: '거래처 성과', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'incentive-summary', icon: 'payments', label: '직원별 예상 인센티브', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },

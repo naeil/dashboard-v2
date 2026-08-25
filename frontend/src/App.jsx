@@ -19,6 +19,7 @@ import CustomerInquiryPage from './pages/executive/CustomerInquiryPage'
 import CustomerIntelligencePage from './pages/executive/CustomerIntelligencePage'
 import SettlementSchedulePage from './pages/executive/SettlementSchedulePage'
 import IncentiveManagementPage from './pages/executive/IncentiveManagementPage'
+import KpiPerformancePage from './pages/executive/KpiPerformancePage'
 import ChannelApiSettingsPage from './pages/executive/ChannelApiSettingsPage'
 import DebtPage from './pages/executive/DebtPage'
 import EmployeeManagementPage from './pages/executive/EmployeeManagementPage'
@@ -118,6 +119,7 @@ const pages = {
   'partner-payment': PartnerPaymentLedgerPage,
   'settlement-schedule': SettlementSchedulePage,
   'incentive-online': IncentiveManagementPage,
+  'kpi-performance': KpiPerformancePage,
   'incentive-clients': IncentiveManagementPage,
   'incentive-summary': IncentiveManagementPage,
   'channel-api-settings': ChannelApiSettingsPage,
