@@ -276,7 +276,8 @@ public class SettleSheetService {
         List<Long> ids = jdbcTemplate.queryForList(
                 "SELECT id FROM shop WHERE shop_code = ? LIMIT 1", Long.class, code);
         if (!ids.isEmpty()) return ids.get(0);
-        jdbcTemplate.update("INSERT INTO shop (company_id, shop_name, shop_code) VALUES (?, ?, ?)", COMPANY, name, code);
+        jdbcTemplate.update("INSERT INTO shop (company_id, shop_name, shop_code, platform, created_at) VALUES (?, ?, ?, 'PLAYAUTO', NOW())",
+                COMPANY, name, code);
         return jdbcTemplate.queryForObject(
                 "SELECT id FROM shop WHERE shop_code = ? ORDER BY id DESC LIMIT 1", Long.class, code);
     }
