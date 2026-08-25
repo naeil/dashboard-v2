@@ -5,8 +5,8 @@ import {
   getExecutiveChannelSales,
   getExecutiveChannelSalesAnalytics,
   getNaverCpcPerformance,
-  importPlayAutoChannelSales,
 } from '../../api/executiveApi'
+import { syncDailyAll } from '../../api/channelSyncApi'
 import { getBrands } from '../../api/salesApi'
 import RecordForm from './RecordForm'
 import { count, pct, won } from './formatters'
@@ -404,14 +404,7 @@ export default function ChannelSalesPage() {
 
   useEffect(() => {
     if (!autoSync) return undefined
-    importPlayAutoChannelSales({ startDate, endDate })
-      .then(() => {
-        const filters = filtersRef.current
-        return loadAnalytics(startDate, endDate, filters.selectedBrandId, filters.searchText, filters.selectedProductGroup, filters.selectedChannel)
-      })
-      .catch((err) => setMessage(err?.response?.data?.message || 'PlayAuto API sync failed'))
-    const id = window.setInterval(async () => {
-      await importPlayAutoChannelSales({ startDate, endDate }).catch((err) => setMessage(err?.response?.data?.message || 'PlayAuto API sync failed'))
+    const id = window.setInterval(() => {
       const filters = filtersRef.current
       loadAnalytics(startDate, endDate, filters.selectedBrandId, filters.searchText, filters.selectedProductGroup, filters.selectedChannel)
         .catch((err) => setMessage(err?.response?.data?.message || '화면 갱신 실패'))
@@ -477,11 +470,16 @@ export default function ChannelSalesPage() {
     setImporting(true)
     setMessage('')
     try {
-      const res = await importPlayAutoChannelSales({ startDate, endDate })
+      const t = new Date()
+      const f = new Date()
+      f.setDate(t.getDate() - 3)
+      const res = await syncDailyAll(toISO(f), toISO(t))
       await loadAnalytics(startDate, endDate, selectedBrandId, searchText, selectedProductGroup, selectedChannel)
-      setMessage(`PlayAuto ${count((res.data || {}).upsertedCount || 0, '건')} 반영 완료`)
+      const results = res?.results || {}
+      const okChannels = Object.entries(results).filter(([, v]) => v && v.success !== false).length
+      setMessage(`직연동 즉시 수집 완료 — 최근 4일, ${okChannels}개 채널 갱신`)
     } catch (err) {
-      setMessage(err?.response?.data?.message || 'PlayAuto 반영 실패')
+      setMessage(err?.message || err?.response?.data?.message || '직연동 수집 실패')
     } finally {
       setImporting(false)
     }
@@ -529,7 +527,7 @@ export default function ChannelSalesPage() {
           </span>
           <button onClick={() => setAutoSync((v) => !v)} className="rounded border border-slate-300 px-3 py-1.5 text-xs font-black text-slate-700">자동 갱신 전환</button>
           <button onClick={handleImport} disabled={importing} className="rounded border border-blue-500 bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-700 disabled:opacity-50">
-            {importing ? 'PlayAuto 매출 수집 중...' : 'PlayAuto 매출 수집'}
+            {importing ? '온라인 매출 수집 중...' : '온라인 매출 즉시 수집'}
           </button>
         </div>
       </header>
