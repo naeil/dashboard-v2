@@ -36,7 +36,7 @@ public class AuthInterceptor implements HandlerInterceptor {
                 || "/api/auth/session".equals(path)
                 || "/api/auth/logout".equals(path)
                 || "/api/health".equals(path)
-                || "/api/integrations/offline-sheet/import".equals(path)
+                || path.startsWith("/api/integrations/offline-sheet/import")
                 || path.startsWith("/api/executive/diag/")) {
             return true;
         }
