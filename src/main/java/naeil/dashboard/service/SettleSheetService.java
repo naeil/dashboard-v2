@@ -238,6 +238,55 @@ public class SettleSheetService {
         return result;
     }
 
+    /* ───────────────────── ④ 입고 데이터 ───────────────────── */
+
+    @Transactional
+    public Map<String, Object> importInbound(List<Map<String, Object>> rows) {
+        Map<String, long[]> byNorm = new HashMap<>();
+        for (Map<String, Object> p : jdbcTemplate.queryForList(
+                "SELECT id, brand_id, product_name FROM product WHERE company_id = ?", COMPANY)) {
+            byNorm.putIfAbsent(norm(String.valueOf(p.get("product_name"))),
+                    new long[]{((Number) p.get("id")).longValue(), ((Number) p.get("brand_id")).longValue()});
+        }
+        Map<String, long[]> agg = new LinkedHashMap<>(); // productId|date|warehouse -> [qty, brandId]
+        Set<String> unmatched = new HashSet<>();
+        int matchedRows = 0;
+        for (Map<String, Object> r : rows) {
+            LocalDate date = parseDate(str(r.get("date")));
+            long qty = num(r.get("qty"));
+            String name = str(r.get("product"));
+            if (date == null || qty <= 0 || !notBlank(name)) continue;
+            long[] prod = matchProduct(byNorm, name, null);
+            if (prod == null) {
+                if (unmatched.size() < 30) unmatched.add(name);
+                continue;
+            }
+            matchedRows++;
+            String warehouse = str(r.get("warehouse")) == null ? "" : str(r.get("warehouse"));
+            agg.merge(prod[0] + "|" + date + "|" + warehouse,
+                    new long[]{qty, prod[1]}, (a, b) -> new long[]{a[0] + b[0], a[1]});
+        }
+        List<Object[]> batch = new ArrayList<>();
+        for (Map.Entry<String, long[]> e : agg.entrySet()) {
+            String[] key = e.getKey().split("\\|", 3);
+            batch.add(new Object[]{COMPANY, Long.parseLong(key[0]), e.getValue()[1],
+                    java.sql.Date.valueOf(key[1]), (int) e.getValue()[0], key[2]});
+        }
+        jdbcTemplate.batchUpdate("""
+                INSERT INTO product_inbound (company_id, product_id, brand_id, inbound_date, inbound_count, warehouse)
+                VALUES (?,?,?,?,?,?)
+                ON CONFLICT (company_id, product_id, inbound_date, warehouse)
+                DO UPDATE SET inbound_count = EXCLUDED.inbound_count, updated_at = NOW()
+                """, batch);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("success", true);
+        result.put("rowsMatched", matchedRows);
+        result.put("daysUpserted", batch.size());
+        result.put("unmatchedSample", unmatched);
+        log.info("[SettleSheet] inbound: matched={}, upserted={}, unmatched={}", matchedRows, batch.size(), unmatched.size());
+        return result;
+    }
+
     /* ───────────────────── 내부 유틸 ───────────────────── */
 
     private long[] matchProduct(Map<String, long[]> byNorm, String sku, String online) {
@@ -246,12 +295,18 @@ public class SettleSheetService {
             long[] hit = byNorm.get(norm(candidate));
             if (hit != null) return hit;
         }
-        // 부분 일치 (짧은 쪽이 긴 쪽에 포함)
+        // 부분 일치 — 후보 여러 개면 가장 짧은 상품명(단품 가능성 최대) 선택
         String target = notBlank(sku) ? norm(sku) : (notBlank(online) ? norm(online) : null);
         if (target == null || target.length() < 4) return null;
+        long[] best = null;
+        int bestLen = Integer.MAX_VALUE;
         for (Map.Entry<String, long[]> e : byNorm.entrySet()) {
-            if (e.getKey().contains(target) || target.contains(e.getKey())) return e.getValue();
+            if ((e.getKey().contains(target) || target.contains(e.getKey())) && e.getKey().length() < bestLen) {
+                bestLen = e.getKey().length();
+                best = e.getValue();
+            }
         }
+        if (best != null) return best;
         return null;
     }
 

@@ -52,6 +52,8 @@ import PaymentRequestPage from './pages/executive/PaymentRequestPage'
 import PlatformOverviewPage from './pages/executive/PlatformOverviewPage'
 import ProductForecastPage from './pages/executive/ProductForecastPage'
 import ProductMovementPage from './pages/executive/ProductMovementPage'
+import InventoryFlowPage from './pages/executive/InventoryFlowPage'
+import InventoryForecastPage from './pages/executive/InventoryForecastPage'
 import ProductProfitPage from './pages/executive/ProductProfitPage'
 import ProductionManagementPage from './pages/executive/ProductionManagementPage'
 import ReceivablesPage from './pages/executive/ReceivablesPage'
@@ -102,6 +104,8 @@ const pages = {
   inventory: InventoryRiskPage,
   'issue-briefing': IssueBriefingPage,
   'product-movement': ProductMovementPage,
+  'inventory-flow': InventoryFlowPage,
+  'inventory-forecast': InventoryForecastPage,
   production: ProductionManagementPage,
   'export-pipeline': ExportPipelinePage,
   'marketing-status': MarketingStatusPage,

@@ -86,6 +86,24 @@ public class OfflineSheetController {
         }
     }
 
+    /** 정산시트: 입고 데이터 → product_inbound */
+    @PostMapping("/import-inbound")
+    @SuppressWarnings("unchecked")
+    public ResponseEntity<Map<String, Object>> importInbound(@RequestBody Map<String, Object> payload) {
+        ResponseEntity<Map<String, Object>> auth = checkSecret(payload);
+        if (auth != null) return auth;
+        Object rows = payload.get("rows");
+        if (!(rows instanceof List<?> list) || list.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "rows 비어 있음"));
+        }
+        try {
+            return ResponseEntity.ok(settleSheetService.importInbound((List<Map<String, Object>>) rows));
+        } catch (Exception e) {
+            log.error("[SettleSheet] inbound failed", e);
+            return ResponseEntity.internalServerError().body(Map.of("success", false, "message", String.valueOf(e.getMessage())));
+        }
+    }
+
     /** 정산시트: 출고 데이터 → product_outbound */
     @PostMapping("/import-outbound")
     @SuppressWarnings("unchecked")

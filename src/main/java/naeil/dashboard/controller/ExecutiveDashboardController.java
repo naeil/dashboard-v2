@@ -33,6 +33,22 @@ public class ExecutiveDashboardController {
     private final ExecutiveDashboardService executiveDashboardService;
     private final PlayAutoCollectionService playAutoCollectionService;
     private final IssueBriefingService issueBriefingService;
+    private final naeil.dashboard.service.InventoryInsightService inventoryInsightService;
+
+    @GetMapping("/inventory-flow")
+    public ResponseEntity<Map<String, Object>> getInventoryFlow(
+            @RequestParam(defaultValue = "1") Long companyId,
+            @RequestParam(defaultValue = "30") int days,
+            @RequestParam(required = false) String search) {
+        return ResponseEntity.ok(inventoryInsightService.getInventoryFlow(companyId, days, search));
+    }
+
+    @GetMapping("/inventory-forecast")
+    public ResponseEntity<Map<String, Object>> getInventoryForecast(
+            @RequestParam(defaultValue = "1") Long companyId,
+            @RequestParam(required = false) String search) {
+        return ResponseEntity.ok(inventoryInsightService.getInventoryForecast(companyId, search));
+    }
 
     @GetMapping("/summary")
     public ResponseEntity<Map<String, Object>> getSummary(@RequestParam(defaultValue = "1") Long companyId) {
