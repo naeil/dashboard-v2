@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { getControlTowerOverview, saveReorderLeadDays } from '../../api/controlTowerApi'
+import { getControlTowerOverview, saveReorderLeadDays, createControlTask, updateControlTask } from '../../api/controlTowerApi'
 
 const comma = (v) => Math.round(Number(v) || 0).toLocaleString('ko-KR')
 
@@ -36,6 +36,81 @@ function ProgressBar({ value }) {
       </div>
       <span className="text-[11px] font-black text-slate-600">{pct}%</span>
     </div>
+  )
+}
+
+const miniInput = 'h-7 rounded-lg border border-slate-200 bg-white px-1.5 text-xs text-slate-800 focus:border-blue-400 focus:outline-none'
+
+/* 빠른 업무 추가 — 업무명·프로젝트·담당자·마감일만 */
+function QuickAdd({ projects, assignees, onSaved }) {
+  const [taskName, setTaskName] = useState('')
+  const [projectName, setProjectName] = useState('')
+  const [assigneeName, setAssigneeName] = useState('')
+  const [dueDate, setDueDate] = useState('')
+  const [saving, setSaving] = useState(false)
+  const submit = async () => {
+    if (!taskName.trim() || saving) return
+    setSaving(true)
+    try {
+      await createControlTask({ taskName: taskName.trim(), projectName, assigneeName, dueDate })
+      setTaskName(''); setDueDate('')
+      onSaved()
+    } finally { setSaving(false) }
+  }
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-1.5 rounded-lg border border-dashed border-slate-200 bg-slate-50/60 p-2">
+      <span className="material-symbols-outlined text-[18px] text-slate-400">add_circle</span>
+      <input className={`${miniInput} min-w-[180px] flex-1`} placeholder="새 업무 — 예: 9월 발주서 정리"
+        value={taskName} onChange={(e) => setTaskName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') submit() }} />
+      <input className={`${miniInput} w-36`} placeholder="프로젝트 (선택)" list="ct-projects"
+        value={projectName} onChange={(e) => setProjectName(e.target.value)} />
+      <datalist id="ct-projects">{projects.map((p) => <option key={p}>{p}</option>)}</datalist>
+      <input className={`${miniInput} w-24`} placeholder="담당자" list="ct-assignees"
+        value={assigneeName} onChange={(e) => setAssigneeName(e.target.value)} />
+      <datalist id="ct-assignees">{assignees.map((a) => <option key={a}>{a}</option>)}</datalist>
+      <input type="date" className={`${miniInput} w-36`} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+      <button type="button" disabled={!taskName.trim() || saving} onClick={submit}
+        className="rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-black text-white disabled:opacity-40">
+        {saving ? '등록 중…' : '등록'}
+      </button>
+    </div>
+  )
+}
+
+/* 인라인 수정 셀들 */
+function StatusSelect({ task, onSaved }) {
+  return (
+    <select
+      className={`h-7 rounded-lg border-0 px-1.5 text-[11px] font-black focus:outline-none ${STATUS_CLS[task.status] || 'bg-slate-100 text-slate-500'}`}
+      value={task.status}
+      onChange={async (e) => { await updateControlTask(task.id, { status: e.target.value }).catch(() => {}); onSaved() }}>
+      {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+    </select>
+  )
+}
+
+function ProgressSelect({ task, onSaved }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="h-2 w-14 overflow-hidden rounded-full bg-slate-100">
+        <div className="h-full bg-blue-500" style={{ width: `${Math.min(100, task.progress_rate || 0)}%` }} />
+      </div>
+      <select className={`${miniInput} w-16 text-right`} value={String(task.progress_rate ?? 0)}
+        onChange={async (e) => { await updateControlTask(task.id, { progressRate: Number(e.target.value) }).catch(() => {}); onSaved() }}>
+        {[0, 10, 25, 50, 75, 90, 100].map((v) => <option key={v} value={v}>{v}%</option>)}
+      </select>
+    </div>
+  )
+}
+
+function DueDateCell({ task, onSaved }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      <Dday value={task.dday} />
+      <input type="date" className={`${miniInput} w-32`} value={task.due_date ? String(task.due_date).slice(0, 10) : ''}
+        onChange={async (e) => { await updateControlTask(task.id, { dueDate: e.target.value }).catch(() => {}); onSaved() }} />
+    </span>
   )
 }
 
@@ -79,7 +154,7 @@ export default function ControlTowerPage() {
   }, [load])
 
   const tasks = useMemo(() => data?.tasks || [], [data])
-  const projects = data?.projects || []
+  const projects = useMemo(() => data?.projects || [], [data])
   const people = data?.people || []
   const reorder = useMemo(() => data?.reorder || [], [data])
 
@@ -99,6 +174,9 @@ export default function ControlTowerPage() {
   const urgentReorder = useMemo(() => reorder.filter((r) => r.reorder_status !== 'STALE'), [reorder])
   const visibleReorder = showAllReorder ? urgentReorder : urgentReorder.slice(0, 10)
   const assigneeNames = useMemo(() => [...new Set(tasks.map((t) => t.assignee_name).filter(Boolean))].sort(), [tasks])
+  const projectNames = useMemo(() => [...new Set([
+    ...projects.map((p) => p.project_name), ...tasks.map((t) => t.project_name),
+  ].filter(Boolean))].sort(), [projects, tasks])
 
   if (data == null) return <p className="py-16 text-center text-sm text-slate-400">불러오는 중…</p>
 
@@ -150,27 +228,34 @@ export default function ControlTowerPage() {
             </select>
           </div>
         </div>
+        <QuickAdd projects={projectNames} assignees={assigneeNames} onSaved={load} />
         {filteredTasks.length === 0 ? (
-          <p className="py-6 text-center text-[13px] text-slate-400">해당 조건의 업무가 없습니다.</p>
+          <p className="py-6 text-center text-[13px] text-slate-400">해당 조건의 업무가 없습니다. 위 입력줄에서 바로 등록하세요.</p>
         ) : (
           <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-[680px]">
+            <table className="w-full min-w-[760px]">
               <thead><tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400">
                 <th className="px-2 py-2 text-left">마감</th><th className="px-2 py-2 text-left">업무</th>
                 <th className="px-2 py-2 text-left">프로젝트</th><th className="px-2 py-2 text-left">담당</th>
                 <th className="px-2 py-2 text-left">상태</th><th className="px-2 py-2 text-left">진행률</th>
+                <th className="px-2 py-2" />
               </tr></thead>
               <tbody>
                 {visibleTasks.map((t) => (
                   <tr key={t.id} className="border-b border-slate-50 last:border-b-0">
-                    <td className="px-2 py-1.5 whitespace-nowrap"><Dday value={t.dday} />{t.due_date && <span className="ml-1.5 text-[11px] text-slate-400">{String(t.due_date).slice(5)}</span>}</td>
+                    <td className="px-2 py-1.5"><DueDateCell task={t} onSaved={load} /></td>
                     <td className="px-2 py-1.5 text-[13px] font-bold text-slate-800">{t.task_name}
                       {t.blocker_text && <span className="ml-1.5 rounded bg-orange-50 px-1.5 py-0.5 text-[10px] font-bold text-orange-600">막힘</span>}
                     </td>
                     <td className="px-2 py-1.5 text-[12px] text-slate-500">{t.project_name}</td>
                     <td className="px-2 py-1.5 text-[12px] font-bold text-slate-600">{t.assignee_name}</td>
-                    <td className="px-2 py-1.5"><span className={`rounded px-1.5 py-0.5 text-[11px] font-black ${STATUS_CLS[t.status] || 'bg-slate-100 text-slate-500'}`}>{STATUS_LABEL[t.status] || t.status}</span></td>
-                    <td className="px-2 py-1.5"><ProgressBar value={t.progress_rate} /></td>
+                    <td className="px-2 py-1.5"><StatusSelect task={t} onSaved={load} /></td>
+                    <td className="px-2 py-1.5"><ProgressSelect task={t} onSaved={load} /></td>
+                    <td className="px-2 py-1.5 text-right">
+                      <button type="button" title="완료 처리"
+                        onClick={async () => { await updateControlTask(t.id, { status: 'DONE' }).catch(() => {}); load() }}
+                        className="rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-black text-emerald-600 hover:bg-emerald-100">완료</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

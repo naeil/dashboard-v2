@@ -21,6 +21,21 @@ public class ControlTowerController {
         return ResponseEntity.ok(controlTowerService.getOverview(companyId));
     }
 
+    @PostMapping("/task")
+    public ResponseEntity<Map<String, Object>> createTask(
+            @RequestParam(defaultValue = "1") Long companyId,
+            @RequestBody Map<String, Object> payload) {
+        return ResponseEntity.ok(controlTowerService.createTask(companyId, payload));
+    }
+
+    @PutMapping("/task/{id}")
+    public ResponseEntity<Map<String, Object>> updateTask(
+            @RequestParam(defaultValue = "1") Long companyId,
+            @PathVariable long id,
+            @RequestBody Map<String, Object> payload) {
+        return ResponseEntity.ok(controlTowerService.updateTask(companyId, id, payload));
+    }
+
     @PutMapping("/lead-days")
     public ResponseEntity<Map<String, Object>> saveLeadDays(
             @RequestParam(defaultValue = "1") Long companyId,

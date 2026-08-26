@@ -124,4 +124,78 @@ public class ControlTowerService {
                 d, companyId, productId);
         return Map.of("success", n > 0, "leadDays", d);
     }
+
+    /** 빠른 업무 추가 — 업무명·프로젝트·담당자·마감일만 받고 나머지는 기본값 */
+    @Transactional
+    public Map<String, Object> createTask(Long companyId, Map<String, Object> p) {
+        String taskName = str(p.get("taskName"));
+        if (taskName == null) return Map.of("success", false, "message", "업무명이 필요합니다.");
+        String projectName = str(p.get("projectName")) == null ? "일반 업무" : str(p.get("projectName"));
+        String assignee = str(p.get("assigneeName")) == null ? "미지정" : str(p.get("assigneeName"));
+        java.sql.Date due = parseDate(str(p.get("dueDate")));
+        jdbcTemplate.update("""
+                INSERT INTO executive_work_task
+                    (company_id, project_name, task_name, assignee_name, status, priority, progress_rate,
+                     start_date, due_date, source_type, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'IN_PROGRESS', 'MEDIUM', 0, CURRENT_DATE, ?, 'CONTROL_TOWER', NOW(), NOW())
+                """, companyId, projectName, taskName, assignee, due);
+        return Map.of("success", true);
+    }
+
+    /** 인라인 수정 — 넘어온 필드만 반영. 완료 처리 시 completed_date 기록. */
+    @Transactional
+    public Map<String, Object> updateTask(Long companyId, long taskId, Map<String, Object> p) {
+        StringBuilder sql = new StringBuilder("UPDATE executive_work_task SET updated_at = NOW()");
+        java.util.List<Object> args = new java.util.ArrayList<>();
+        if (p.containsKey("status")) {
+            String status = str(p.get("status"));
+            if (status != null && java.util.Set.of("WAITING", "IN_PROGRESS", "REVIEW", "DELAYED", "BLOCKED", "DONE").contains(status)) {
+                sql.append(", status = ?");
+                args.add(status);
+                if ("DONE".equals(status)) sql.append(", completed_date = CURRENT_DATE, progress_rate = 100");
+            }
+        }
+        if (p.containsKey("progressRate")) {
+            int rate = (int) Math.max(0, Math.min(100, num(p.get("progressRate"))));
+            sql.append(", progress_rate = ?");
+            args.add(rate);
+        }
+        if (p.containsKey("dueDate")) {
+            sql.append(", due_date = ?");
+            args.add(parseDate(str(p.get("dueDate"))));
+        }
+        if (p.containsKey("taskName") && str(p.get("taskName")) != null) {
+            sql.append(", task_name = ?");
+            args.add(str(p.get("taskName")));
+        }
+        if (p.containsKey("assigneeName") && str(p.get("assigneeName")) != null) {
+            sql.append(", assignee_name = ?");
+            args.add(str(p.get("assigneeName")));
+        }
+        if (args.isEmpty() && !sql.toString().contains("completed_date")) {
+            return Map.of("success", false, "message", "변경할 항목이 없습니다.");
+        }
+        sql.append(" WHERE company_id = ? AND id = ?");
+        args.add(companyId);
+        args.add(taskId);
+        int n = jdbcTemplate.update(sql.toString(), args.toArray());
+        return Map.of("success", n > 0);
+    }
+
+    private static String str(Object v) {
+        if (v == null) return null;
+        String s = String.valueOf(v).trim();
+        return s.isEmpty() ? null : s;
+    }
+
+    private static long num(Object v) {
+        try { return Math.round(Double.parseDouble(String.valueOf(v).replaceAll("[^0-9.-]", ""))); }
+        catch (Exception e) { return 0L; }
+    }
+
+    private static java.sql.Date parseDate(String v) {
+        if (v == null) return null;
+        try { return java.sql.Date.valueOf(java.time.LocalDate.parse(v.substring(0, 10))); }
+        catch (Exception e) { return null; }
+    }
 }

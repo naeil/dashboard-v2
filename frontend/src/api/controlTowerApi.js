@@ -5,3 +5,9 @@ export const getControlTowerOverview = () =>
 
 export const saveReorderLeadDays = (productId, days) =>
   api.put('/control-tower/lead-days', { productId, days }).then((r) => r.data)
+
+export const createControlTask = (payload) =>
+  api.post('/control-tower/task', payload).then((r) => r.data)
+
+export const updateControlTask = (id, payload) =>
+  api.put(`/control-tower/task/${id}`, payload).then((r) => r.data)
