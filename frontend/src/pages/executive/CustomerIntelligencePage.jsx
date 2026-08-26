@@ -688,7 +688,7 @@ export default function CustomerIntelligencePage({ role = 'EXECUTIVE' }) {
       ) : (
         <>
           <div className="grid grid-cols-4 gap-3">
-            <KpiBox label="총 고객 수 (플레이오토)" value={fmt(kpis.totalRows)+'명'} sub="전체 누적 구매자"/>
+            <KpiBox label="총 고객 수" value={fmt(kpis.totalRows)+'명'} sub="선택 기간 구매 고객"/>
             <KpiBox label="신규 고객 (이번달)" value={fmt(kpis.newThisMonth)+'명'} sub="이번달 첫 구매"/>
             <KpiBox label="재구매율" value={kpis.repeatRate+'%'} sub="2차 구매 전환 기준" highlight/>
             <KpiBox label="고객 평균 LTV" value={won(kpis.avgLtv)} sub="1인당 평균 구매액" highlight/>

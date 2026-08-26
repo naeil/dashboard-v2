@@ -1996,6 +1996,8 @@ public class ExecutiveDashboardService {
                     FROM orders o
                     WHERE o.company_id = ?
                       AND o.customer_id IS NOT NULL
+                      AND (CAST(? AS DATE) IS NULL OR COALESCE(o.ord_time, o.pay_time, o.wdate, o.created_at) >= CAST(? AS DATE))
+                      AND (CAST(? AS DATE) IS NULL OR COALESCE(o.ord_time, o.pay_time, o.wdate, o.created_at) < CAST(? AS DATE) + INTERVAL '1 day')
                 ),
                 customer_base AS (
                     SELECT
@@ -2084,7 +2086,7 @@ public class ExecutiveDashboardService {
                     END,
                     total_purchase_amount DESC,
                     last_order_at DESC
-                """, companyId, companyId);
+                """, companyId, startDate, startDate, endDate, endDate, companyId);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("summary", summary);
