@@ -49,37 +49,71 @@ public class SettingsController {
 
     @GetMapping("/login-branding")
     public ResponseEntity<Map<String, Object>> getLoginBranding() {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("image", null);
+        body.put("title", null);
+        body.put("subtitle", null);
         try {
-            String image = jdbcTemplate.queryForObject(
-                "SELECT login_image FROM company_branding WHERE company_id = ?",
-                String.class, DEFAULT_COMPANY_ID);
-            Map<String, Object> body = new java.util.HashMap<>();
-            body.put("image", image);
-            return ResponseEntity.ok(body);
-        } catch (Exception e) {
-            Map<String, Object> body = new java.util.HashMap<>();
-            body.put("image", null);
-            return ResponseEntity.ok(body);
+            Map<String, Object> row = jdbcTemplate.queryForMap(
+                "SELECT login_image, login_title, login_subtitle FROM company_branding WHERE company_id = ?",
+                DEFAULT_COMPANY_ID);
+            body.put("image", row.get("login_image"));
+            body.put("title", row.get("login_title"));
+            body.put("subtitle", row.get("login_subtitle"));
+        } catch (Exception ignored) {
+            // 행이 없으면 기본값(null) 유지
         }
+        return ResponseEntity.ok(body);
     }
 
     @PutMapping("/login-branding")
     public ResponseEntity<Map<String, Object>> saveLoginBranding(@RequestBody Map<String, Object> payload) {
-        Object imageObj = payload.get("image");
-        String image = imageObj == null ? null : String.valueOf(imageObj);
-        if (image != null && image.isBlank()) image = null;
-        if (image != null && !image.startsWith("data:image/")) {
+        // 이미지·문구 각각 독립 저장: payload에 키가 있을 때만 해당 컬럼을 갱신
+        boolean hasImage = payload.containsKey("image");
+        boolean hasTitle = payload.containsKey("title");
+        boolean hasSubtitle = payload.containsKey("subtitle");
+        if (!hasImage && !hasTitle && !hasSubtitle) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "저장할 값이 없습니다."));
+        }
+
+        String image = blankToNull(payload.get("image"));
+        if (hasImage && image != null && !image.startsWith("data:image/")) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", "이미지 형식이 아닙니다."));
         }
-        if (image != null && image.length() > 4_000_000) {
+        if (hasImage && image != null && image.length() > 4_000_000) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", "이미지가 너무 큽니다 (최대 약 3MB)."));
         }
-        jdbcTemplate.update("""
-            INSERT INTO company_branding (company_id, login_image, updated_at)
-            VALUES (?, ?, NOW())
-            ON CONFLICT (company_id) DO UPDATE SET login_image = EXCLUDED.login_image, updated_at = NOW()
-            """, DEFAULT_COMPANY_ID, image);
+
+        String title = blankToNull(payload.get("title"));
+        if (hasTitle && title != null && title.length() > 80) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "헤드라인은 80자 이내로 입력하세요."));
+        }
+        String subtitle = blankToNull(payload.get("subtitle"));
+        if (hasSubtitle && subtitle != null && subtitle.length() > 160) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "설명 문구는 160자 이내로 입력하세요."));
+        }
+
+        jdbcTemplate.update("INSERT INTO company_branding (company_id) VALUES (?) ON CONFLICT (company_id) DO NOTHING",
+                DEFAULT_COMPANY_ID);
+        if (hasImage) {
+            jdbcTemplate.update("UPDATE company_branding SET login_image = ?, updated_at = NOW() WHERE company_id = ?",
+                    image, DEFAULT_COMPANY_ID);
+        }
+        if (hasTitle) {
+            jdbcTemplate.update("UPDATE company_branding SET login_title = ?, updated_at = NOW() WHERE company_id = ?",
+                    title, DEFAULT_COMPANY_ID);
+        }
+        if (hasSubtitle) {
+            jdbcTemplate.update("UPDATE company_branding SET login_subtitle = ?, updated_at = NOW() WHERE company_id = ?",
+                    subtitle, DEFAULT_COMPANY_ID);
+        }
         return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    private static String blankToNull(Object value) {
+        if (value == null) return null;
+        String text = String.valueOf(value);
+        return text.isBlank() ? null : text;
     }
 
     // ── 메뉴 커스텀 설정 ─────────────────────────────────────────────

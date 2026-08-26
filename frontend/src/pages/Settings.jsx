@@ -196,14 +196,40 @@ function SelectField({ value, onChange, disabled = false, className = '', childr
 
 
 /* ── 로그인 화면 이미지 (브랜딩) ── */
+const DEFAULT_LOGIN_TITLE = '내일의 성장을,\n오늘의 데이터로.'
+const DEFAULT_LOGIN_SUBTITLE = '매출·재고·생산·성과급까지 — 내일그룹의 모든 업무가 한 화면에서 흐릅니다.'
+
 function LoginBrandingPanel() {
   const [image, setImage] = useState(null)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [title, setTitle] = useState('')
+  const [subtitle, setSubtitle] = useState('')
+  const [textSaving, setTextSaving] = useState(false)
+  const [textMessage, setTextMessage] = useState('')
 
   useEffect(() => {
-    getLoginBranding().then((res) => setImage(res.data?.image || null)).catch(() => {})
+    getLoginBranding().then((res) => {
+      setImage(res.data?.image || null)
+      setTitle(res.data?.title || '')
+      setSubtitle(res.data?.subtitle || '')
+    }).catch(() => {})
   }, [])
+
+  const saveTexts = async (nextTitle, nextSubtitle) => {
+    setTextSaving(true)
+    setTextMessage('')
+    try {
+      await saveLoginBranding({ title: nextTitle, subtitle: nextSubtitle })
+      setTitle(nextTitle)
+      setSubtitle(nextSubtitle)
+      setTextMessage('저장되었습니다. 로그인 화면에 바로 적용됩니다.')
+    } catch (err) {
+      setTextMessage(err?.response?.data?.message || '저장에 실패했습니다.')
+    } finally {
+      setTextSaving(false)
+    }
+  }
 
   const onFile = (event) => {
     const file = event.target.files?.[0]
@@ -226,7 +252,7 @@ function LoginBrandingPanel() {
         setSaving(true)
         setMessage('')
         try {
-          await saveLoginBranding(dataUrl)
+          await saveLoginBranding({ image: dataUrl })
           setImage(dataUrl)
           setMessage('저장되었습니다. 로그인 화면에 바로 적용됩니다.')
         } catch {
@@ -245,7 +271,7 @@ function LoginBrandingPanel() {
     setSaving(true)
     setMessage('')
     try {
-      await saveLoginBranding(null)
+      await saveLoginBranding({ image: null })
       setImage(null)
       setMessage('기본 이미지로 되돌렸습니다.')
     } catch {
@@ -287,6 +313,67 @@ function LoginBrandingPanel() {
             권장: 가로 1600px 이상, 세로형 또는 정방형. 큰 이미지는 자동으로 축소 저장됩니다 (최대 약 3MB).
           </p>
           {message && <p className="text-sm font-black text-sky-600">{message}</p>}
+        </div>
+      </div>
+
+      <div className="mt-6 border-t border-slate-200 pt-6">
+        <h3 className="text-lg font-black text-slate-950">로그인 화면 문구</h3>
+        <p className="mt-1 text-sm font-bold text-slate-500">
+          이미지 위에 표시되는 헤드라인과 설명 문구입니다. 비워두면 기본 문구가 표시됩니다.
+        </p>
+        <div className="mt-5 grid gap-5 lg:grid-cols-2">
+          <label className="block">
+            <span className="mb-2 block text-sm font-black text-slate-700">헤드라인 (줄바꿈 그대로 반영, 최대 80자)</span>
+            <textarea
+              rows={2}
+              value={title}
+              maxLength={80}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder={DEFAULT_LOGIN_TITLE}
+              className="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-950 outline-none transition-colors placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-sm font-black text-slate-700">설명 문구 (최대 160자)</span>
+            <textarea
+              rows={2}
+              value={subtitle}
+              maxLength={160}
+              onChange={(event) => setSubtitle(event.target.value)}
+              placeholder={DEFAULT_LOGIN_SUBTITLE}
+              className="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-950 outline-none transition-colors placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+            />
+          </label>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => saveTexts(title, subtitle)}
+            disabled={textSaving}
+            className="inline-flex h-11 items-center gap-2 rounded-lg bg-sky-500 px-4 text-sm font-black text-white hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+          >
+            <span className="material-symbols-outlined text-lg">save</span>
+            {textSaving ? '저장 중...' : '문구 저장'}
+          </button>
+          <button
+            type="button"
+            onClick={() => saveTexts('', '')}
+            disabled={textSaving || (!title && !subtitle)}
+            className="inline-flex h-11 items-center gap-2 rounded-lg border border-slate-200 px-4 text-sm font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+          >
+            <span className="material-symbols-outlined text-lg">restart_alt</span>
+            기본 문구로
+          </button>
+          {textMessage && <p className="text-sm font-black text-sky-600">{textMessage}</p>}
+        </div>
+        <div className="mt-5 overflow-hidden rounded-xl bg-slate-950 p-6">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">미리보기</p>
+          <h2 className="mt-3 whitespace-pre-line text-2xl font-black leading-tight text-white">
+            {title || DEFAULT_LOGIN_TITLE}
+          </h2>
+          <p className="mt-3 text-sm font-bold leading-6 text-slate-300">
+            {subtitle || DEFAULT_LOGIN_SUBTITLE}
+          </p>
         </div>
       </div>
     </div>

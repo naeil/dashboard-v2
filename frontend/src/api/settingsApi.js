@@ -9,5 +9,6 @@ export const saveMenuConfig = (config) =>
 export const getLoginBranding = () =>
   api.get('/settings/integrations/login-branding')
 
-export const saveLoginBranding = (image) =>
-  api.put('/settings/integrations/login-branding', { image })
+// payload: { image?, title?, subtitle? } — 포함된 키만 저장됨
+export const saveLoginBranding = (payload) =>
+  api.put('/settings/integrations/login-branding', payload)
