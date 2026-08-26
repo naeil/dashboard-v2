@@ -30,34 +30,34 @@ public class AiWeeklyReportService {
 
     private static final Long COMPANY = 1L;
     private static final String SYSTEM_PROMPT = """
-            너는 회사의 업무 보고 정리 비서다. 한 직원의 일주일치 일일 업무 보고를 받아 주간 업무 보고로 정리한다.
+            너는 회사의 업무 보고 정리 비서다. 직원의 일주일치 일일 업무 보고를 대표가 10초 안에 판단할 수 있게 요약한다.
 
             규칙:
             - 보고에 적힌 내용만 사용한다. 없는 사실을 지어내지 않는다.
-            - 간결한 한국어 개조식으로 쓴다. 과장 표현 금지.
-            - 아래 형식을 그대로 따른다. 마크다운 헤더(#)는 쓰지 않는다.
+            - 항목당 한 줄, 최대 35자 개조식. 문장을 늘리지 않는다.
+            - 중요한 것만 고른다. 사소한 반복 업무는 한 줄로 묶는다.
+            - 아래 형식을 그대로 따른다. 형식 외 텍스트·마크다운 헤더 금지.
 
             형식:
             【한 줄 요약】
-            (이번 주 핵심을 1~2문장)
+            (누가 무엇을 왜 했는지 1문장, 60자 이내)
 
-            【육하원칙 정리】
-            - 누가: (담당자)
-            - 언제: (기간과 주요 날짜)
-            - 어디서: (채널·거래처·플랫폼 등 업무 무대)
-            - 무엇을: (핵심 업무 3~5개)
-            - 어떻게: (진행 방식·협업·수단)
-            - 왜: (업무의 목적·기대 효과)
+            【핵심 성과】
+            - (완료한 일 중 중요한 것 최대 4개)
 
-            【완료한 일】
-            - (완료 항목 bullet)
+            【진행중·막힘】
+            - (진행 상태와 막힌 지점. 없으면 "없음")
 
-            【다음 주 예정】
-            - (예정 항목 bullet)
+            【다음 주 핵심】
+            - (최대 3개)
 
-            【막힌 이슈】
-            - (이슈 없으면 "없음")
+            【대표 확인 필요】
+            - (의사결정·승인·리스크만. 없으면 "없음")
             """;
+
+    private volatile String cachedModel;
+    private volatile AiProvider cachedModelProvider;
+    private volatile long cachedModelAt;
 
     private final JdbcTemplate jdbcTemplate;
     private final AiApiClient aiApiClient;
@@ -103,29 +103,45 @@ public class AiWeeklyReportService {
             sb.append("\n");
         }
 
-        int generated = 0;
-        List<String> errors = new ArrayList<>();
-        for (Map.Entry<String, StringBuilder> e : byUser.entrySet()) {
-            String username = e.getKey();
-            String name = displayNames.get(username);
-            try {
-                String userMessage = "직원: " + name + "\n기간: " + weekStart + " ~ " + weekEnd
-                        + "\n\n일일 보고 내용:\n" + e.getValue();
-                String content = aiApiClient.complete(setting, model, SYSTEM_PROMPT, userMessage);
-                jdbcTemplate.update("""
-                        INSERT INTO ai_weekly_report (company_id, username, display_name, week_start, content, source_count, generated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, NOW())
-                        ON CONFLICT (company_id, username, week_start)
-                        DO UPDATE SET content = EXCLUDED.content, display_name = EXCLUDED.display_name,
-                                      source_count = EXCLUDED.source_count, generated_at = NOW()
-                        """, companyId, username, name, java.sql.Date.valueOf(weekStart),
-                        content, counts.getOrDefault(username, 0));
-                generated++;
-            } catch (Exception ex) {
-                log.error("AI 주간 보고 생성 실패({}): {}", username, ex.getMessage());
-                errors.add(name + ": " + ex.getMessage());
+        // 사람별 AI 호출 병렬 처리 — 전체 소요 시간 = 가장 느린 1명 수준
+        java.util.concurrent.atomic.AtomicInteger okCount = new java.util.concurrent.atomic.AtomicInteger();
+        List<String> errors = java.util.Collections.synchronizedList(new ArrayList<>());
+        java.util.concurrent.ExecutorService pool =
+                java.util.concurrent.Executors.newFixedThreadPool(Math.min(4, byUser.size()));
+        try {
+            List<java.util.concurrent.Future<?>> futures = new ArrayList<>();
+            for (Map.Entry<String, StringBuilder> e : byUser.entrySet()) {
+                String username = e.getKey();
+                String name = displayNames.get(username);
+                String body = e.getValue().toString();
+                futures.add(pool.submit(() -> {
+                    try {
+                        String userMessage = "직원: " + name + "\n기간: " + weekStart + " ~ " + weekEnd
+                                + "\n\n일일 보고 내용:\n" + body;
+                        String content = aiApiClient.complete(setting, model, SYSTEM_PROMPT, userMessage);
+                        jdbcTemplate.update("""
+                                INSERT INTO ai_weekly_report (company_id, username, display_name, week_start, content, source_count, generated_at)
+                                VALUES (?, ?, ?, ?, ?, ?, NOW())
+                                ON CONFLICT (company_id, username, week_start)
+                                DO UPDATE SET content = EXCLUDED.content, display_name = EXCLUDED.display_name,
+                                              source_count = EXCLUDED.source_count, generated_at = NOW()
+                                """, companyId, username, name, java.sql.Date.valueOf(weekStart),
+                                content, counts.getOrDefault(username, 0));
+                        okCount.incrementAndGet();
+                    } catch (Exception ex) {
+                        log.error("AI 주간 보고 생성 실패({}): {}", username, ex.getMessage());
+                        errors.add(name + ": " + ex.getMessage());
+                    }
+                }));
             }
+            for (java.util.concurrent.Future<?> f : futures) {
+                try { f.get(120, java.util.concurrent.TimeUnit.SECONDS); }
+                catch (Exception te) { errors.add("시간 초과 또는 중단: " + te.getMessage()); }
+            }
+        } finally {
+            pool.shutdownNow();
         }
+        int generated = okCount.get();
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("success", generated > 0);
         result.put("generated", generated);
@@ -217,6 +233,10 @@ public class AiWeeklyReportService {
 
     /** 카탈로그에서 사용 가능한 모델을 동적으로 선택 — 경량 모델 우선, 실패 시 하드코딩 fallback */
     private String resolveModel(Long companyId, AiProvider provider) {
+        if (cachedModel != null && cachedModelProvider == provider
+                && System.currentTimeMillis() - cachedModelAt < 3_600_000L) {
+            return cachedModel;
+        }
         try {
             List<naeil.dashboard.dto.AiProviderSettingDto.ModelOption> models =
                     aiProviderSettingService.getModels(companyId, provider);
@@ -228,10 +248,10 @@ public class AiWeeklyReportService {
                 };
                 for (String pref : prefs) {
                     for (var m : models) {
-                        if (m.value() != null && m.value().toLowerCase().contains(pref)) return m.value();
+                        if (m.value() != null && m.value().toLowerCase().contains(pref)) return cacheModel(provider, m.value());
                     }
                 }
-                return models.get(0).value();
+                return cacheModel(provider, models.get(0).value());
             }
         } catch (Exception e) {
             log.warn("AI 모델 카탈로그 조회 실패({}): {}", provider, e.getMessage());
@@ -241,6 +261,13 @@ public class AiWeeklyReportService {
             case CLAUDE -> "claude-3-5-haiku-latest";
             case GEMINI -> "gemini-3.6-flash";
         };
+    }
+
+    private String cacheModel(AiProvider provider, String model) {
+        cachedModel = model;
+        cachedModelProvider = provider;
+        cachedModelAt = System.currentTimeMillis();
+        return model;
     }
 
     private static LocalDate resolveWeekStart(String value) {

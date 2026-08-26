@@ -462,6 +462,56 @@ function PermissionModal({ onClose }) {
   )
 }
 
+const AI_SECTION_STYLE = {
+  '한 줄 요약': 'border-slate-200 bg-slate-50',
+  '핵심 성과': 'border-emerald-100 bg-emerald-50/70',
+  '진행중·막힘': 'border-amber-100 bg-amber-50/70',
+  '다음 주 핵심': 'border-sky-100 bg-sky-50/70',
+  '대표 확인 필요': 'border-rose-200 bg-rose-50',
+}
+const AI_LABEL_STYLE = {
+  '한 줄 요약': 'text-slate-500',
+  '핵심 성과': 'text-emerald-600',
+  '진행중·막힘': 'text-amber-600',
+  '다음 주 핵심': 'text-sky-600',
+  '대표 확인 필요': 'text-rose-600',
+}
+
+function parseAiContent(content) {
+  const text = String(content || '')
+  const re = /【([^】]+)】/g
+  const parts = []
+  let match
+  let last = null
+  while ((match = re.exec(text)) !== null) {
+    if (last) parts.push({ title: last.title, body: text.slice(last.end, match.index).trim() })
+    last = { title: match[1].trim(), end: re.lastIndex }
+  }
+  if (last) parts.push({ title: last.title, body: text.slice(last.end).trim() })
+  return parts
+}
+
+function AiContent({ content }) {
+  const sections = parseAiContent(content)
+  if (!sections.length) {
+    return <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-[13px] leading-6 text-slate-700">{content}</pre>
+  }
+  return (
+    <div className="mt-3 space-y-2">
+      {sections.map((sec) => (
+        <div key={sec.title} className={`rounded-lg border p-2.5 ${AI_SECTION_STYLE[sec.title] || 'border-slate-100 bg-slate-50'}`}>
+          <p className={`text-[11px] font-black ${AI_LABEL_STYLE[sec.title] || 'text-slate-500'}`}>{sec.title}</p>
+          <ul className="mt-1 space-y-0.5">
+            {sec.body.split('\n').filter((line) => line.trim()).map((line, idx) => (
+              <li key={idx} className="text-[13px] leading-5 text-slate-800">{line.replace(/^[-•]\s*/, '· ')}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function AiWeeklySection({ role }) {
   const [weekStart, setWeekStart] = useState(mondayOf(1))
   const [items, setItems] = useState(null)
@@ -540,9 +590,11 @@ function AiWeeklySection({ role }) {
                 <span className="material-symbols-outlined text-[20px] text-slate-400">{openUser === it.username ? 'expand_less' : 'expand_more'}</span>
               </button>
               {openUser === it.username ? (
-                <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-[13px] leading-6 text-slate-700">{it.content}</pre>
+                <AiContent content={it.content} />
               ) : (
-                <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-[12px] text-slate-500">{String(it.content).slice(0, 160)}…</p>
+                <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-[12px] text-slate-500">
+                  {(parseAiContent(it.content)[0]?.body || String(it.content).slice(0, 140)).slice(0, 140)}
+                </p>
               )}
             </article>
           ))}
