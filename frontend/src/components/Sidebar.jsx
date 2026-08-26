@@ -76,6 +76,16 @@ export const defaultMenuSections = [
     ],
   },
   {
+    id: 'production-management',
+    title: '생산 관리',
+    group: 'staff',
+    departments: ['all'],
+    items: [
+      { id: 'production-orders', icon: 'factory', label: '발주 관리', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'production-costs', icon: 'price_change', label: '원가 추적', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+    ],
+  },
+  {
     id: 'channel-sales-management',
     title: '채널 · 판매 관리',
     group: 'staff',
