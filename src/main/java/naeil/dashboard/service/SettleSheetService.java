@@ -293,6 +293,38 @@ public class SettleSheetService {
         return result;
     }
 
+    /* ───────────────────── ③-2 월별 광고비 (공헌이익 v3) ───────────────────── */
+
+    @Transactional
+    public Map<String, Object> importAdSpend(List<Map<String, Object>> rows) {
+        // payload에 등장한 월은 통째로 교체 (시트에서 지운 행도 반영)
+        Set<String> months = new HashSet<>();
+        List<Object[]> batch = new ArrayList<>();
+        for (Map<String, Object> r : rows) {
+            String month = str(r.get("month"));
+            String channel = str(r.get("channel"));
+            long amount = num(r.get("amount"));
+            if (month == null || channel == null || !month.matches("\\d{4}-\\d{2}")) continue;
+            months.add(month);
+            batch.add(new Object[]{COMPANY, month, channel, amount, str(r.get("memo"))});
+        }
+        if (!months.isEmpty()) {
+            jdbcTemplate.update(
+                    "DELETE FROM ad_spend_monthly WHERE company_id = ? AND period_month IN ("
+                            + String.join(",", java.util.Collections.nCopies(months.size(), "?")) + ")",
+                    java.util.stream.Stream.concat(java.util.stream.Stream.of((Object) COMPANY),
+                            months.stream().map(m -> (Object) m)).toArray());
+        }
+        jdbcTemplate.batchUpdate("""
+                INSERT INTO ad_spend_monthly (company_id, period_month, channel_name, amount, memo, updated_at)
+                VALUES (?,?,?,?,?, NOW())
+                ON CONFLICT (company_id, period_month, channel_name)
+                DO UPDATE SET amount = EXCLUDED.amount, memo = EXCLUDED.memo, updated_at = NOW()
+                """, batch);
+        log.info("[SettleSheet] ad-spend: months={}, rows={}", months, batch.size());
+        return Map.of("success", true, "months", months.size(), "rows", batch.size());
+    }
+
     /* ───────────────────── ④ 입고 데이터 ───────────────────── */
 
     @Transactional

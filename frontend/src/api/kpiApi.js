@@ -33,3 +33,6 @@ export const adjustKpiPayout = (id, adjustAmount, reason) =>
   api.put(`/kpi/payout/${id}`, { adjustAmount, reason }).then((r) => r.data)
 
 export const getKpiHistory = () => api.get('/kpi/history').then((r) => r.data)
+
+export const getKpiUnmappedProducts = (periodType, anchor) =>
+  api.get('/kpi/unmapped-products', { params: { periodType, anchor } }).then((r) => r.data)

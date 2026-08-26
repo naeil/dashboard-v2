@@ -19,8 +19,10 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * KPI·성과급 시스템 v2.
- * - 실적: orders(직연동+시트, 취소 제외). 영업이익 추정 = 매출 − 채널 수수료(promo_channel_default 요율).
+ * KPI·성과급 시스템 v3 (공헌이익 기반).
+ * - 실적: orders(직연동+시트, 취소 제외).
+ * - 공헌이익 = 매출 − 원가(원가 마스터 매칭×수량) − 채널 수수료(요율) − 물류비(건당 단가×건수) − 광고비(월별 입력).
+ *   고정 판관비는 차감하지 않고 기준액(half_threshold)으로 처리 — 공헌이익 기준 성과급 설계.
  * - 평가: 팀 가중치(kpi_team) × 팀 점수(자동 달성률 × auto_ratio + 정성 점수 × 나머지)로 풀 배분.
  *   팀몫(team_ratio%)은 팀원 균등, 개인몫은 개인 점수 비례. 정성 미입력 = 100점(감점제).
  * - 마감·확정: kpi_snapshot(DRAFT→CONFIRMED, payload 보존) + kpi_payout(반기 지급 대장, 조정액·사유).
@@ -41,14 +43,15 @@ public class KpiService {
 
     public Map<String, Object> getConfig() {
         return jdbcTemplate.queryForMap(
-                "SELECT half_threshold, pool_rate, team_ratio FROM incentive_config WHERE company_id = ?", COMPANY);
+                "SELECT half_threshold, pool_rate, team_ratio, parcel_unit_cost FROM incentive_config WHERE company_id = ?", COMPANY);
     }
 
     @Transactional
     public Map<String, Object> saveConfig(Map<String, Object> p) {
         jdbcTemplate.update(
-                "UPDATE incentive_config SET half_threshold = ?, pool_rate = ?, team_ratio = ?, updated_at = NOW() WHERE company_id = ?",
-                num(p.get("halfThreshold")), dec(p.get("poolRate")), dec(p.get("teamRatio")), COMPANY);
+                "UPDATE incentive_config SET half_threshold = ?, pool_rate = ?, team_ratio = ?, parcel_unit_cost = ?, updated_at = NOW() WHERE company_id = ?",
+                num(p.get("halfThreshold")), dec(p.get("poolRate")), dec(p.get("teamRatio")),
+                num(p.get("parcelUnitCost")), COMPANY);
         return getConfig();
     }
 
@@ -277,18 +280,44 @@ public class KpiService {
             }
         }
 
+        // 공헌이익 v3: 원가(원가 마스터 매칭) + 물류비(건당 단가) + 광고비(월별)
+        Map<String, Object> cfg0 = getConfig();
+        long parcelUnit = ((Number) cfg0.get("parcel_unit_cost")).longValue();
+        Map<String, long[]> costByChannel = queryChannelCosts(start, end); // channel -> [cogs, matchedSales]
+        Map<String, Long> adByChannel = new HashMap<>();
+        long adCommon = 0;
+        for (Map<String, Object> row : jdbcTemplate.queryForList("""
+                SELECT channel_name, SUM(amount)::bigint AS amount FROM ad_spend_monthly
+                WHERE company_id = ? AND period_month BETWEEN ? AND ?
+                GROUP BY channel_name
+                """, COMPANY, YearMonth.from(start).toString(), YearMonth.from(end).toString())) {
+            adByChannel.put(normName(String.valueOf(row.get("channel_name"))), ((Number) row.get("amount")).longValue());
+        }
+
         // 채널 실적 → 팀/개인 집계
         Map<String, Map<String, Object>> teams = new TreeMap<>();
         long totalSales = 0;
         long totalProfit = 0;
         long totalPrevSales = 0;
+        long totalFee = 0;
+        long totalCogs = 0;
+        long totalParcel = 0;
+        long totalAd = 0;
+        long matchedSalesSum = 0;
+        java.util.Set<String> matchedAdKeys = new java.util.HashSet<>();
         for (Map<String, Object> row : current) {
             String channel = String.valueOf(row.get("channel_name"));
             long sales = ((Number) row.get("sales")).longValue();
             int orders = ((Number) row.get("orders")).intValue();
             BigDecimal feeRate = feeRates.getOrDefault(baseChannel(channel), BigDecimal.ZERO);
             long fee = BigDecimal.valueOf(sales).multiply(feeRate).divide(BigDecimal.valueOf(100)).longValue();
-            long profit = sales - fee;
+            long[] cost = costByChannel.getOrDefault(channel, new long[]{0, 0});
+            long cogs = cost[0];
+            long parcel = parcelUnit * orders;
+            Long adAmt = adByChannel.get(normName(channel));
+            long ad = adAmt == null ? 0 : adAmt;
+            if (adAmt != null) matchedAdKeys.add(normName(channel));
+            long profit = sales - fee - cogs - parcel - ad;
             String[] assign = assignment.getOrDefault(channel, new String[]{"미배정", null});
             long[] prev = prevByChannel.getOrDefault(channel, new long[]{0, 0});
 
@@ -304,6 +333,10 @@ public class KpiService {
             chRow.put("sales", sales);
             chRow.put("orders", orders);
             chRow.put("feeRate", feeRate);
+            chRow.put("fee", fee);
+            chRow.put("cogs", cogs);
+            chRow.put("parcel", parcel);
+            chRow.put("adSpend", ad);
             chRow.put("profit", profit);
             chRow.put("prevSales", prev[0]);
             chRow.put("yoy", prev[0] > 0 ? Math.round((sales - prev[0]) * 1000.0 / prev[0]) / 10.0 : null);
@@ -317,7 +350,18 @@ public class KpiService {
             totalSales += sales;
             totalProfit += profit;
             totalPrevSales += prev[0];
+            totalFee += fee;
+            totalCogs += cogs;
+            totalParcel += parcel;
+            totalAd += ad;
+            matchedSalesSum += cost[1];
         }
+        // 채널 미매칭 광고비(예: '공통')는 전사 공통 차감
+        for (Map.Entry<String, Long> e : adByChannel.entrySet()) {
+            if (!matchedAdKeys.contains(e.getKey())) adCommon += e.getValue();
+        }
+        totalAd += adCommon;
+        totalProfit -= adCommon;
 
         // 설정된 팀은 실적 없어도 노출 (운영/물류·마케팅)
         for (String cfgTeam : teamCfg.keySet()) {
@@ -450,6 +494,17 @@ public class KpiService {
         result.put("endDate", end.toString());
         result.put("totalSales", totalSales);
         result.put("totalProfit", totalProfit);
+        Map<String, Object> breakdown = new LinkedHashMap<>();
+        breakdown.put("sales", totalSales);
+        breakdown.put("fee", totalFee);
+        breakdown.put("cogs", totalCogs);
+        breakdown.put("parcel", totalParcel);
+        breakdown.put("adSpend", totalAd);
+        breakdown.put("adCommon", adCommon);
+        breakdown.put("profit", totalProfit);
+        breakdown.put("parcelUnitCost", parcelUnit);
+        breakdown.put("costCoverage", totalSales > 0 ? Math.round(matchedSalesSum * 1000.0 / totalSales) / 10.0 : 0);
+        result.put("breakdown", breakdown);
         result.put("prevYearSales", totalPrevSales);
         result.put("yoy", totalPrevSales > 0 ? Math.round((totalSales - totalPrevSales) * 1000.0 / totalPrevSales) / 10.0 : null);
         result.put("teams", teamList);
@@ -697,6 +752,104 @@ public class KpiService {
     private static Map<String, Object> parseJson(String json) {
         try { return MAPPER.readValue(json, new TypeReference<LinkedHashMap<String, Object>>() {}); }
         catch (Exception e) { return null; }
+    }
+
+    /** 원가 마스터(product_cost_channel) 매칭 기반 채널별 매출원가. channel -> [cogs, matchedSales] */
+    private Map<String, long[]> queryChannelCosts(LocalDate start, LocalDate end) {
+        Map<String, long[]> out = new HashMap<>();
+        try {
+            for (Map<String, Object> row : jdbcTemplate.queryForList("""
+                    SELECT s.shop_name AS channel_name,
+                           ROUND(COALESCE(SUM(CASE WHEN pcc.id IS NOT NULL
+                                 THEN pcc.production_cost * COALESCE(o.order_quantity, 1) ELSE 0 END), 0), 0) AS cogs,
+                           ROUND(COALESCE(SUM(CASE WHEN pcc.id IS NOT NULL THEN o.pay_amt ELSE 0 END), 0), 0) AS matched_sales
+                    FROM orders o
+                    JOIN shop s ON s.id = o.shop_id
+                    LEFT JOIN product p ON p.id = o.product_id
+                    LEFT JOIN LATERAL (
+                        SELECT cost.id, cost.production_cost
+                        FROM product_cost_channel cost
+                        WHERE cost.company_id = o.company_id
+                          AND cost.is_active = TRUE
+                          AND p.id IS NOT NULL
+                          AND (
+                              NULLIF(cost.sku_code, '') = p.sku_cd
+                              OR cost.product_code = p.prod_no::text
+                              OR regexp_replace(lower(COALESCE(p.product_name, '')), '[^0-9a-z가-힣]+', '', 'g')
+                                 LIKE CONCAT('%%', regexp_replace(lower(COALESCE(cost.product_name, '')), '[^0-9a-z가-힣]+', '', 'g'), '%%')
+                              OR regexp_replace(lower(COALESCE(cost.product_name, '')), '[^0-9a-z가-힣]+', '', 'g')
+                                 LIKE CONCAT('%%', regexp_replace(lower(COALESCE(p.product_name, '')), '[^0-9a-z가-힣]+', '', 'g'), '%%')
+                          )
+                        ORDER BY
+                            CASE WHEN REPLACE(cost.channel_name, ' ', '') = (
+                                CASE
+                                    WHEN REPLACE(s.shop_name, ' ', '') LIKE '스마트스토어%%' OR REPLACE(s.shop_name, ' ', '') LIKE '스토어팜%%' THEN '스마트스토어팜'
+                                    WHEN REPLACE(s.shop_name, ' ', '') IN ('아임웹', '자사몰') THEN '자사몰'
+                                    WHEN REPLACE(s.shop_name, ' ', '') LIKE '카카오톡스토어%%' THEN '카카오톡스토어'
+                                    ELSE REPLACE(s.shop_name, ' ', '')
+                                END
+                            ) THEN 0 ELSE 1 END,
+                            CASE WHEN NULLIF(cost.sku_code, '') = p.sku_cd THEN 0
+                                 WHEN cost.product_code = p.prod_no::text THEN 1 ELSE 2 END,
+                            LENGTH(cost.product_name) DESC
+                        LIMIT 1
+                    ) pcc ON TRUE
+                    WHERE o.company_id = ? AND s.shop_code <> 'A000'
+                      AND o.ord_time::date BETWEEN ? AND ?
+                      AND o.ord_status NOT IN %s
+                    GROUP BY s.shop_name
+                    """.formatted(CANCELS),
+                    COMPANY, java.sql.Date.valueOf(start), java.sql.Date.valueOf(end))) {
+                out.put(String.valueOf(row.get("channel_name")),
+                        new long[]{((Number) row.get("cogs")).longValue(), ((Number) row.get("matched_sales")).longValue()});
+            }
+        } catch (Exception e) {
+            log.warn("KPI 원가 집계 실패: {}", e.getMessage());
+        }
+        return out;
+    }
+
+    /** 원가 미매칭 상품 (기간 매출 상위 50) */
+    public List<Map<String, Object>> getUnmappedProducts(String periodType, String anchor) {
+        LocalDate[] range = resolveRange(periodType, anchor);
+        return jdbcTemplate.queryForList("""
+                SELECT COALESCE(p.product_name, '(상품 미연결) ' || o.sku_cd) AS product_name,
+                       s.shop_name AS channel_name,
+                       ROUND(COALESCE(SUM(o.pay_amt), 0), 0) AS sales,
+                       COUNT(*)::int AS orders
+                FROM orders o
+                JOIN shop s ON s.id = o.shop_id
+                LEFT JOIN product p ON p.id = o.product_id
+                LEFT JOIN LATERAL (
+                    SELECT cost.id
+                    FROM product_cost_channel cost
+                    WHERE cost.company_id = o.company_id
+                      AND cost.is_active = TRUE
+                      AND p.id IS NOT NULL
+                      AND (
+                          NULLIF(cost.sku_code, '') = p.sku_cd
+                          OR cost.product_code = p.prod_no::text
+                          OR regexp_replace(lower(COALESCE(p.product_name, '')), '[^0-9a-z가-힣]+', '', 'g')
+                             LIKE CONCAT('%%', regexp_replace(lower(COALESCE(cost.product_name, '')), '[^0-9a-z가-힣]+', '', 'g'), '%%')
+                          OR regexp_replace(lower(COALESCE(cost.product_name, '')), '[^0-9a-z가-힣]+', '', 'g')
+                             LIKE CONCAT('%%', regexp_replace(lower(COALESCE(p.product_name, '')), '[^0-9a-z가-힣]+', '', 'g'), '%%')
+                      )
+                    LIMIT 1
+                ) pcc ON TRUE
+                WHERE o.company_id = ? AND s.shop_code <> 'A000'
+                  AND o.ord_time::date BETWEEN ? AND ?
+                  AND o.ord_status NOT IN %s
+                  AND pcc.id IS NULL
+                GROUP BY COALESCE(p.product_name, '(상품 미연결) ' || o.sku_cd), s.shop_name
+                ORDER BY sales DESC
+                LIMIT 50
+                """.formatted(CANCELS),
+                COMPANY, java.sql.Date.valueOf(range[0]), java.sql.Date.valueOf(range[1]));
+    }
+
+    /** 광고비 채널명 매칭용 정규화 (공백 제거) */
+    private static String normName(String v) {
+        return v == null ? "" : v.replaceAll("\\s+", "");
     }
 
     private List<Map<String, Object>> queryChannelSales(LocalDate start, LocalDate end) {

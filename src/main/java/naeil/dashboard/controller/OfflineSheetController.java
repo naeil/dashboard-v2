@@ -122,6 +122,24 @@ public class OfflineSheetController {
         }
     }
 
+    /** 정산시트: 월별 채널 광고비 → ad_spend_monthly (공헌이익 계산용) */
+    @PostMapping("/import-ad-spend")
+    @SuppressWarnings("unchecked")
+    public ResponseEntity<Map<String, Object>> importAdSpend(@RequestBody Map<String, Object> payload) {
+        ResponseEntity<Map<String, Object>> auth = checkSecret(payload);
+        if (auth != null) return auth;
+        Object rows = payload.get("rows");
+        if (!(rows instanceof List<?> list) || list.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "rows 비어 있음"));
+        }
+        try {
+            return ResponseEntity.ok(settleSheetService.importAdSpend((List<Map<String, Object>>) rows));
+        } catch (Exception e) {
+            log.error("[SettleSheet] ad-spend failed", e);
+            return ResponseEntity.internalServerError().body(Map.of("success", false, "message", String.valueOf(e.getMessage())));
+        }
+    }
+
     private ResponseEntity<Map<String, Object>> checkSecret(Map<String, Object> payload) {
         String secret = payload.get("secret") == null ? null : String.valueOf(payload.get("secret"));
         if (!offlineSheetService.isValidSecret(secret)) {

@@ -3,7 +3,7 @@ import {
   getKpiConfig, saveKpiConfig, getKpiAssignments, saveKpiAssignments,
   getKpiTargets, saveKpiTargets, getKpiPerformance,
   getKpiTeams, saveKpiTeams, getKpiScores, saveKpiScores,
-  kpiClose, kpiConfirm, kpiReopen, adjustKpiPayout, getKpiHistory,
+  kpiClose, kpiConfirm, kpiReopen, adjustKpiPayout, getKpiHistory, getKpiUnmappedProducts,
 } from '../../api/kpiApi'
 
 const num = (v) => { const x = Number(String(v ?? 0).replace(/,/g, '')); return Number.isFinite(x) ? x : 0 }
@@ -346,6 +346,41 @@ function ScoreModal({ periodKey, teams, onClose, onSaved }) {
   )
 }
 
+/* ───────── 원가 미매칭 상품 모달 ───────── */
+function UnmappedModal({ periodType, anchor, onClose }) {
+  const [rows, setRows] = useState(null)
+  useEffect(() => {
+    getKpiUnmappedProducts(periodType, anchor).then(setRows).catch(() => setRows([]))
+  }, [periodType, anchor])
+  return (
+    <ModalShell title="원가 미매칭 상품 (매출 상위 50)" onClose={onClose} wide footer={(
+      <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-500">닫기</button>
+    )}>
+      {rows == null ? <p className="p-6 text-center text-sm text-slate-400">불러오는 중…</p> : rows.length === 0 ? (
+        <p className="p-6 text-center text-sm text-emerald-600">이 기간 매출 전체가 원가 마스터와 매칭됐습니다.</p>
+      ) : (
+        <table className="w-full">
+          <thead><tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400">
+            <th className="px-3 py-2 text-left">상품명</th><th className="px-3 py-2 text-left">채널</th>
+            <th className="px-3 py-2 text-right">매출</th><th className="px-3 py-2 text-right">건수</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={`${r.product_name}|${r.channel_name}|${i}`} className="border-b border-slate-50 last:border-b-0">
+                <td className="px-3 py-1.5 text-[13px] font-bold text-slate-800">{r.product_name}</td>
+                <td className="px-3 py-1.5 text-[12px] text-slate-500">{r.channel_name}</td>
+                <td className="px-3 py-1.5 text-right text-[13px] text-slate-700">{comma(r.sales)}</td>
+                <td className="px-3 py-1.5 text-right text-[12px] text-slate-500">{comma(r.orders)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <p className="px-3 py-2 text-[11px] text-slate-400">[제품 원가 관리]에서 이 상품들의 원가를 등록하면 공헌이익 정확도가 올라갑니다.</p>
+    </ModalShell>
+  )
+}
+
 /* ───────── 지급안 행 (조정 입력) ───────── */
 function PayoutRow({ p, editable, onSaved }) {
   const [adjust, setAdjust] = useState(p.adjust_amount ?? 0)
@@ -448,6 +483,7 @@ export default function KpiPerformancePage() {
   const saveCfg = async () => {
     const saved = await saveKpiConfig({
       halfThreshold: num(config.half_threshold), poolRate: config.pool_rate, teamRatio: config.team_ratio,
+      parcelUnitCost: num(config.parcel_unit_cost),
     })
     setConfig(saved)
     setConfigEdit(false)
@@ -463,7 +499,7 @@ export default function KpiPerformancePage() {
             {closable && <StatusBadge status={status} confirmedAt={data.confirmedAt} />}
           </div>
           <p className="mt-0.5 text-[12px] text-slate-400">
-            팀·개인 성과(온라인 + 오프라인 거래처) → 마감안 → 대표 확정 → 지급 대장 · {periodLabel(data)}
+            공헌이익 기반 · 팀·개인 성과 → 마감안 → 대표 확정 → 지급 대장 · {periodLabel(data)}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -520,8 +556,21 @@ export default function KpiPerformancePage() {
           <p className="mt-1"><Yoy value={data.yoy} /> <span className="text-[10px] text-slate-400">전년 동기</span></p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <p className="text-[11px] font-bold text-slate-400">추정 영업이익 (수수료 차감)</p>
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-bold text-slate-400">공헌이익 (원가·수수료·물류·광고 차감)</p>
+            {data.breakdown && (
+              <button type="button" onClick={() => setModal('unmapped')} className="text-[10px] font-bold text-blue-500">
+                원가 매칭 {Number(data.breakdown.costCoverage ?? 0)}%
+              </button>
+            )}
+          </div>
           <p className="mt-1 text-xl font-black text-slate-900">{won(data.totalProfit)}</p>
+          {data.breakdown && (
+            <p className="mt-1 text-[10px] leading-4 text-slate-400">
+              수수료 -{comma(data.breakdown.fee)} · 원가 -{comma(data.breakdown.cogs)}<br />
+              물류 -{comma(data.breakdown.parcel)} · 광고 -{comma(data.breakdown.adSpend)}
+            </p>
+          )}
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <p className="text-[11px] font-bold text-slate-400">성과급 풀 {periodType === 'half' ? '(반기 지급 기준)' : '(기간 환산)'}</p>
@@ -536,7 +585,8 @@ export default function KpiPerformancePage() {
           {config && !configEdit && (
             <p className="mt-1 text-[13px] font-black text-slate-800">
               팀몫 {Number(config.team_ratio)}% : 개인몫 {100 - Number(config.team_ratio)}%<br />
-              <span className="text-[11px] font-bold text-slate-500">반기 기준액 {won(config.half_threshold)} · 요율 {Number(config.pool_rate)}%</span>
+              <span className="text-[11px] font-bold text-slate-500">반기 기준액 {won(config.half_threshold)} · 요율 {Number(config.pool_rate)}%</span><br />
+              <span className="text-[11px] font-bold text-slate-500">택배 단가 {won(config.parcel_unit_cost)}/건</span>
             </p>
           )}
           {config && configEdit && (
@@ -545,6 +595,9 @@ export default function KpiPerformancePage() {
               <div className="flex gap-1.5">
                 <input className={`${inputCls} h-8 flex-1 text-xs`} value={config.pool_rate} onChange={(e) => setConfig({ ...config, pool_rate: e.target.value })} placeholder="요율%" />
                 <input className={`${inputCls} h-8 flex-1 text-xs`} value={config.team_ratio} onChange={(e) => setConfig({ ...config, team_ratio: e.target.value })} placeholder="팀%" />
+              </div>
+              <div className="flex gap-1.5">
+                <input className={`${inputCls} h-8 flex-1 text-xs`} value={comma(config.parcel_unit_cost)} onChange={(e) => setConfig({ ...config, parcel_unit_cost: num(e.target.value) })} placeholder="택배 단가/건" />
                 <button type="button" onClick={saveCfg} className="rounded-lg bg-blue-500 px-3 text-xs font-black text-white">저장</button>
               </div>
             </div>
@@ -760,6 +813,7 @@ export default function KpiPerformancePage() {
       {modal === 'target' && <TargetModal month={anchor} teams={teams} onClose={() => setModal('')} onSaved={() => { setModal(''); load() }} />}
       {modal === 'team' && <TeamConfigModal onClose={() => setModal('')} onSaved={() => { setModal(''); load() }} />}
       {modal === 'score' && periodKey && <ScoreModal periodKey={periodKey} teams={teams} onClose={() => setModal('')} onSaved={() => { setModal(''); load() }} />}
+      {modal === 'unmapped' && <UnmappedModal periodType={periodType} anchor={anchor} onClose={() => setModal('')} />}
     </div>
   )
 }

@@ -130,6 +130,15 @@ public class KpiController {
                 payload.get("reason") == null ? null : String.valueOf(payload.get("reason"))));
     }
 
+    /** 공헌이익 v3: 원가 미매칭 상품 목록 */
+    @GetMapping("/unmapped-products")
+    public ResponseEntity<List<Map<String, Object>>> unmappedProducts(
+            @RequestParam(defaultValue = "month") String periodType,
+            @RequestParam(required = false) String anchor) {
+        return ResponseEntity.ok(kpiService.getUnmappedProducts(periodType,
+                anchor == null ? java.time.YearMonth.now().toString() : anchor));
+    }
+
     @GetMapping("/history")
     public ResponseEntity<Map<String, Object>> history() {
         return ResponseEntity.ok(kpiService.history());
