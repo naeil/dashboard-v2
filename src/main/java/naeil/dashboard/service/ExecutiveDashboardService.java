@@ -3225,6 +3225,7 @@ public class ExecutiveDashboardService {
                 ORDER BY channel, id
                 """, companyId, prevMonthStart);
 
+        // 실시간 매출 화면과 동일 기준: 오프라인 = shop_code 'OFF-%' (발주시트), 온라인 = 그 외
         Long ordersOnline = queryLong("""
                 SELECT COALESCE(SUM(o.pay_amt), 0)::BIGINT
                 FROM orders o
@@ -3232,8 +3233,19 @@ public class ExecutiveDashboardService {
                 WHERE o.company_id = ?
                   AND (o.ord_time AT TIME ZONE 'Asia/Seoul')::date BETWEEN ? AND ?
                   AND s.shop_code <> 'A000'
+                  AND s.shop_code NOT LIKE 'OFF-%'
                   AND NOT (s.shop_name ILIKE '%수출%' OR s.shop_name ILIKE '%해외%'
                        OR s.shop_name ILIKE '%오프라인%' OR s.shop_name ILIKE '%매장%')
+                  AND COALESCE(o.ord_status, '') NOT IN ('취소완료', '반품완료', '교환완료', '맞교환완료', '주문취소', 'CANCELLED')
+                """, companyId, monthStart, monthEnd);
+
+        Long ordersOffline = queryLong("""
+                SELECT COALESCE(SUM(o.pay_amt), 0)::BIGINT
+                FROM orders o
+                JOIN shop s ON s.id = o.shop_id
+                WHERE o.company_id = ?
+                  AND (o.ord_time AT TIME ZONE 'Asia/Seoul')::date BETWEEN ? AND ?
+                  AND (s.shop_code LIKE 'OFF-%' OR s.shop_name ILIKE '%오프라인%' OR s.shop_name ILIKE '%매장%')
                   AND COALESCE(o.ord_status, '') NOT IN ('취소완료', '반품완료', '교환완료', '맞교환완료', '주문취소', 'CANCELLED')
                 """, companyId, monthStart, monthEnd);
 
@@ -3302,7 +3314,7 @@ public class ExecutiveDashboardService {
                   )
                 """, companyId, monthStart, monthEnd);
 
-        Long actualOffline = queryLong("""
+        Long manualOffline = queryLong("""
                 SELECT COALESCE(SUM(sales_amount), 0)::BIGINT
                 FROM executive_channel_performance
                 WHERE company_id = ?
@@ -3314,6 +3326,9 @@ public class ExecutiveDashboardService {
                       OR channel_name ILIKE '%매장%'
                   )
                 """, companyId, monthStart, monthEnd);
+
+        Long actualOffline = (ordersOffline == null ? 0L : ordersOffline)
+                + (manualOffline == null ? 0L : manualOffline);
 
         Long confirmedCashInflow = queryLong("""
                 SELECT COALESCE(SUM(amount), 0)::BIGINT
@@ -3338,7 +3353,8 @@ public class ExecutiveDashboardService {
         salesSources.add(salesSource("daily_sales_stats", "일별 매출 통계", dailyStatsOnline, "reference", "주문 원장 재집계값, 중복 방지로 합산 제외"));
         salesSources.add(salesSource("channel_playauto", "채널 실적 PlayAuto", playAutoChannelOnline, "reference", "채널별 표시용, 주문 원장과 중복"));
         salesSources.add(salesSource("channel_manual_online", "수동 온라인 실적", manualOnline, "actual", "주문 원장에 없는 수동 온라인 보강"));
-        salesSources.add(salesSource("channel_manual_offline", "수동 오프라인 실적", actualOffline, "actual", "국내 오프라인"));
+        salesSources.add(salesSource("orders_offline", "오프라인 주문 원장(발주시트)", ordersOffline, "actual", "발주시트·정산시트 오프라인 실시간"));
+        salesSources.add(salesSource("channel_manual_offline", "수동 오프라인 실적", manualOffline, "actual", "주문 원장에 없는 수동 보강"));
         salesSources.add(salesSource("channel_manual_export", "확정 수출 실적", actualExport, "actual", "수동 입력된 확정 수출/해외 매출"));
         salesSources.add(salesSource("consulting_paid", "컨설팅 입금", actualConsulting, "actual", "paid_amount 기준"));
         salesSources.add(salesSource("cash_flow_confirmed", "확정 입금 현금흐름", confirmedCashInflow, "reference", "전표 중복 가능성으로 별도 표시"));
