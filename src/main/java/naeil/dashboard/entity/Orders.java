@@ -97,6 +97,12 @@ public class Orders {
         this.productId = productId;
     }
 
+    public void assignCustomerIfMissing(Long customerId) {
+        if (this.customerId == null && customerId != null) {
+            this.customerId = customerId;
+        }
+    }
+
     public void refreshFromSync(
             Long brandId,
             Long shopId,

@@ -621,6 +621,26 @@ public class PlayAutoSyncService {
             LocalDateTime payTime,
             String ordStatus
     ) {
+        upsertDirectOrder(companyId, uniq, shopCode, shopName, productName, skuCd, quantity, payAmt, payTime, ordStatus, null, null, null);
+    }
+
+    /** 직연동 주문 적재 + 구매자 정보로 고객 연결 (고객 가치 분석 실시간 반영) */
+    public void upsertDirectOrder(
+            Long companyId,
+            String uniq,
+            String shopCode,
+            String shopName,
+            String productName,
+            String skuCd,
+            Integer quantity,
+            BigDecimal payAmt,
+            LocalDateTime payTime,
+            String ordStatus,
+            String buyerName,
+            String buyerPhone,
+            String buyerEmail
+    ) {
+        Long directCustomerId = resolveDirectCustomer(companyId, buyerName, buyerPhone, buyerEmail);
         String safeSku = isBlank(skuCd) ? uniq : skuCd;
         Shop shop = resolveShop(companyId, shopCode, shopName);
         Product product = resolveProduct(companyId, null, safeSku).orElseGet(() -> {
@@ -637,6 +657,7 @@ public class PlayAutoSyncService {
             existing.refreshFromSync(product.getBrandId(), shop.getId(), product.getId(), safeSku,
                     payAmt, BigDecimal.ZERO, BigDecimal.ZERO, payAmt, quantity,
                     payTime, payTime, payTime, ordStatus);
+            existing.assignCustomerIfMissing(directCustomerId);
             ordersRepository.save(existing);
             return;
         }
@@ -656,12 +677,38 @@ public class PlayAutoSyncService {
                 .ordTime(payTime)
                 .wdate(payTime)
                 .payTime(payTime)
+                .customerId(directCustomerId)
                 .build();
         try {
             ordersRepository.save(order);
         } catch (DataIntegrityViolationException e) {
             log.warn("[DirectOrder] duplicate uniq={} — skip", uniq);
         }
+    }
+
+    /** 이름/전화번호(안심번호 포함)로 고객 upsert 후 id 반환 — 전화번호 없으면 연결하지 않음 */
+    public Long resolveDirectCustomer(Long companyId, String name, String phone, String email) {
+        String clean = cleanPhone(phone);
+        if (!isValidPhone(clean)) return null;
+        Customer customer = customerRepository.findByCompanyIdAndCustomerHtel(companyId, clean).orElse(null);
+        if (customer == null) {
+            try {
+                customer = customerRepository.save(Customer.builder()
+                        .companyId(companyId)
+                        .customerName(blankToNull(name))
+                        .customerEmail(blankToNull(email))
+                        .customerHtel(clean)
+                        .customerHtelHash(hashPhone(clean))
+                        .totalOrderCount(0)
+                        .build());
+            } catch (DataIntegrityViolationException e) {
+                customer = customerRepository.findByCompanyIdAndCustomerHtel(companyId, clean).orElse(null);
+            }
+        } else if (isBlank(customer.getCustomerName()) && !isBlank(name)) {
+            customer.setCustomerName(name);
+            customer = customerRepository.save(customer);
+        }
+        return customer == null ? null : customer.getId();
     }
 
     private Brand resolveBrand(Long companyId, String brandName) {

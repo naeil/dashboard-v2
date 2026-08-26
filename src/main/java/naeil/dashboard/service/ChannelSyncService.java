@@ -737,7 +737,10 @@ public class ChannelSyncService {
                         playAutoSyncService.upsertDirectOrder(DEFAULT_COMPANY_ID, "NV-" + productOrderId,
                                 "DIRECT_" + channelType.toUpperCase(), displayName(channelType),
                                 pname, sku, qty, java.math.BigDecimal.valueOf(amt), paidAt,
-                                status.isBlank() ? "PAYED" : status);
+                                status.isBlank() ? "PAYED" : status,
+                                orderNode.path("ordererName").asText(null),
+                                orderNode.path("ordererTel").asText(null),
+                                null);
                     }
                 } catch (Exception e) {
                     log.warn("[DirectOrder] 네이버 주문 적재 실패: {}", e.getMessage());
@@ -811,7 +814,11 @@ public class ChannelSyncService {
                                         int qty = Math.max(1, item.path("shippingCount").asInt(1));
                                         playAutoSyncService.upsertDirectOrder(DEFAULT_COMPANY_ID, "CP-" + orderId + "-" + vendorItemId,
                                                 "DIRECT_COUPANG", "쿠팡", pname, sku, qty,
-                                                java.math.BigDecimal.valueOf(orderPrice), paidAt, status);
+                                                java.math.BigDecimal.valueOf(orderPrice), paidAt, status,
+                                                sheet.path("orderer").path("name").asText(null),
+                                                sheet.path("orderer").path("safeNumber").asText(
+                                                        sheet.path("receiver").path("safeNumber").asText(null)),
+                                                sheet.path("orderer").path("email").asText(null));
                                     }
                                 } catch (Exception e) {
                                     log.warn("[DirectOrder] 쿠팡 주문 적재 실패: {}", e.getMessage());
