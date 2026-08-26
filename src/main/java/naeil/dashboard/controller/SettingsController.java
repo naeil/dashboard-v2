@@ -45,6 +45,43 @@ public class SettingsController {
         this.objectMapper = objectMapper;
     }
 
+    // ── 로그인 화면 브랜딩 (GET은 비로그인 허용 — AuthInterceptor 화이트리스트) ──
+
+    @GetMapping("/login-branding")
+    public ResponseEntity<Map<String, Object>> getLoginBranding() {
+        try {
+            String image = jdbcTemplate.queryForObject(
+                "SELECT login_image FROM company_branding WHERE company_id = ?",
+                String.class, DEFAULT_COMPANY_ID);
+            Map<String, Object> body = new java.util.HashMap<>();
+            body.put("image", image);
+            return ResponseEntity.ok(body);
+        } catch (Exception e) {
+            Map<String, Object> body = new java.util.HashMap<>();
+            body.put("image", null);
+            return ResponseEntity.ok(body);
+        }
+    }
+
+    @PutMapping("/login-branding")
+    public ResponseEntity<Map<String, Object>> saveLoginBranding(@RequestBody Map<String, Object> payload) {
+        Object imageObj = payload.get("image");
+        String image = imageObj == null ? null : String.valueOf(imageObj);
+        if (image != null && image.isBlank()) image = null;
+        if (image != null && !image.startsWith("data:image/")) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "이미지 형식이 아닙니다."));
+        }
+        if (image != null && image.length() > 4_000_000) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "이미지가 너무 큽니다 (최대 약 3MB)."));
+        }
+        jdbcTemplate.update("""
+            INSERT INTO company_branding (company_id, login_image, updated_at)
+            VALUES (?, ?, NOW())
+            ON CONFLICT (company_id) DO UPDATE SET login_image = EXCLUDED.login_image, updated_at = NOW()
+            """, DEFAULT_COMPANY_ID, image);
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
     // ── 메뉴 커스텀 설정 ─────────────────────────────────────────────
 
     @GetMapping("/menu-config")

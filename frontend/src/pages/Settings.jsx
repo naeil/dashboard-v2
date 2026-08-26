@@ -4,12 +4,15 @@ import { authorizedFetch } from '../api/authApi'
 import { AI_PROVIDER_CONFIGS, getAiProviderConfig, isAiProviderReady } from '../utils/aiProviderCatalog'
 import { groupExternalIntegrations } from '../utils/externalIntegrationGroups'
 import { buildSecretPatch, hasSavedSecret } from '../utils/integrationSecrets'
+import { getLoginBranding, saveLoginBranding } from '../api/settingsApi'
+import defaultLoginHero from '../assets/login-hero.jpg'
 
 const SETTINGS_API_BASE = buildApiUrl('/settings/integrations')
 const AI_SETTINGS_API_BASE = buildApiUrl('/settings/ai')
 
 const AUTH_TAB = 'auth'
 const COLLECTION_TAB = 'collection'
+const BRANDING_TAB = 'branding'
 
 const UNIT_OPTIONS = [
   { value: 'DAY', label: '일' },
@@ -188,6 +191,105 @@ function SelectField({ value, onChange, disabled = false, className = '', childr
     >
       {children}
     </select>
+  )
+}
+
+
+/* ── 로그인 화면 이미지 (브랜딩) ── */
+function LoginBrandingPanel() {
+  const [image, setImage] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    getLoginBranding().then((res) => setImage(res.data?.image || null)).catch(() => {})
+  }, [])
+
+  const onFile = (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = async () => {
+        const maxW = 1920
+        const scale = Math.min(1, maxW / img.width)
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(img.width * scale)
+        canvas.height = Math.round(img.height * scale)
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+        if (dataUrl.length > 4_000_000) {
+          setMessage('이미지가 너무 큽니다. 더 작은 이미지를 사용하세요.')
+          return
+        }
+        setSaving(true)
+        setMessage('')
+        try {
+          await saveLoginBranding(dataUrl)
+          setImage(dataUrl)
+          setMessage('저장되었습니다. 로그인 화면에 바로 적용됩니다.')
+        } catch {
+          setMessage('저장에 실패했습니다.')
+        } finally {
+          setSaving(false)
+        }
+      }
+      img.src = reader.result
+    }
+    reader.readAsDataURL(file)
+    event.target.value = ''
+  }
+
+  const resetDefault = async () => {
+    setSaving(true)
+    setMessage('')
+    try {
+      await saveLoginBranding(null)
+      setImage(null)
+      setMessage('기본 이미지로 되돌렸습니다.')
+    } catch {
+      setMessage('저장에 실패했습니다.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-6">
+      <h3 className="text-lg font-black text-slate-950">로그인 화면 이미지</h3>
+      <p className="mt-1 text-sm font-bold text-slate-500">
+        로그인 화면 왼쪽에 표시되는 브랜드 이미지입니다. 교체하면 전 직원 로그인 화면에 즉시 반영됩니다.
+      </p>
+      <div className="mt-5 grid gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-950">
+          <img src={image || defaultLoginHero} alt="로그인 이미지 미리보기" className="h-56 w-full object-cover" />
+          <p className="px-3 py-2 text-center text-[11px] font-bold text-slate-400">
+            {image ? '커스텀 이미지 사용 중' : '기본 이미지 사용 중'}
+          </p>
+        </div>
+        <div className="space-y-3">
+          <label className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-lg bg-sky-500 px-4 text-sm font-black text-white hover:bg-sky-600">
+            <span className="material-symbols-outlined text-lg">upload</span>
+            {saving ? '저장 중...' : '이미지 교체'}
+            <input type="file" accept="image/*" className="hidden" onChange={onFile} disabled={saving} />
+          </label>
+          <button
+            type="button"
+            onClick={resetDefault}
+            disabled={saving || !image}
+            className="ml-2 inline-flex h-11 items-center gap-2 rounded-lg border border-slate-200 px-4 text-sm font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+          >
+            <span className="material-symbols-outlined text-lg">restart_alt</span>
+            기본 이미지로
+          </button>
+          <p className="text-xs font-bold text-slate-400">
+            권장: 가로 1600px 이상, 세로형 또는 정방형. 큰 이미지는 자동으로 축소 저장됩니다 (최대 약 3MB).
+          </p>
+          {message && <p className="text-sm font-black text-sky-600">{message}</p>}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1081,6 +1183,8 @@ export default function Settings({ isExpanded }) {
                 {renderTabButton(AUTH_TAB, '인증 정보')}
                 <span className="text-3xl font-light text-slate-300">/</span>
                 {renderTabButton(COLLECTION_TAB, '수집 설정')}
+                <span className="text-3xl font-light text-slate-300">/</span>
+                {renderTabButton(BRANDING_TAB, '화면 브랜딩')}
               </div>
             </div>
 
@@ -1097,6 +1201,8 @@ export default function Settings({ isExpanded }) {
               </>
             )}
           </div>
+
+          {activeTab === BRANDING_TAB && <LoginBrandingPanel />}
 
           {activeTab === AUTH_TAB && (
             <div className="space-y-8">

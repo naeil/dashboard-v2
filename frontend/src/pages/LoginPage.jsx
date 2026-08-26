@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { adminLogin, checkUsernameAvailability, previewInvite, registerWithInvite, tenantLogin } from '../api/authApi'
+import { getLoginBranding } from '../api/settingsApi'
+import defaultHero from '../assets/login-hero.jpg'
 import { LOGIN_MODES, requiresCompanyCode } from '../utils/loginModes'
 
 const PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%&*])[A-Za-z0-9!@#$%&*]{8,16}$/
@@ -27,6 +29,13 @@ export default function LoginPage({ onLogin }) {
   const [usernameCheckStatus, setUsernameCheckStatus] = useState('idle')
   const [usernameCheckMessage, setUsernameCheckMessage] = useState('')
   const [checkedUsername, setCheckedUsername] = useState('')
+  const [brandImage, setBrandImage] = useState(null)
+
+  useEffect(() => {
+    getLoginBranding()
+      .then((res) => setBrandImage(res.data?.image || null))
+      .catch(() => setBrandImage(null))
+  }, [])
 
   useEffect(() => {
     if (!initialInviteCode) return
@@ -142,8 +151,41 @@ export default function LoginPage({ onLogin }) {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-5 py-8">
-      <section className="w-full max-w-xl rounded-lg border border-slate-200 bg-white p-6 shadow-lg shadow-slate-200/60">
+    <main className="flex min-h-screen bg-slate-950">
+      {/* 좌측 브랜드 패널 — [설정 > 로그인 화면 이미지]에서 교체 가능 */}
+      <aside className="relative hidden overflow-hidden lg:flex lg:w-1/2 xl:w-[58%]">
+        <img src={brandImage || defaultHero} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/20 to-slate-950/35" />
+        <div className="relative z-10 flex w-full flex-col justify-between p-12 xl:p-16">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-lg font-black text-white backdrop-blur">내</span>
+            <div>
+              <p className="text-sm font-black tracking-[0.22em] text-white">NAEIL GROUP</p>
+              <p className="text-[11px] font-bold text-slate-300">Business Platform</p>
+            </div>
+          </div>
+          <div>
+            <h2 className="text-4xl font-black leading-tight text-white xl:text-5xl">
+              내일의 성장을,<br />오늘의 데이터로.
+            </h2>
+            <p className="mt-5 max-w-md text-sm font-bold leading-7 text-slate-300">
+              매출·재고·생산·성과급까지 — 내일그룹의 모든 업무가 한 화면에서 흐릅니다.
+            </p>
+            <div className="mt-7 flex flex-wrap gap-2">
+              {['실시간 매출', '재고 · 발주', 'KPI 성과급', 'AI 주간 보고', '종합 상황판'].map((chip) => (
+                <span key={chip} className="rounded-full border border-white/15 bg-white/10 px-3.5 py-1.5 text-xs font-black text-white backdrop-blur">
+                  {chip}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* 우측 로그인 폼 */}
+      <section className="relative flex flex-1 items-center justify-center overflow-y-auto bg-slate-50 px-5 py-8">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-sky-100/70 to-transparent lg:hidden" />
+        <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/60 sm:p-8">
         <div className="mb-7">
           <p className="text-xs font-black uppercase tracking-[0.22em] text-sky-600">NAEIL ERP PLATFORM</p>
           <h1 className="mt-4 text-4xl font-black tracking-tight text-slate-950">
@@ -336,6 +378,7 @@ export default function LoginPage({ onLogin }) {
           <span className="material-symbols-outlined">{isRegister ? 'login' : 'person_add'}</span>
           {isRegister ? '로그인으로 돌아가기' : '회원가입'}
         </button>
+        </div>
       </section>
     </main>
   )
