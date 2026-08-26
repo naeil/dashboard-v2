@@ -62,6 +62,7 @@ public class AiWeeklyReportService {
     private final JdbcTemplate jdbcTemplate;
     private final AiApiClient aiApiClient;
     private final AiProviderSettingRepository aiProviderSettingRepository;
+    private final AiProviderSettingService aiProviderSettingService;
 
     /* ───────── 생성 ───────── */
 
@@ -85,7 +86,7 @@ public class AiWeeklyReportService {
         if (setting == null) {
             return Map.of("success", false, "message", "활성화된 AI 인증 정보가 없습니다. [시스템 > AI 설정]에서 등록하세요.");
         }
-        String model = defaultModel(setting.getProvider());
+        String model = resolveModel(companyId, setting.getProvider());
 
         Map<String, StringBuilder> byUser = new LinkedHashMap<>();
         Map<String, String> displayNames = new LinkedHashMap<>();
@@ -214,11 +215,31 @@ public class AiWeeklyReportService {
                 .findFirst().orElse(null);
     }
 
-    private static String defaultModel(AiProvider provider) {
+    /** 카탈로그에서 사용 가능한 모델을 동적으로 선택 — 경량 모델 우선, 실패 시 하드코딩 fallback */
+    private String resolveModel(Long companyId, AiProvider provider) {
+        try {
+            List<naeil.dashboard.dto.AiProviderSettingDto.ModelOption> models =
+                    aiProviderSettingService.getModels(companyId, provider);
+            if (models != null && !models.isEmpty()) {
+                String[] prefs = switch (provider) {
+                    case OPENAI -> new String[]{"mini", "gpt-4o"};
+                    case CLAUDE -> new String[]{"haiku", "sonnet"};
+                    case GEMINI -> new String[]{"flash", "gemini"};
+                };
+                for (String pref : prefs) {
+                    for (var m : models) {
+                        if (m.value() != null && m.value().toLowerCase().contains(pref)) return m.value();
+                    }
+                }
+                return models.get(0).value();
+            }
+        } catch (Exception e) {
+            log.warn("AI 모델 카탈로그 조회 실패({}): {}", provider, e.getMessage());
+        }
         return switch (provider) {
             case OPENAI -> "gpt-4o-mini";
             case CLAUDE -> "claude-3-5-haiku-latest";
-            case GEMINI -> "gemini-2.0-flash";
+            case GEMINI -> "gemini-3.6-flash";
         };
     }
 
