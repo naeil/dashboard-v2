@@ -63,6 +63,7 @@ import WorkInputPage from './pages/executive/WorkInputPage'
 import WorkManagementPage from './pages/executive/WorkManagementPage'
 import Settings from './pages/Settings'
 import LoginPage from './pages/LoginPage'
+import ControlTowerPage from './pages/common/ControlTowerPage'
 import StaffDashboardPage from './pages/staff/StaffDashboardPage'
 import StaffProjectStatusPage from './pages/staff/StaffProjectStatusPage'
 import StaffWorkReportPage from './pages/staff/StaffWorkReportPage'
@@ -71,6 +72,7 @@ import { LOGIN_MODES } from './utils/loginModes'
 
 const pages = {
   platform: PlatformOverviewPage,
+  'control-tower': ControlTowerPage,
   'platform-admin': PlatformAdminPage,
   organization: OrganizationManagementPage,
   'staff-dashboard': StaffDashboardPage,
