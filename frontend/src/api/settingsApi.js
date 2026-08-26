@@ -7,7 +7,7 @@ export const saveMenuConfig = (config) =>
   api.put('/settings/integrations/menu-config', config)
 
 export const getLoginBranding = () =>
-  api.get('/settings/login-branding')
+  api.get('/settings/integrations/login-branding')
 
 export const saveLoginBranding = (image) =>
-  api.put('/settings/login-branding', { image })
+  api.put('/settings/integrations/login-branding', { image })
