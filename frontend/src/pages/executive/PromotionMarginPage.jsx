@@ -265,6 +265,20 @@ function ProductPicker({ onPick, onClose }) {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(false)
   const timer = useRef(null)
+  const [mName, setMName] = useState('')
+  const [mPrice, setMPrice] = useState('')
+  const [mCost, setMCost] = useState('')
+
+  const addManual = () => {
+    if (!mName.trim()) return
+    onPick({
+      manual: true,
+      product_code: `DIRECT-${Date.now().toString(36)}`,
+      product_name: mName.trim(),
+      unit_cost: num(mCost),
+      list_price: num(mPrice),
+    })
+  }
 
   const search = useCallback((keyword) => {
     setLoading(true)
@@ -293,7 +307,7 @@ function ProductPicker({ onPick, onClose }) {
           value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-slate-100">
           {loading && <p className="p-4 text-center text-xs text-slate-400">검색 중…</p>}
-          {!loading && rows.length === 0 && <p className="p-4 text-center text-xs text-slate-400">검색 결과가 없습니다.</p>}
+          {!loading && rows.length === 0 && <p className="p-4 text-center text-xs text-slate-400">검색 결과가 없습니다. 아래에서 직접 등록할 수 있습니다.</p>}
           {!loading && rows.map((row) => (
             <button key={row.id} type="button" onClick={() => onPick(row)}
               className="flex w-full items-center justify-between border-b border-slate-50 px-3 py-2.5 text-left last:border-b-0 hover:bg-blue-50/60">
@@ -308,6 +322,28 @@ function ProductPicker({ onPick, onClose }) {
           ))}
         </div>
         <p className="mt-2 text-[11px] text-slate-400">원가는 제품 원가 관리(마스터)에서 자동 참조됩니다.</p>
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+          <p className="mb-2 text-[12px] font-black text-slate-700">
+            <span className="material-symbols-outlined mr-1 align-[-3px] text-[15px] text-blue-500">edit_square</span>
+            마스터에 없는 상품 직접 등록
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <input className={`${inputCls} col-span-2`} placeholder="상품명 (필수) — 예) 1+1 저당과자 단백깡"
+              value={mName} onChange={(e) => setMName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') addManual() }} />
+            <input className={`${inputCls} text-right`} placeholder="정상가 (원)" inputMode="numeric"
+              value={mPrice} onChange={(e) => setMPrice(e.target.value)} />
+            <input className={`${inputCls} text-right`} placeholder="원가 (원)" inputMode="numeric"
+              value={mCost} onChange={(e) => setMCost(e.target.value)} />
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <p className="text-[11px] text-slate-400">정상가·원가는 나중에 표에서 바로 수정할 수 있습니다.</p>
+            <button type="button" onClick={addManual} disabled={!mName.trim()}
+              className="shrink-0 rounded-lg bg-blue-500 px-3 py-1.5 text-[12px] font-black text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400">
+              직접 추가
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -483,13 +519,17 @@ function EventEditor({ initial, channelDefaults, onSaved, onCancel }) {
 
   const addBlock = (product) => {
     const cost = num(product.unit_cost)
+    const anyOptions = (ev.blocks || []).some((b) => (b.options || []).length > 0)
     set({
       blocks: [...ev.blocks, {
         productCode: product.product_code,
         productName: product.product_name,
         options: [{
           optionName: '기본', unitCost: cost, unitCostOverridden: false,
-          masterUnitCost: cost, listPrice: 0, benefit: { ...EMPTY_BENEFIT }, mixRate: 0,
+          masterUnitCost: product.manual ? null : cost,
+          listPrice: num(product.list_price) || 0,
+          benefit: { ...EMPTY_BENEFIT },
+          mixRate: anyOptions ? 0 : 100,
         }],
       }],
     })
