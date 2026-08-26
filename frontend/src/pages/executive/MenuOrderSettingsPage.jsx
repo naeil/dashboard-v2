@@ -209,6 +209,32 @@ export default function MenuOrderSettingsPage() {
     })
   }
 
+  /** 카테고리(섹션) 자체를 위/아래로 이동 */
+  function moveSection(sectionId, dir) {
+    setOrder((prev) => {
+      const next = normalizeOrder(prev)
+      const idx = next.sections.indexOf(sectionId)
+      const target = idx + dir
+      if (idx < 0 || target < 0 || target >= next.sections.length) return next
+      const sections = [...next.sections]
+      ;[sections[idx], sections[target]] = [sections[target], sections[idx]]
+      return { ...next, sections }
+    })
+  }
+
+  /** 카테고리 안에서 메뉴를 위/아래로 이동 */
+  function moveItemWithin(sectionId, itemId, dir) {
+    setOrder((prev) => {
+      const next = normalizeOrder(prev)
+      const ids = [...(next.items[sectionId] || [])]
+      const idx = ids.indexOf(itemId)
+      const target = idx + dir
+      if (idx < 0 || target < 0 || target >= ids.length) return next
+      ;[ids[idx], ids[target]] = [ids[target], ids[idx]]
+      return { ...next, items: { ...next.items, [sectionId]: ids } }
+    })
+  }
+
   async function handleSave() {
     const clean = cleanOverrides(overrides)
     const cleanOrder = normalizeOrder(order)
@@ -281,6 +307,10 @@ export default function MenuOrderSettingsPage() {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-4 border-t border-slate-100 pt-4 text-xs font-bold text-slate-500">
+          <span className="flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-base text-sky-500">swap_vert</span>
+            ▲▼ → 카테고리·메뉴 순서 이동
+          </span>
           <span className="flex items-center gap-1.5">
             <span className="material-symbols-outlined text-base text-sky-500">ads_click</span>
             메뉴 클릭 → 이동할 카테고리의 여기로 이동
@@ -360,6 +390,14 @@ export default function MenuOrderSettingsPage() {
               </div>
 
               <div className="flex shrink-0 items-center gap-1">
+                <button type="button" onClick={() => moveSection(section.id, -1)} title="카테고리 위로"
+                  className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-sky-50 hover:text-sky-600">
+                  <span className="material-symbols-outlined text-base">arrow_upward</span>
+                </button>
+                <button type="button" onClick={() => moveSection(section.id, 1)} title="카테고리 아래로"
+                  className="mr-1 rounded-lg p-2 text-slate-400 transition-colors hover:bg-sky-50 hover:text-sky-600">
+                  <span className="material-symbols-outlined text-base">arrow_downward</span>
+                </button>
                 {selectedItemId && !section.items.some((item) => item.id === selectedItemId) && (
                   <button
                     type="button"
@@ -417,6 +455,14 @@ export default function MenuOrderSettingsPage() {
                     </div>
 
                     <div className="flex shrink-0 items-center gap-1" onClick={(event) => event.stopPropagation()}>
+                      <button type="button" onClick={() => moveItemWithin(section.id, item.id, -1)} title="위로"
+                        className="rounded-lg p-1.5 text-slate-300 transition-colors hover:bg-sky-50 hover:text-sky-600">
+                        <span className="material-symbols-outlined text-sm">arrow_upward</span>
+                      </button>
+                      <button type="button" onClick={() => moveItemWithin(section.id, item.id, 1)} title="아래로"
+                        className="mr-1 rounded-lg p-1.5 text-slate-300 transition-colors hover:bg-sky-50 hover:text-sky-600">
+                        <span className="material-symbols-outlined text-sm">arrow_downward</span>
+                      </button>
                       <button type="button" onClick={() => toggleBold(item.id)}
                         title={isItemBold ? '굵게 해제' : '굵게 표시'}
                         className={`rounded-lg p-1.5 transition-colors ${isItemBold ? 'bg-amber-100 text-amber-700' : 'text-slate-300 hover:bg-amber-50 hover:text-amber-500'}`}>
