@@ -105,7 +105,7 @@ export default function PromotionHistoryPage() {
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="mt-1 text-2xl font-black tracking-tight">프로모션 내역</h1>
-          <p className="mt-2 text-sm font-bold text-slate-600">프로모션 마진에서 저장한 신청 내역을 채널별로 보고, 목표 매출 대비 실시간 매출과 영업이익을 바로 확인합니다.</p>
+          <p className="mt-2 text-sm font-bold text-slate-600">마케팅 프로젝트에서 저장한 신청 내역을 채널별로 보고, 목표 매출 대비 실시간 매출과 영업이익을 바로 확인합니다.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-10 rounded border border-slate-300 px-3 text-sm font-black" />

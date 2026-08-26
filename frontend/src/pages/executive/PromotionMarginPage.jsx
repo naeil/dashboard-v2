@@ -1026,7 +1026,7 @@ export default function PromotionMarginPage() {
     <div className="space-y-4 p-4 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-black text-slate-900">프로모션 마진 · 행사 설계</h1>
+          <h1 className="text-lg font-black text-slate-900">마케팅 프로젝트 · 행사 설계</h1>
           <p className="mt-0.5 text-[12px] text-slate-400">
             채널 조건과 옵션 혜택을 입력하면 마진과 진행 가능 여부가 자동 계산됩니다. (모든 금액 세전 기준)
           </p>
