@@ -7,6 +7,7 @@ import {
   getExecutiveWorkTasks,
 } from '../../api/executiveApi'
 import { clockStaffAttendance, getStaffTodayAttendance } from '../../api/staffApi'
+import { getWeekPlan } from '../../api/controlTowerApi'
 import { PageHeader, Panel } from './ExecutiveComponents'
 import { count, pct, won } from './formatters'
 import { isTaskDelayed, taskProgress, taskStatusClass, taskStatusLabels } from './workTaskUtils'
@@ -37,147 +38,160 @@ function formatClockTime(value) {
 
 
 
-// ── 분야별 현황 신호등 (실제 데이터 기반) ──────────────────────────────
-const DOMAIN_MAP = [
-  { name: '매출·MD',    categories: ['채널 운영', '온라인 프로모션', '오프라인 프로모션'] },
-  { name: '콘텐츠',     categories: ['마케팅', '마케팅 프로젝트', '디자인'] },
-  { name: '퍼포먼스',   categories: ['NPD'] },
-  { name: '재고·물류',  categories: ['생산', '재고', '수출'] },
-  { name: '정산·재무',  categories: ['회계', '운영'] },
-  { name: '영업·제휴',  categories: ['영업'] },
-]
+// ── 주간 업무 캘린더 + 담당자별 이번 주 할 일 ──────────────────────────
+const WP_DAY_LABELS = ['월', '화', '수', '목', '금', '토', '일']
 
-function computeDomainSignals(tasks, forecasts, cashFlow, payments) {
-  return DOMAIN_MAP.map((domain) => {
-    const domainTasks = tasks.filter((t) => domain.categories.includes(t.work_category))
-    const total = domainTasks.length
-    const blocked = domainTasks.filter((t) => t.status === 'BLOCKED').length
-    const delayed = domainTasks.filter((t) => isTaskDelayed(t) || t.status === 'DELAYED').length
-    const done = domainTasks.filter((t) => t.status === 'DONE').length
-    const inProgress = domainTasks.filter((t) => t.status === 'IN_PROGRESS').length
-    const good = []
-    const issues = []
+function wpMonday(offsetWeeks = 0) {
+  const d = new Date()
+  const day = d.getDay()
+  d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day) + offsetWeeks * 7)
+  return d.toISOString().slice(0, 10)
+}
 
-    if (total === 0) {
-      issues.push('등록된 업무 없음')
-    } else {
-      if (inProgress > 0) good.push(`진행중 ${inProgress}건`)
-      if (done > 0) good.push(`완료 ${done}건`)
-      if (blocked > 0) issues.push(`막힘 ${blocked}건`)
-      if (delayed > 0) issues.push(`지연 ${delayed}건`)
-    }
+function wpAddDays(dateText, n) {
+  const d = new Date(`${dateText}T00:00:00`)
+  d.setDate(d.getDate() + n)
+  return d.toISOString().slice(0, 10)
+}
 
-    if (domain.name === '재고·물류') {
-      const riskProds = (forecasts || []).filter((f) => Number(f.risk_score ?? 0) >= 40 || Number(f.launch_readiness_rate ?? 100) < 70)
-      if (riskProds.length > 0) issues.push(`재고 위험 ${riskProds.length}개`)
-      else if ((forecasts || []).length > 0) good.push('재고 위험 없음')
-    }
+function wpPlanLines(text) {
+  return String(text || '')
+    .split('\n')
+    .map((line) => line.replace(/^\s*(\d+[.)]|[-•·ㄴ└]|→)\s*/, '').trim())
+    .filter((line) => line.length > 1)
+    .slice(0, 6)
+}
 
-    if (domain.name === '정산·재무') {
-      const pending = (payments || []).filter((p) => ['SUBMITTED', 'REVIEWING'].includes(p.status))
-      if (pending.length > 0) issues.push(`결재 대기 ${pending.length}건`)
-      const cash = Number(cashFlow?.cash_balance ?? cashFlow?.openingCash ?? 0)
-      if (cash > 0 && cash < 50000000) issues.push('현금 위험 수준')
-      else if (cash >= 50000000) good.push(`현금 ${(cash / 100000000).toFixed(1)}억`)
-    }
+const wpTaskCls = (t) => {
+  if (t.status === 'DONE') return 'bg-emerald-50 text-emerald-600 line-through'
+  if (t.overdue || t.status === 'DELAYED' || t.status === 'BLOCKED') return 'bg-rose-100 text-rose-700'
+  return 'bg-sky-50 text-sky-700'
+}
 
-    let status
-    if (total === 0 || blocked > 0) status = 'danger'
-    else if (delayed > 0 || issues.length > 0) status = 'warn'
-    else status = 'good'
+function WeekPlanSection() {
+  const [weekOffset, setWeekOffset] = useState(0)
+  const [data, setData] = useState(null)
 
-    return { name: domain.name, status, good, issues }
+  useEffect(() => {
+    const t = setTimeout(() => {
+      getWeekPlan(wpMonday(weekOffset)).then(setData).catch(() => setData({ reports: [], tasks: [], carryOver: [], plans: [] }))
+    }, 0)
+    return () => clearTimeout(t)
+  }, [weekOffset])
+
+  const todayText = new Date().toISOString().slice(0, 10)
+  const weekStart = data?.weekStart || wpMonday(weekOffset)
+  const days = Array.from({ length: 7 }, (_, i) => wpAddDays(weekStart, i))
+  const tasksByDate = {}
+  ;(data?.tasks || []).forEach((t) => {
+    const key = String(t.due_date).slice(0, 10)
+    ;(tasksByDate[key] = tasksByDate[key] || []).push(t)
   })
-}
-
-function computeUrgentTasks(tasks, forecasts) {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const urgent = []
-
-  tasks
-    .filter((t) => t.status === 'BLOCKED' || isTaskDelayed(t) || t.status === 'DELAYED')
-    .forEach((t) => {
-      let dday = '지연'
-      let level = 'red'
-      if (t.due_date) {
-        const due = new Date(`${String(t.due_date).slice(0, 10)}T00:00:00`)
-        const diff = Math.ceil((due - today) / 86400000)
-        if (diff > 0) {
-          dday = `D-${diff}`
-          level = diff <= 3 ? 'red' : diff <= 7 ? 'orange' : 'yellow'
-        }
-      }
-      if (t.status === 'BLOCKED') level = 'red'
-      urgent.push({ name: t.task_name || '업무명 없음', sub: t.project_name, dday, level })
-    })
-
-  ;(forecasts || [])
-    .filter((f) => Number(f.risk_score ?? 0) >= 40 || Number(f.launch_readiness_rate ?? 100) < 70)
-    .slice(0, 3)
-    .forEach((f) => urgent.push({ name: f.product_name || '제품명 미정', sub: '재고위험', dday: '위험', level: 'red' }))
-
-  urgent.sort((a, b) => {
-    const n = (d) => { if (d === '지연' || d === '위험') return -999; const v = Number(d.replace('D-','')); return isNaN(v) ? 999 : v }
-    return n(a.dday) - n(b.dday)
+  const reportsByDate = {}
+  ;(data?.reports || []).forEach((r) => {
+    const key = String(r.report_date).slice(0, 10)
+    ;(reportsByDate[key] = reportsByDate[key] || []).push(r)
   })
-  return urgent.slice(0, 8)
-}
 
-const _signalCfg = {
-  good:   { bg: 'bg-green-50',  border: 'border-green-200',  badge: 'bg-white border border-green-300 text-green-700',   label: '잘됨' },
-  warn:   { bg: 'bg-yellow-50', border: 'border-yellow-200', badge: 'bg-white border border-yellow-300 text-yellow-700', label: '보완' },
-  danger: { bg: 'bg-red-50',    border: 'border-red-200',    badge: 'bg-white border border-red-300 text-red-700',       label: '빵꾸' },
-}
-const _ddayColor = (l) => ({ red: 'bg-red-500 text-white', orange: 'bg-orange-500 text-white', yellow: 'bg-yellow-400 text-slate-900' }[l] || 'bg-slate-400 text-white')
+  // 담당자별 이번 주 할 일: 이월(지연) + 이번 주 마감 + 최신 보고의 다음 액션
+  const people = {}
+  const ensure = (name) => {
+    if (!name || name === '미지정') return null
+    return (people[name] = people[name] || { name, carry: [], due: [], planLines: [], planDate: null, blockers: null })
+  }
+  ;(data?.carryOver || []).forEach((t) => { const p = ensure(t.assignee_name); if (p) p.carry.push(t) })
+  ;(data?.tasks || []).forEach((t) => { if (t.status !== 'DONE') { const p = ensure(t.assignee_name); if (p) p.due.push(t) } })
+  ;(data?.plans || []).forEach((pl) => {
+    const p = ensure(pl.display_name)
+    if (p) {
+      p.planLines = wpPlanLines(pl.planned_work)
+      p.planDate = String(pl.report_date).slice(5, 10)
+      p.blockers = pl.blockers
+    }
+  })
+  const peopleList = Object.values(people).sort((a, b) => (b.carry.length + b.due.length) - (a.carry.length + a.due.length))
 
-function SignalBoardSection({ tasks = [], forecasts = [], cashFlow = {}, payments = [] }) {
-  const domains = computeDomainSignals(tasks, forecasts, cashFlow, payments)
-  const urgentItems = computeUrgentTasks(tasks, forecasts)
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <span className="text-base">🗺️</span>
-          <h2 className="text-lg font-black text-slate-950">분야별 현황 신호등</h2>
+          <span className="text-base">📅</span>
+          <h2 className="text-lg font-black text-slate-950">이번 주 업무 캘린더</h2>
+          <span className="text-xs font-bold text-slate-400">일일보고 · 업무 마감 자동 반영</span>
         </div>
-        <span className="text-xs font-bold text-slate-400">실시간 업무 데이터 기반</span>
-      </div>
-      <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {domains.map((domain) => {
-          const cfg = _signalCfg[domain.status]
-          return (
-            <article key={domain.name} className={`rounded-lg border p-4 ${cfg.bg} ${cfg.border}`}>
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-sm font-black text-slate-950">{domain.name}</span>
-                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-black ${cfg.badge}`}>{cfg.label}</span>
-              </div>
-              {domain.good.map((item) => <p key={item} className="mb-1 text-[11px] font-bold text-green-700">✓ {item}</p>)}
-              {domain.issues.map((item) => <p key={item} className="mb-1 text-[11px] font-bold text-red-600">△ {item}</p>)}
-              {domain.good.length === 0 && domain.issues.length === 0 && (
-                <p className="text-[11px] font-bold text-slate-400">데이터 없음</p>
-              )}
-            </article>
-          )
-        })}
-      </div>
-      <div className="border-t border-slate-100 pt-4">
-        <div className="mb-3 flex items-center gap-2">
-          <span className="text-sm">🔴</span>
-          <h3 className="text-sm font-black text-slate-950">긴급 업무</h3>
+        <div className="flex items-center gap-1.5">
+          <button type="button" onClick={() => setWeekOffset((v) => v - 1)} className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-black text-slate-500 hover:bg-slate-50">‹ 지난주</button>
+          <button type="button" onClick={() => setWeekOffset(0)} className={`rounded-lg border px-2.5 py-1 text-xs font-black ${weekOffset === 0 ? 'border-sky-500 bg-sky-50 text-sky-600' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>이번 주</button>
+          <button type="button" onClick={() => setWeekOffset((v) => v + 1)} className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-black text-slate-500 hover:bg-slate-50">다음주 ›</button>
         </div>
-        {urgentItems.length === 0
-          ? <p className="text-sm font-bold text-slate-400">🟢 현재 긴급 업무 없음</p>
-          : <div className="space-y-1">{urgentItems.map((item, idx) => (
-              <div key={idx} className="flex items-center justify-between border-b border-slate-50 py-2">
-                <div className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-bold text-slate-700">{item.name}</span>
-                  {item.sub && <span className="text-[11px] text-slate-400">{item.sub}</span>}
+      </div>
+
+      <div className="overflow-x-auto">
+        <div className="grid min-w-[860px] grid-cols-7 gap-1.5">
+          {days.map((date, idx) => {
+            const isToday = date === todayText
+            const dayTasks = tasksByDate[date] || []
+            const dayReports = reportsByDate[date] || []
+            return (
+              <div key={date} className={`rounded-lg border p-2 ${isToday ? 'border-sky-300 bg-sky-50/60' : 'border-slate-100 bg-slate-50/40'}`}>
+                <p className={`text-[11px] font-black ${isToday ? 'text-sky-600' : idx >= 5 ? 'text-rose-400' : 'text-slate-500'}`}>
+                  {WP_DAY_LABELS[idx]} <span className="font-bold">{date.slice(8)}</span>{isToday && ' · 오늘'}
+                </p>
+                <div className="mt-1.5 space-y-1">
+                  {dayTasks.map((t) => (
+                    <p key={t.id} className={`truncate rounded px-1.5 py-1 text-[11px] font-bold ${wpTaskCls(t)}`} title={`${t.task_name} · ${t.assignee_name || ''}`}>
+                      {t.assignee_name && <span className="font-black">{t.assignee_name}</span>} {t.task_name}
+                    </p>
+                  ))}
+                  {dayReports.map((r, i) => (
+                    <p key={`r${i}`} className="truncate rounded bg-emerald-50 px-1.5 py-1 text-[11px] font-bold text-emerald-600" title={r.title}>
+                      📝 {r.display_name} 보고
+                    </p>
+                  ))}
+                  {dayTasks.length === 0 && dayReports.length === 0 && <p className="py-1 text-center text-[10px] text-slate-300">-</p>}
                 </div>
-                <span className={`ml-3 shrink-0 rounded-full px-3 py-0.5 text-[11px] font-black ${_ddayColor(item.level)}`}>{item.dday}</span>
               </div>
-            ))}</div>
-        }
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="mt-5 border-t border-slate-100 pt-4">
+        <h3 className="text-sm font-black text-slate-950">담당자별 이번 주 할 일 <span className="text-[11px] font-bold text-slate-400">최신 일일보고 다음 액션 + 마감 업무 자동 구성</span></h3>
+        {peopleList.length === 0 ? (
+          <p className="mt-3 text-sm font-bold text-slate-400">이번 주 데이터가 없습니다. 일일보고가 올라오면 자동으로 채워집니다.</p>
+        ) : (
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {peopleList.map((p) => (
+              <article key={p.name} className="rounded-lg border border-slate-100 p-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-black text-slate-900">{p.name}</p>
+                  <span className="text-[11px] font-bold text-slate-400">
+                    {p.carry.length > 0 && <span className="mr-1.5 font-black text-rose-600">지연 {p.carry.length}</span>}
+                    마감 {p.due.length}건
+                  </span>
+                </div>
+                {p.carry.slice(0, 3).map((t) => (
+                  <p key={t.id} className="mt-1 truncate text-[12px] font-bold text-rose-600" title={t.task_name}>⚠ {t.task_name} <span className="text-[10px] text-rose-400">({String(t.due_date).slice(5)} 지남)</span></p>
+                ))}
+                {p.due.slice(0, 4).map((t) => (
+                  <p key={t.id} className="mt-1 truncate text-[12px] font-bold text-slate-700" title={t.task_name}>☐ {t.task_name} <span className="text-[10px] text-slate-400">~{String(t.due_date).slice(5)}</span></p>
+                ))}
+                {p.planLines.length > 0 && (
+                  <div className="mt-2 rounded-lg bg-slate-50 p-2">
+                    <p className="text-[10px] font-black text-slate-400">일일보고 다음 액션 ({p.planDate})</p>
+                    {p.planLines.map((line, i) => (
+                      <p key={i} className="mt-0.5 truncate text-[12px] text-slate-600" title={line}>· {line}</p>
+                    ))}
+                  </div>
+                )}
+                {p.carry.length === 0 && p.due.length === 0 && p.planLines.length === 0 && (
+                  <p className="mt-1 text-[12px] text-slate-400">등록된 할 일 없음</p>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   )
@@ -572,7 +586,7 @@ export default function PlatformOverviewPage({ onNavigate, username = 'admin', r
           </button>
         ))}
       </section>
-      <SignalBoardSection tasks={tasks} forecasts={forecasts} cashFlow={cashFlow} payments={payments} />
+      <WeekPlanSection />
 
 
       <MailWidget />

@@ -21,6 +21,14 @@ public class ControlTowerController {
         return ResponseEntity.ok(controlTowerService.getOverview(companyId));
     }
 
+    @GetMapping("/week-plan")
+    public ResponseEntity<Map<String, Object>> weekPlan(
+            @RequestParam(defaultValue = "1") Long companyId,
+            @RequestParam(required = false) String weekStart) {
+        return ResponseEntity.ok(controlTowerService.getWeekPlan(companyId,
+                weekStart == null ? java.time.LocalDate.now().toString() : weekStart));
+    }
+
     @PostMapping("/task")
     public ResponseEntity<Map<String, Object>> createTask(
             @RequestParam(defaultValue = "1") Long companyId,

@@ -116,6 +116,64 @@ public class ControlTowerService {
         return result;
     }
 
+    /** 주간 업무 캘린더 — 일일보고 + 마감 업무를 주 단위로, 담당자별 이번 주 할 일 자동 구성 */
+    public Map<String, Object> getWeekPlan(Long companyId, String weekStartStr) {
+        java.time.LocalDate weekStart;
+        try {
+            weekStart = java.time.LocalDate.parse(String.valueOf(weekStartStr).substring(0, 10));
+        } catch (Exception e) {
+            weekStart = java.time.LocalDate.now();
+        }
+        weekStart = weekStart.with(java.time.DayOfWeek.MONDAY);
+        java.time.LocalDate weekEnd = weekStart.plusDays(6);
+
+        // ① 이번 주 일일보고 (캘린더 표시)
+        List<Map<String, Object>> reports = jdbcTemplate.queryForList("""
+                SELECT report_date, username, COALESCE(display_name, username) AS display_name, title
+                FROM staff_work_report
+                WHERE company_id = ? AND report_type = 'DAILY' AND report_date BETWEEN ? AND ?
+                ORDER BY report_date, display_name
+                """, companyId, java.sql.Date.valueOf(weekStart), java.sql.Date.valueOf(weekEnd));
+
+        // ② 이번 주 마감 업무 (완료 포함 — 상태로 구분)
+        List<Map<String, Object>> tasks = jdbcTemplate.queryForList("""
+                SELECT id, task_name, project_name, assignee_name, status, progress_rate, due_date,
+                       (status <> 'DONE' AND due_date < CURRENT_DATE) AS overdue
+                FROM executive_work_task
+                WHERE company_id = ? AND due_date BETWEEN ? AND ?
+                ORDER BY due_date, assignee_name
+                """, companyId, java.sql.Date.valueOf(weekStart), java.sql.Date.valueOf(weekEnd));
+
+        // ③ 이번 주 이전에 마감을 넘긴 미완료 업무 (이월 할 일)
+        List<Map<String, Object>> carryOver = jdbcTemplate.queryForList("""
+                SELECT id, task_name, project_name, assignee_name, status, due_date
+                FROM executive_work_task
+                WHERE company_id = ? AND status <> 'DONE' AND due_date IS NOT NULL AND due_date < ?
+                ORDER BY due_date
+                LIMIT 40
+                """, companyId, java.sql.Date.valueOf(weekStart));
+
+        // ④ 담당자별 최신 일일보고의 '다음 액션' (이번 주 할 일 자동 구성 근거)
+        List<Map<String, Object>> plans = jdbcTemplate.queryForList("""
+                SELECT DISTINCT ON (username)
+                       username, COALESCE(display_name, username) AS display_name,
+                       report_date, planned_work, blockers
+                FROM staff_work_report
+                WHERE company_id = ? AND report_type = 'DAILY'
+                  AND report_date BETWEEN ? AND ?
+                ORDER BY username, report_date DESC, id DESC
+                """, companyId, java.sql.Date.valueOf(weekStart.minusDays(7)), java.sql.Date.valueOf(weekEnd));
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("weekStart", weekStart.toString());
+        result.put("weekEnd", weekEnd.toString());
+        result.put("reports", reports);
+        result.put("tasks", tasks);
+        result.put("carryOver", carryOver);
+        result.put("plans", plans);
+        return result;
+    }
+
     @Transactional
     public Map<String, Object> saveLeadDays(Long companyId, long productId, int days) {
         int d = Math.max(0, Math.min(days, 365));
