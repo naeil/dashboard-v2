@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class StaffController {
 
     private final StaffWorkReportService staffWorkReportService;
+    private final naeil.dashboard.service.AiWeeklyReportService aiWeeklyReportService;
     private final StaffTaskCategoryService staffTaskCategoryService;
     private final StaffAttendanceService staffAttendanceService;
 
@@ -143,6 +144,57 @@ public class StaffController {
             HttpServletRequest request
     ) {
         return ResponseEntity.ok(staffAttendanceService.updateVerifiedLocation(id, requireUser(request), payload));
+    }
+
+    /* ───── AI 주간 보고 + 열람 권한 ───── */
+
+    @GetMapping("/work-reports/ai-weekly")
+    public ResponseEntity<List<Map<String, Object>>> aiWeeklyReports(
+            @RequestParam(defaultValue = "1") Long companyId,
+            @RequestParam(required = false) String weekStart,
+            HttpServletRequest request
+    ) {
+        return ResponseEntity.ok(aiWeeklyReportService.list(companyId, requireUser(request), weekStart));
+    }
+
+    @PostMapping("/work-reports/ai-weekly/generate")
+    public ResponseEntity<Map<String, Object>> generateAiWeekly(
+            @RequestParam(defaultValue = "1") Long companyId,
+            @RequestBody Map<String, Object> payload
+    ) {
+        String weekStart = payload.get("weekStart") == null ? "" : String.valueOf(payload.get("weekStart"));
+        return ResponseEntity.ok(aiWeeklyReportService.generate(companyId, weekStart));
+    }
+
+    @GetMapping("/work-reports/view-permissions")
+    public ResponseEntity<Map<String, Object>> viewPermissions(
+            @RequestParam(defaultValue = "1") Long companyId,
+            HttpServletRequest request
+    ) {
+        requireExecutive(request);
+        return ResponseEntity.ok(aiWeeklyReportService.getPermissions(companyId));
+    }
+
+    @PutMapping("/work-reports/view-permissions")
+    @SuppressWarnings("unchecked")
+    public ResponseEntity<Map<String, Object>> saveViewPermissions(
+            @RequestParam(defaultValue = "1") Long companyId,
+            @RequestBody Map<String, Object> payload,
+            HttpServletRequest request
+    ) {
+        requireExecutive(request);
+        Object rows = payload.get("rows");
+        if (!(rows instanceof List<?>)) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "rows 필요"));
+        }
+        return ResponseEntity.ok(aiWeeklyReportService.savePermissions(companyId, (List<Map<String, Object>>) rows));
+    }
+
+    private void requireExecutive(HttpServletRequest request) {
+        AuthUser user = requireUser(request);
+        if (naeil.dashboard.dto.UserRole.from(user.role()) != naeil.dashboard.dto.UserRole.EXECUTIVE) {
+            throw new naeil.dashboard.common.exception.CustomException(403, "관리자만 설정할 수 있습니다.");
+        }
     }
 
     private AuthUser requireUser(HttpServletRequest request) {

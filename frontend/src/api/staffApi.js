@@ -55,3 +55,16 @@ export const patchWorkReportFeedbackStatus = (id, status) =>
 
 export const deleteWorkReportFeedback = (id) =>
   api.delete(`/staff/work-reports/feedback/${id}`)
+
+/* AI 주간 보고 + 열람 권한 */
+export const getAiWeeklyReports = (weekStart) =>
+  api.get('/staff/work-reports/ai-weekly', { params: { ...companyParams, ...(weekStart ? { weekStart } : {}) } })
+
+export const generateAiWeekly = (weekStart) =>
+  api.post('/staff/work-reports/ai-weekly/generate', { weekStart }, { params: companyParams })
+
+export const getReportViewPermissions = () =>
+  api.get('/staff/work-reports/view-permissions', { params: companyParams })
+
+export const saveReportViewPermissions = (rows) =>
+  api.put('/staff/work-reports/view-permissions', { rows }, { params: companyParams })

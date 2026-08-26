@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createStaffWorkReport, deleteStaffWorkReport, getStaffWorkReports, updateStaffWorkReport, getWorkReportFeedback, createWorkReportFeedback, updateWorkReportFeedback, deleteWorkReportFeedback, patchWorkReportFeedbackStatus } from '../../api/staffApi'
+import { createStaffWorkReport, deleteStaffWorkReport, getStaffWorkReports, updateStaffWorkReport, getWorkReportFeedback, createWorkReportFeedback, updateWorkReportFeedback, deleteWorkReportFeedback, patchWorkReportFeedbackStatus, getAiWeeklyReports, generateAiWeekly, getReportViewPermissions, saveReportViewPermissions } from '../../api/staffApi'
 import { getExecutiveWorkTasks } from '../../api/executiveApi'
 import { getUsers } from '../../api/authApi'
 
@@ -393,7 +393,167 @@ function FeedbackSection({ reportId, currentUser, allUsers }) {
   )
 }
 
-export default function StaffWorkReportPage({ username, displayName, onNavigate }) {
+
+/* ───────── AI 주간 정리 (육하원칙) + 열람 권한 ───────── */
+function mondayOf(offsetWeeks) {
+  const d = new Date()
+  const day = d.getDay()
+  const diff = (day === 0 ? -6 : 1 - day) - offsetWeeks * 7
+  d.setDate(d.getDate() + diff)
+  return d.toISOString().slice(0, 10)
+}
+
+function PermissionModal({ onClose }) {
+  const [data, setData] = useState(null)
+  const [rows, setRows] = useState([])
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    getReportViewPermissions().then((r) => {
+      const d = r.data || {}
+      setData(d)
+      setRows((d.permissions || []).map((p) => ({ viewerUsername: p.viewer_username, targetUsername: p.target_username })))
+    }).catch(() => setData({ permissions: [], users: [] }))
+  }, [])
+  const users = data?.users || []
+  const save = async () => {
+    setSaving(true)
+    try { await saveReportViewPermissions(rows); onClose(true) } finally { setSaving(false) }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => onClose(false)}>
+      <div className="flex max-h-[80vh] w-full max-w-xl flex-col rounded-2xl bg-white p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-sm font-black text-slate-800">일일 보고 열람 권한 <span className="text-[11px] font-bold text-slate-400">A가 B의 보고를 볼 수 있게</span></p>
+          <button type="button" onClick={() => onClose(false)} className="text-slate-400 hover:text-slate-600"><span className="material-symbols-outlined text-[20px]">close</span></button>
+        </div>
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded-lg border border-slate-100 p-3">
+          {data == null ? <p className="py-4 text-center text-sm text-slate-400">불러오는 중…</p> : (
+            <>
+              {rows.length === 0 && <p className="py-2 text-center text-[12px] text-slate-400">설정된 권한이 없습니다. 아래에서 추가하세요.</p>}
+              {rows.map((row, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <select className="h-9 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm font-bold text-slate-700 focus:outline-none"
+                    value={row.viewerUsername} onChange={(e) => setRows((prev) => prev.map((x, i) => (i === idx ? { ...x, viewerUsername: e.target.value } : x)))}>
+                    <option value="">보는 사람</option>
+                    {users.map((u) => <option key={u.username} value={u.username}>{u.display_name} ({u.role === 'MANAGER' ? '매니저' : u.role === 'EXECUTIVE' ? '임원' : '직원'})</option>)}
+                  </select>
+                  <span className="text-[12px] font-black text-slate-400">→</span>
+                  <select className="h-9 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm font-bold text-slate-700 focus:outline-none"
+                    value={row.targetUsername} onChange={(e) => setRows((prev) => prev.map((x, i) => (i === idx ? { ...x, targetUsername: e.target.value } : x)))}>
+                    <option value="">보고 대상</option>
+                    {users.map((u) => <option key={u.username} value={u.username}>{u.display_name}</option>)}
+                  </select>
+                  <button type="button" onClick={() => setRows((prev) => prev.filter((_, i) => i !== idx))}
+                    className="text-slate-300 hover:text-rose-500"><span className="material-symbols-outlined text-[18px]">delete</span></button>
+                </div>
+              ))}
+              <button type="button" onClick={() => setRows((prev) => [...prev, { viewerUsername: '', targetUsername: '' }])}
+                className="mt-1 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-[12px] font-black text-slate-500 hover:bg-slate-50">+ 권한 추가</button>
+              <p className="text-[11px] text-slate-400">예: 팀장을 "보는 사람", 팀원을 "보고 대상"으로 추가하면 팀장이 팀원의 일일 보고와 AI 주간 정리를 볼 수 있습니다. 임원은 설정 없이 전체 열람.</p>
+            </>
+          )}
+        </div>
+        <div className="mt-3 flex justify-end gap-2">
+          <button type="button" onClick={() => onClose(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-500">취소</button>
+          <button type="button" disabled={saving || data == null} onClick={save} className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-black text-white disabled:opacity-50">{saving ? '저장 중…' : '저장'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AiWeeklySection({ role }) {
+  const [weekStart, setWeekStart] = useState(mondayOf(1))
+  const [items, setItems] = useState(null)
+  const [generating, setGenerating] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [showPerm, setShowPerm] = useState(false)
+  const [openUser, setOpenUser] = useState('')
+
+  const load = useCallback(() => {
+    getAiWeeklyReports(weekStart).then((r) => setItems(r.data || [])).catch(() => setItems([]))
+  }, [weekStart])
+  useEffect(() => {
+    const t = setTimeout(load, 0)
+    return () => clearTimeout(t)
+  }, [load])
+
+  const gen = async () => {
+    setGenerating(true)
+    setMsg('')
+    try {
+      const r = await generateAiWeekly(weekStart)
+      const d = r.data || {}
+      setMsg(d.success ? `${d.generated}명 정리 완료` : (d.message || '생성 실패'))
+      load()
+    } catch {
+      setMsg('생성 실패 — AI 설정을 확인하세요.')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const weekLabel = (w) => {
+    const end = new Date(`${w}T00:00:00`)
+    end.setDate(end.getDate() + 6)
+    return `${w.slice(5)} ~ ${end.toISOString().slice(5, 10)}`
+  }
+
+  return (
+    <section className="mb-6 rounded-lg border border-indigo-100 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-black text-slate-950">AI 주간 정리 <span className="text-[11px] font-bold text-indigo-500">육하원칙 자동 요약</span></h2>
+          <p className="mt-0.5 text-[12px] text-slate-400">일일 보고 7일치를 AI가 사람별로 정리합니다. 매주 월요일 아침 자동 생성 · 필요 시 아래에서 즉시 생성</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm font-bold text-slate-700 focus:outline-none"
+            value={weekStart} onChange={(e) => setWeekStart(e.target.value)}>
+            {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
+              const w = mondayOf(i)
+              return <option key={w} value={w}>{i === 0 ? '이번 주 ' : i === 1 ? '지난주 ' : ''}{weekLabel(w)}</option>
+            })}
+          </select>
+          <button type="button" disabled={generating} onClick={gen}
+            className="rounded-lg bg-indigo-500 px-3 py-2 text-xs font-black text-white hover:bg-indigo-600 disabled:opacity-50">
+            {generating ? 'AI 정리 중…' : 'AI 정리 생성'}
+          </button>
+          {role === 'EXECUTIVE' && (
+            <button type="button" onClick={() => setShowPerm(true)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50">열람 권한</button>
+          )}
+          {msg && <span className="text-[12px] font-bold text-indigo-600">{msg}</span>}
+        </div>
+      </div>
+
+      {items == null ? <p className="py-6 text-center text-sm text-slate-400">불러오는 중…</p> : items.length === 0 ? (
+        <p className="py-6 text-center text-[13px] text-slate-400">이 주의 AI 정리가 아직 없습니다. [AI 정리 생성]을 누르면 일일 보고 기반으로 만들어집니다.</p>
+      ) : (
+        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+          {items.map((it) => (
+            <article key={`${it.username}|${it.week_start}`} className="rounded-lg border border-slate-100 p-4">
+              <button type="button" className="flex w-full items-center justify-between text-left"
+                onClick={() => setOpenUser(openUser === it.username ? '' : it.username)}>
+                <p className="text-sm font-black text-slate-900">{it.display_name || it.username}
+                  <span className="ml-2 text-[11px] font-bold text-slate-400">일일 보고 {it.source_count}건 기반 · {String(it.generated_date || '').slice(5)} 생성</span>
+                </p>
+                <span className="material-symbols-outlined text-[20px] text-slate-400">{openUser === it.username ? 'expand_less' : 'expand_more'}</span>
+              </button>
+              {openUser === it.username ? (
+                <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-[13px] leading-6 text-slate-700">{it.content}</pre>
+              ) : (
+                <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-[12px] text-slate-500">{String(it.content).slice(0, 160)}…</p>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
+      {showPerm && <PermissionModal onClose={() => setShowPerm(false)} />}
+    </section>
+  )
+}
+
+export default function StaffWorkReportPage({ username, displayName, role, onNavigate }) {
   const [reports, setReports] = useState([])
   const [workTasks, setWorkTasks] = useState([])
   const [allUsers, setAllUsers] = useState([])
@@ -556,6 +716,8 @@ export default function StaffWorkReportPage({ username, displayName, onNavigate 
           <p className="mt-3 text-2xl font-black text-rose-700">{summary.blockers.toLocaleString('ko-KR')}건</p>
         </article>
       </section>
+
+      <AiWeeklySection role={role} />
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
         <form onSubmit={submit} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">

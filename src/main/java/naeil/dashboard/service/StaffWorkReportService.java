@@ -20,23 +20,30 @@ public class StaffWorkReportService {
     public List<Map<String, Object>> listReports(Long companyId, AuthUser user, String reportType) {
         String normalizedType = normalizeReportTypeOrNull(reportType);
         if (UserRole.from(user.role()) != UserRole.EXECUTIVE) {
+            // 본인 보고 + 관리자가 열람 권한을 부여한 대상(report_view_permission)의 보고
+            String visibility = """
+                    AND (LOWER(username) = LOWER(?)
+                         OR LOWER(username) IN (
+                             SELECT LOWER(target_username) FROM report_view_permission
+                             WHERE company_id = ? AND LOWER(viewer_username) = LOWER(?)))
+                    """;
             if (normalizedType == null) {
                 return jdbcTemplate.queryForList("""
                         SELECT *
                         FROM staff_work_report
                         WHERE company_id = ?
-                          AND LOWER(username) = LOWER(?)
-                        ORDER BY report_date DESC, id DESC
-                        """, companyId, user.username());
+                        """ + visibility + """
+                        ORDER BY report_date DESC, username, id DESC
+                        """, companyId, user.username(), companyId, user.username());
             }
             return jdbcTemplate.queryForList("""
                     SELECT *
                     FROM staff_work_report
                     WHERE company_id = ?
-                      AND LOWER(username) = LOWER(?)
+                    """ + visibility + """
                       AND report_type = ?
-                    ORDER BY report_date DESC, id DESC
-                    """, companyId, user.username(), normalizedType);
+                    ORDER BY report_date DESC, username, id DESC
+                    """, companyId, user.username(), companyId, user.username(), normalizedType);
         }
 
         if (normalizedType == null) {
