@@ -758,6 +758,226 @@ function EventList({ events, loading, onEdit, onDelete, onStatus }) {
   )
 }
 
+/* ─────────────────────────── 타임라인 · 상태 보드 ─────────────────────────── */
+
+const BAR_STYLE = {
+  기획: 'bg-slate-400/90',
+  진행중: 'bg-blue-500',
+  종료: 'bg-emerald-500',
+  취소: 'bg-rose-400',
+}
+const DOW = ['일', '월', '화', '수', '목', '금', '토']
+
+const parseDate = (s) => {
+  if (!s) return null
+  const [y, m, d] = String(s).slice(0, 10).split('-').map(Number)
+  if (!y || !m || !d) return null
+  return new Date(y, m - 1, d)
+}
+const dayDiff = (a, b) => Math.round((b - a) / 86400000)
+
+const shiftMonth = (month, delta) => {
+  const [y, m] = month.split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function PromoTimelineSection({ month, events, onEdit, onMonthChange }) {
+  const [y, m] = month.split('-').map(Number)
+  const daysInMonth = new Date(y, m, 0).getDate()
+  const monthStart = new Date(y, m - 1, 1)
+  const monthEnd = new Date(y, m - 1, daysInMonth)
+  const today = parseDate(todayStr())
+  const todayIdx = today >= monthStart && today <= monthEnd ? today.getDate() - 1 : null
+
+  const rows = (events || []).map((row) => {
+    const ev = fromServer(row)
+    const start = parseDate(ev.startDate)
+    const end = ev.isAlwaysOn ? monthEnd : parseDate(ev.endDate)
+    if (!start && !ev.isAlwaysOn) return null
+    const s = ev.isAlwaysOn && (!start || start < monthStart) ? monthStart : start
+    const e = end || s
+    if (e < monthStart || s > monthEnd) return null
+    const clampS = s < monthStart ? monthStart : s
+    const clampE = e > monthEnd ? monthEnd : e
+    return {
+      id: row.id,
+      ev,
+      startIdx: clampS.getDate() - 1,
+      span: dayDiff(clampS, clampE) + 1,
+      cutLeft: s < monthStart,
+      cutRight: e > monthEnd || ev.isAlwaysOn,
+    }
+  }).filter(Boolean)
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <h2 className="text-[14px] font-black text-slate-800">행사 타임라인</h2>
+          <div className="flex items-center rounded-lg border border-slate-200">
+            <button type="button" onClick={() => onMonthChange(shiftMonth(month, -1))}
+              className="flex h-7 w-7 items-center justify-center text-slate-400 hover:text-slate-700">
+              <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+            </button>
+            <span className="px-1 text-[12px] font-black text-slate-700">{y}년 {m}월</span>
+            <button type="button" onClick={() => onMonthChange(shiftMonth(month, 1))}
+              className="flex h-7 w-7 items-center justify-center text-slate-400 hover:text-slate-700">
+              <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+            </button>
+          </div>
+          <button type="button" onClick={() => onMonthChange(thisMonth())}
+            className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-black text-slate-500 hover:bg-slate-50">
+            오늘
+          </button>
+        </div>
+        <div className="flex items-center gap-3 text-[11px] font-bold text-slate-400">
+          {STATUS_LIST.map((st) => (
+            <span key={st} className="flex items-center gap-1">
+              <span className={`h-2 w-2 rounded-full ${BAR_STYLE[st]}`} /> {st}
+            </span>
+          ))}
+        </div>
+      </div>
+      {rows.length === 0 ? (
+        <p className="py-6 text-center text-[12px] font-bold text-slate-400">이 달에 걸치는 행사가 없습니다.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <div className="min-w-[860px]">
+            {/* 날짜 헤더 */}
+            <div className="grid" style={{ gridTemplateColumns: `150px repeat(${daysInMonth}, minmax(0, 1fr))` }}>
+              <div />
+              {Array.from({ length: daysInMonth }, (_, i) => {
+                const dow = new Date(y, m - 1, i + 1).getDay()
+                return (
+                  <div key={i} className="border-l border-slate-100 pb-1 text-center text-[10px] font-bold">
+                    <p className={i === todayIdx
+                      ? 'mx-auto flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-white'
+                      : dow === 0 ? 'text-rose-300' : dow === 6 ? 'text-sky-300' : 'text-slate-400'}>{i + 1}</p>
+                    <p className={`text-[9px] ${i === todayIdx ? 'text-rose-500' : dow === 0 ? 'text-rose-300' : dow === 6 ? 'text-sky-300' : 'text-slate-400'}`}>{DOW[dow]}</p>
+                  </div>
+                )
+              })}
+            </div>
+            {/* 행사 행 */}
+            <div className="relative">
+              {todayIdx != null && (
+                <div className="pointer-events-none absolute bottom-0 top-0 z-10 w-px bg-rose-500"
+                  style={{ left: `calc(150px + (100% - 150px) / ${daysInMonth} * ${todayIdx + 0.5})` }} />
+              )}
+              {rows.map(({ id, ev, startIdx, span, cutLeft, cutRight }) => (
+                <div key={id} className="grid items-center border-t border-slate-50"
+                  style={{ gridTemplateColumns: `150px repeat(${daysInMonth}, minmax(0, 1fr))`, minHeight: 36 }}>
+                  <button type="button" onClick={() => onEdit(id)}
+                    className="truncate pr-2 text-left text-[12px] font-black text-slate-700 hover:text-blue-600">
+                    {ev.title || '(제목 없음)'}
+                    <span className="ml-1 text-[10px] font-bold text-slate-400">{ev.channelName}</span>
+                  </button>
+                  {Array.from({ length: daysInMonth }, (_, i) => {
+                    const dow = new Date(y, m - 1, i + 1).getDay()
+                    return <div key={i} className={`h-full border-l border-slate-100 ${dow === 0 || dow === 6 ? 'bg-slate-50/60' : ''}`} />
+                  })}
+                  <button type="button" onClick={() => onEdit(id)}
+                    className={`z-[5] h-5 truncate px-1.5 text-left text-[10px] font-black leading-5 text-white hover:opacity-90 ${BAR_STYLE[ev.status] || BAR_STYLE['기획']} ${cutLeft ? '' : 'rounded-l-full'} ${cutRight ? '' : 'rounded-r-full'}`}
+                    style={{ gridColumn: `${startIdx + 2} / span ${span}`, gridRow: 1 }}
+                    title={`${ev.title} (${ev.startDate} ~ ${ev.isAlwaysOn ? '상시' : ev.endDate})`}>
+                    {span >= 3 ? ev.title : ''}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PromoStatusBoard({ events, onEdit }) {
+  const today = parseDate(todayStr())
+  const groups = useMemo(() => {
+    const g = Object.fromEntries(STATUS_LIST.map((st) => [st, []]))
+    ;(events || []).forEach((row) => {
+      const ev = fromServer(row)
+      ;(g[ev.status] || g['기획']).push({ row, ev, calc: calcEvent(ev) })
+    })
+    return g
+  }, [events])
+
+  const dday = (ev) => {
+    const start = parseDate(ev.startDate)
+    const end = parseDate(ev.endDate)
+    if (ev.status === '기획' && start) {
+      const d = dayDiff(today, start)
+      if (d > 0) return { label: `시작 D-${d}`, cls: 'bg-slate-100 text-slate-500' }
+      if (d <= 0) return { label: '시작일 지남', cls: 'bg-amber-50 text-amber-600' }
+    }
+    if (ev.status === '진행중') {
+      if (ev.isAlwaysOn) return { label: '상시 운영', cls: 'bg-blue-50 text-blue-500' }
+      if (end) {
+        const d = dayDiff(today, end)
+        if (d < 0) return { label: '종료일 지남', cls: 'bg-amber-50 text-amber-600' }
+        return { label: d === 0 ? '오늘 종료' : `종료 D-${d}`, cls: d <= 2 ? 'bg-rose-50 text-rose-500' : 'bg-blue-50 text-blue-500' }
+      }
+    }
+    return null
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <h2 className="mb-3 text-[14px] font-black text-slate-800">행사 상태 보드</h2>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {STATUS_LIST.map((st) => {
+          const tint = {
+            기획: { col: 'bg-slate-50/80', card: 'border-slate-200 bg-white' },
+            진행중: { col: 'bg-blue-50/60', card: 'border-blue-100 bg-blue-50/40' },
+            종료: { col: 'bg-emerald-50/60', card: 'border-emerald-100 bg-emerald-50/40' },
+            취소: { col: 'bg-rose-50/50', card: 'border-rose-100 bg-rose-50/30' },
+          }[st]
+          return (
+            <div key={st} className={`rounded-lg p-2.5 ${tint.col}`}>
+              <div className="mb-2 flex items-center justify-between px-1">
+                <span className={`rounded px-2 py-0.5 text-[11px] font-black ${STATUS_STYLE[st]}`}>{st}</span>
+                <span className="text-[11px] font-bold text-slate-400">{groups[st].length}건</span>
+              </div>
+              <div className="space-y-2">
+                {groups[st].length === 0 && (
+                  <p className="py-3 text-center text-[11px] font-bold text-slate-300">없음</p>
+                )}
+                {groups[st].map(({ row, ev, calc }) => {
+                  const d = dday(ev)
+                  const start = parseDate(ev.startDate)
+                  const end = parseDate(ev.endDate)
+                  const durationDays = ev.isAlwaysOn ? null : start && end ? dayDiff(start, end) + 1 : null
+                  return (
+                    <button key={row.id} type="button" onClick={() => onEdit(row.id)}
+                      className={`block w-full rounded-lg border p-2.5 text-left hover:border-blue-300 hover:shadow-sm ${tint.card}`}>
+                      <p className="truncate text-[12.5px] font-black text-slate-800">{ev.title || '(제목 없음)'}</p>
+                      <p className="mt-0.5 text-[11px] font-bold text-slate-400">{ev.brandName} · {ev.channelName}</p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        {ev.startDate?.slice(5)} ~ {ev.isAlwaysOn ? '상시' : ev.endDate?.slice(5)}
+                        {durationDays != null && <span className="ml-1 text-slate-400">· {durationDays}일간</span>}
+                      </p>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        {d && <span className={`rounded px-1.5 py-0.5 text-[10px] font-black ${d.cls}`}>{d.label}</span>}
+                        {calc.revenue > 0 && (
+                          <span className={`rounded border px-1.5 py-0.5 text-[10px] font-black ${verdictStyle(calc.verdict)}`}>
+                            {calc.verdict} · 마진 {pct1(calc.weightedMargin)}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 /* ─────────────────────────── 메인 페이지 ─────────────────────────── */
 
 export default function PromotionMarginPage() {
@@ -842,6 +1062,12 @@ export default function PromotionMarginPage() {
           {loadError && <div className="rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-bold text-rose-500">{loadError}</div>}
           <EventList events={events} loading={loading}
             onEdit={openEdit} onDelete={remove} onStatus={changeStatus} />
+          {!loading && (
+            <>
+              <PromoTimelineSection month={month} events={events} onEdit={openEdit} onMonthChange={setMonth} />
+              <PromoStatusBoard events={events} onEdit={openEdit} />
+            </>
+          )}
         </>
       )}
     </div>
