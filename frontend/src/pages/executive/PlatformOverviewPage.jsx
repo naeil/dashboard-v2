@@ -15,6 +15,7 @@ import { paymentStatusClass, paymentStatusLabels } from './paymentUtils'
 import IssueBriefingPanel from './IssueBriefingPanel'
 import CustomerInquiryPanel from './CustomerInquiryPanel'
 import MailWidget from './MailWidget'
+import AiAssistantCard from '../../components/AiAssistantCard'
 
 const dateTimeFormatter = new Intl.DateTimeFormat('ko-KR', {
   year: 'numeric',
@@ -506,6 +507,7 @@ export default function PlatformOverviewPage({ onNavigate, username = 'admin', r
 
   return (
     <main className="space-y-6 bg-white text-slate-950">
+      <AiAssistantCard role={role} />
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
