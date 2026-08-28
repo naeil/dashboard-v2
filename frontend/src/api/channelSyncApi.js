@@ -77,3 +77,32 @@ export async function syncDailyChannel(channelType, from, to) {
   if (!res.ok) throw new Error(body?.message || `Failed to run daily sync: ${channelType}`)
   return body
 }
+
+// ==================== 오프라인 발주 시트 (서버 직접 수집) ====================
+
+export async function getOfflineSheetConfig() {
+  const res = await fetch(buildApiUrl('/channel-sync/offline-sheet/config'), { headers: authHeaders() })
+  if (!res.ok) throw new Error('오프라인 시트 설정 조회 실패')
+  return res.json()
+}
+
+export async function saveOfflineSheetConfig(sheetUrl) {
+  const res = await fetch(buildApiUrl('/channel-sync/offline-sheet/config'), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ sheetUrl }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body.message || '오프라인 시트 설정 저장 실패')
+  return body
+}
+
+export async function pullOfflineSheet() {
+  const res = await fetch(buildApiUrl('/channel-sync/offline-sheet/pull'), {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body.message || '오프라인 시트 수집 실패')
+  return body
+}

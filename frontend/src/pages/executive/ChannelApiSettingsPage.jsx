@@ -1,5 +1,84 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getChannelCredentials, saveChannelCredentials, syncAllChannels, syncChannel, syncDailyAll, syncDailyChannel } from '../../api/channelSyncApi'
+import { getChannelCredentials, saveChannelCredentials, syncAllChannels, syncChannel, syncDailyAll, syncDailyChannel, getOfflineSheetConfig, saveOfflineSheetConfig, pullOfflineSheet } from '../../api/channelSyncApi'
+
+/* 오프라인 발주 구글시트 — 링크 저장 + 서버 직접 수집(매일 22:05 자동) */
+function OfflineSheetSection() {
+  const [sheetUrl, setSheetUrl] = useState('')
+  const [savedUrl, setSavedUrl] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+
+  useEffect(() => {
+    getOfflineSheetConfig().then((c) => {
+      setSavedUrl(c.sheetUrl || null)
+      if (c.sheetUrl) setSheetUrl(c.sheetUrl)
+    }).catch(() => {})
+  }, [])
+
+  const saveAndPull = async () => {
+    setBusy(true)
+    setResult(null)
+    try {
+      if (sheetUrl.trim() && sheetUrl.trim() !== savedUrl) {
+        const saved = await saveOfflineSheetConfig(sheetUrl.trim())
+        setSavedUrl('https://docs.google.com/spreadsheets/d/' + saved.sheetId + '/edit')
+      }
+      const res = await pullOfflineSheet()
+      setResult(res)
+    } catch (e) {
+      setResult({ success: false, message: e.message })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-amber-800">
+            <span className="material-symbols-outlined text-[18px]">table_chart</span>
+            오프라인 발주 시트 → 실시간 매출 반영
+          </h3>
+          <p className="mt-0.5 text-xs text-amber-700">
+            구글시트 링크를 저장하면 서버가 매일 22:05 자동으로 5개 탭(스토어·연구소·초이스·제로데이·냉장고)을 수집합니다.
+            시트는 "링크가 있는 모든 사용자 보기" 공유 상태여야 합니다. 링크가 바뀌면 여기만 바꾸면 됩니다.
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          value={sheetUrl}
+          onChange={(e) => setSheetUrl(e.target.value)}
+          placeholder="https://docs.google.com/spreadsheets/d/... 시트 링크 붙여넣기"
+          className="min-w-0 flex-1 rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-amber-400 focus:outline-none"
+        />
+        <button
+          onClick={saveAndPull}
+          disabled={busy || !sheetUrl.trim()}
+          className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-amber-700 disabled:opacity-50"
+        >
+          <span className={`material-symbols-outlined text-[18px]${busy ? ' animate-spin' : ''}`}>{busy ? 'refresh' : 'download'}</span>
+          {busy ? '수집 중...' : '저장하고 지금 당겨오기'}
+        </button>
+      </div>
+      {result && (
+        <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${result.success ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}`}>
+          {result.success ? (
+            <>
+              <p className="font-semibold">수집 완료 — {result.ingested}행 반영{result.skipped > 0 ? `, ${result.skipped}행 제외` : ''}</p>
+              {result.tabs && <p className="mt-1">{Object.entries(result.tabs).map(([t, v]) => `${t}: ${v}`).join(' · ')}</p>}
+              {result.warning && <p className="mt-1 font-semibold text-amber-700">{result.warning}</p>}
+            </>
+          ) : (
+            <p className="font-semibold">{result.message || '수집에 실패했습니다.'}</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 const CHANNELS = [
   {
@@ -359,6 +438,9 @@ export default function ChannelApiSettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* 오프라인 발주 시트 직접 수집 */}
+      <OfflineSheetSection />
 
       {/* Info Banner */}
       <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-700">

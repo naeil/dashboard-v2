@@ -21,6 +21,37 @@ import java.util.stream.Collectors;
 public class ChannelSyncController {
 
     private final ChannelSyncService channelSyncService;
+    private final naeil.dashboard.service.OfflineSheetPullService offlineSheetPullService;
+
+    // ==================== 오프라인 발주 시트 직접 수집 (pull) ====================
+
+    /** 현재 설정된 시트 확인 */
+    @GetMapping("/offline-sheet/config")
+    public ResponseEntity<Map<String, Object>> getOfflineSheetConfig() {
+        String sheetId = offlineSheetPullService.resolveSheetId();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("sheetId", sheetId);
+        body.put("sheetUrl", sheetId == null ? null : "https://docs.google.com/spreadsheets/d/" + sheetId + "/edit");
+        return ResponseEntity.ok(body);
+    }
+
+    /** 시트 링크 저장 (URL 또는 ID) — credentialKey2 에 시트 ID 저장 */
+    @PutMapping("/offline-sheet/config")
+    public ResponseEntity<Map<String, Object>> saveOfflineSheetConfig(@RequestBody Map<String, Object> payload) {
+        String link = payload.get("sheetUrl") == null ? null : String.valueOf(payload.get("sheetUrl"));
+        String sheetId = naeil.dashboard.service.OfflineSheetPullService.extractSheetId(link);
+        if (sheetId == null) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "유효한 구글시트 링크가 아닙니다."));
+        }
+        channelSyncService.saveCredentials("OFFLINE_SHEET", null, sheetId, null, null, true);
+        return ResponseEntity.ok(Map.of("success", true, "sheetId", sheetId));
+    }
+
+    /** 지금 바로 시트에서 당겨오기 */
+    @PostMapping("/offline-sheet/pull")
+    public ResponseEntity<Map<String, Object>> pullOfflineSheet() {
+        return ResponseEntity.ok(offlineSheetPullService.pull());
+    }
 
     // ==================== 자격증명 조회 (마스킹) ====================
 
