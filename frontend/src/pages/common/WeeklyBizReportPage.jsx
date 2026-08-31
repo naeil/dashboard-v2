@@ -101,7 +101,7 @@ export default function WeeklyBizReportPage({ role = 'EMPLOYEE', username = '' }
       const res = await api.post('/weekly-biz', form, { headers: { 'Content-Type': 'multipart/form-data' } })
       const d = res.data
       if (d?.success) {
-        setMessage({ ok: true, text: `등록 완료 — ${d.weekStart} 주차${d.aiAnalyzed ? ' · AI 분석까지 완료' : ` · AI 분석 대기 (${d.aiMessage || '아래 [AI 분석]으로 실행'})`}` })
+        setMessage({ ok: true, text: `등록 완료 — ${d.weekStart} 주차${d.aiAnalyzed ? ` · AI 분석 완료${Number(d.registeredTasks) > 0 ? ` · 종합 상황판에 업무 ${d.registeredTasks}건 자동 등록` : ''}` : ` · AI 분석 대기 (${d.aiMessage || '아래 [AI 분석]으로 실행'})`}` })
         setTitle('')
         load()
       } else {
@@ -119,6 +119,7 @@ export default function WeeklyBizReportPage({ role = 'EMPLOYEE', username = '' }
     try {
       const res = await api.post(`/weekly-biz/${id}/analyze`)
       if (!res.data?.success) setMessage({ ok: false, text: res.data?.message || 'AI 분석에 실패했습니다.' })
+      else if (Number(res.data?.registeredTasks) > 0) setMessage({ ok: true, text: `AI 분석 완료 · 종합 상황판에 업무 ${res.data.registeredTasks}건 자동 등록` })
       load()
     } catch (e) {
       setMessage({ ok: false, text: e?.response?.data?.message || 'AI 분석에 실패했습니다.' })

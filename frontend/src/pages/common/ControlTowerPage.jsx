@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { getControlTowerOverview, saveReorderLeadDays, createControlTask, updateControlTask } from '../../api/controlTowerApi'
+import { getControlTowerOverview, saveReorderLeadDays, createControlTask, updateControlTask , deleteControlTask } from '../../api/controlTowerApi'
 
 const comma = (v) => Math.round(Number(v) || 0).toLocaleString('ko-KR')
 
@@ -245,6 +245,7 @@ export default function ControlTowerPage() {
                   <tr key={t.id} className="border-b border-slate-50 last:border-b-0">
                     <td className="px-2 py-1.5"><DueDateCell task={t} onSaved={load} /></td>
                     <td className="px-2 py-1.5 text-[13px] font-bold text-slate-800">{t.task_name}
+                      {t.source_type === 'WEEKLY_BIZ' && <span className="ml-1.5 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-bold text-indigo-600" title="주간 운영보고에서 자동 등록됨">주간보고</span>}
                       {t.blocker_text && <span className="ml-1.5 rounded bg-orange-50 px-1.5 py-0.5 text-[10px] font-bold text-orange-600">막힘</span>}
                     </td>
                     <td className="px-2 py-1.5 text-[12px] text-slate-500">{t.project_name}</td>
@@ -255,6 +256,11 @@ export default function ControlTowerPage() {
                       <button type="button" title="완료 처리"
                         onClick={async () => { await updateControlTask(t.id, { status: 'DONE' }).catch(() => {}); load() }}
                         className="rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-black text-emerald-600 hover:bg-emerald-100">완료</button>
+                      <button type="button" title="삭제"
+                        onClick={async () => { if (!window.confirm(`'${t.task_name}' 업무를 삭제할까요?`)) return; await deleteControlTask(t.id).catch(() => {}); load() }}
+                        className="ml-1 rounded-lg px-1 py-1 text-slate-300 hover:text-rose-500">
+                        <span className="material-symbols-outlined text-[15px]">delete</span>
+                      </button>
                     </td>
                   </tr>
                 ))}

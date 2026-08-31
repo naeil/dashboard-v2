@@ -12,5 +12,8 @@ export const saveReorderLeadDays = (productId, days) =>
 export const createControlTask = (payload) =>
   api.post('/control-tower/task', payload).then((r) => r.data)
 
+export const deleteControlTask = (id) =>
+  api.delete(`/control-tower/task/${id}`).then((r) => r.data)
+
 export const updateControlTask = (id, payload) =>
   api.put(`/control-tower/task/${id}`, payload).then((r) => r.data)

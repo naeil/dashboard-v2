@@ -44,7 +44,7 @@ public class ControlTowerService {
 
         // ② 열린 업무 전체 — 마감일 순 (대표: 누가 뭘 언제까지)
         List<Map<String, Object>> tasks = jdbcTemplate.queryForList("""
-                SELECT id, project_name, task_name, assignee_name, status, priority, progress_rate,
+                SELECT id, project_name, task_name, assignee_name, status, priority, progress_rate, source_type,
                        due_date,
                        CASE WHEN due_date IS NULL THEN NULL ELSE (due_date - CURRENT_DATE) END AS dday,
                        blocker_text
@@ -198,6 +198,13 @@ public class ControlTowerService {
                 VALUES (?, ?, ?, ?, 'IN_PROGRESS', 'MEDIUM', 0, CURRENT_DATE, ?, 'CONTROL_TOWER', NOW(), NOW())
                 """, companyId, projectName, taskName, assignee, due);
         return Map.of("success", true);
+    }
+
+    /** 업무 삭제 — 잘못 등록된 항목(주간보고 자동 등록 오추출 등) 정리용 */
+    public Map<String, Object> deleteTask(Long companyId, Long id) {
+        int deleted = jdbcTemplate.update(
+                "DELETE FROM executive_work_task WHERE id = ? AND company_id = ?", id, companyId);
+        return deleted > 0 ? Map.of("success", true) : Map.of("success", false, "message", "업무를 찾지 못했습니다.");
     }
 
     /** 인라인 수정 — 넘어온 필드만 반영. 완료 처리 시 completed_date 기록. */

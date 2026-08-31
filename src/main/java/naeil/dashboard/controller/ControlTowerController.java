@@ -44,6 +44,14 @@ public class ControlTowerController {
         return ResponseEntity.ok(controlTowerService.updateTask(companyId, id, payload));
     }
 
+    @org.springframework.web.bind.annotation.DeleteMapping("/task/{id}")
+    public ResponseEntity<Map<String, Object>> deleteTask(
+            @RequestParam(defaultValue = "1") Long companyId,
+            @PathVariable Long id
+    ) {
+        return ResponseEntity.ok(controlTowerService.deleteTask(companyId, id));
+    }
+
     @PutMapping("/lead-days")
     public ResponseEntity<Map<String, Object>> saveLeadDays(
             @RequestParam(defaultValue = "1") Long companyId,

@@ -62,6 +62,11 @@ public class WeeklyBizReportService {
 
             【지난주 대비 변화】
             - (지난주 보고가 제공된 경우만. 개선/악화/신규 이슈. 없으면 "비교 데이터 없음")
+
+            【업무 등록 데이터】
+            (【이번 주 실행 — 실무진】 항목을 JSON 배열로. 반드시 유효한 JSON만. 예:
+            [{"task":"야채포테이토 재발주","assignee":"이재연","due":"2026-09-04"}]
+            due는 보고에 날짜가 명시된 경우만 YYYY-MM-DD, 없으면 null. assignee는 보고에 이름이 있으면 그 이름, 없으면 "미지정")
             """;
 
     private volatile String cachedModel;
@@ -113,6 +118,7 @@ public class WeeklyBizReportService {
         result.put("title", finalTitle);
         result.put("textLength", text.length());
         result.put("aiAnalyzed", Boolean.TRUE.equals(analysis.get("success")));
+        if (analysis.get("registeredTasks") != null) result.put("registeredTasks", analysis.get("registeredTasks"));
         if (!Boolean.TRUE.equals(analysis.get("success"))) {
             result.put("aiMessage", analysis.get("message"));
         }
@@ -162,10 +168,20 @@ public class WeeklyBizReportService {
 
         try {
             String answer = aiApiClient.complete(setting, model, SYSTEM_PROMPT, userMessage.toString());
+            String cleaned = answer == null ? "" : answer.trim();
+            int registered = 0;
+            try {
+                LocalDate weekStart = ((java.sql.Date) row.get("week_start")).toLocalDate();
+                Object[] extracted = registerTasksFromAnswer(companyId, cleaned, weekStart);
+                cleaned = (String) extracted[0];
+                registered = (Integer) extracted[1];
+            } catch (Exception taskError) {
+                log.warn("[WeeklyBiz] 업무 자동 등록 실패(분석은 유지): {}", taskError.getMessage());
+            }
             jdbcTemplate.update(
                     "UPDATE weekly_biz_report SET ai_summary = ?, ai_model = ?, ai_analyzed_at = NOW() WHERE id = ?",
-                    answer == null ? "" : answer.trim(), model, id);
-            return Map.of("success", true, "id", id, "model", model);
+                    cleaned, model, id);
+            return Map.of("success", true, "id", id, "model", model, "registeredTasks", registered);
         } catch (Exception e) {
             log.warn("[WeeklyBiz] AI 분석 실패: {}", e.getMessage());
             String msg = String.valueOf(e.getMessage());
@@ -174,6 +190,59 @@ public class WeeklyBizReportService {
             }
             return Map.of("success", false, "message", "AI 분석 실패: " + msg.substring(0, Math.min(msg.length(), 140)));
         }
+    }
+
+    /* ───────── 상황판 자동 등록 ───────── */
+
+    /**
+     * AI 응답의 【업무 등록 데이터】 JSON 블록을 파싱해 종합 상황판(executive_work_task)에 자동 등록.
+     * 반환: [블록을 제거한 본문, 등록 건수]. 중복(같은 업무명+담당자, 미완료)은 건너뛴다.
+     */
+    private Object[] registerTasksFromAnswer(Long companyId, String answer, LocalDate weekStart) {
+        int idx = answer.indexOf("【업무 등록 데이터】");
+        if (idx < 0) return new Object[]{answer, 0};
+        int next = answer.indexOf('【', idx + 1);
+        String section = next > 0 ? answer.substring(idx, next) : answer.substring(idx);
+        String cleaned = (answer.substring(0, idx) + (next > 0 ? answer.substring(next) : "")).trim();
+
+        int open = section.indexOf('[');
+        int close = section.lastIndexOf(']');
+        if (open < 0 || close <= open) return new Object[]{cleaned, 0};
+
+        int registered = 0;
+        try {
+            com.fasterxml.jackson.databind.JsonNode items =
+                    new com.fasterxml.jackson.databind.ObjectMapper().readTree(section.substring(open, close + 1));
+            LocalDate defaultDue = weekStart.plusDays(4); // 해당 주 금요일
+            for (com.fasterxml.jackson.databind.JsonNode item : items) {
+                String task = item.path("task").asText("").trim();
+                if (task.isEmpty() || task.length() > 180) continue;
+                String assignee = item.path("assignee").asText("").trim();
+                if (assignee.isEmpty() || "null".equalsIgnoreCase(assignee)) assignee = "미지정";
+                LocalDate due = defaultDue;
+                String dueRaw = item.path("due").asText("");
+                if (dueRaw != null && dueRaw.matches("\\d{4}-\\d{2}-\\d{2}")) {
+                    try { due = LocalDate.parse(dueRaw); } catch (Exception ignored) { /* 기본 마감 유지 */ }
+                }
+                Integer dup = jdbcTemplate.queryForObject("""
+                        SELECT COUNT(*) FROM executive_work_task
+                        WHERE company_id = ? AND LOWER(TRIM(task_name)) = LOWER(?)
+                          AND LOWER(TRIM(COALESCE(assignee_name,''))) = LOWER(?)
+                          AND status <> 'DONE'
+                        """, Integer.class, companyId, task, assignee);
+                if (dup != null && dup > 0) continue;
+                jdbcTemplate.update("""
+                        INSERT INTO executive_work_task
+                            (company_id, project_name, task_name, assignee_name, status, priority, progress_rate,
+                             start_date, due_date, source_type, created_at, updated_at)
+                        VALUES (?, '주간 운영보고', ?, ?, 'IN_PROGRESS', 'MEDIUM', 0, CURRENT_DATE, ?, 'WEEKLY_BIZ', NOW(), NOW())
+                        """, companyId, task, assignee, java.sql.Date.valueOf(due));
+                registered++;
+            }
+        } catch (Exception e) {
+            log.warn("[WeeklyBiz] 업무 JSON 파싱 실패: {}", e.getMessage());
+        }
+        return new Object[]{cleaned, registered};
     }
 
     /* ───────── 조회/삭제 ───────── */
