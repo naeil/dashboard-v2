@@ -73,6 +73,21 @@ public class ReviewController {
         }
     }
 
+    /** 전체 리뷰 페이지 조회 — page(0부터), size, brand 필터 */
+    @GetMapping("/list")
+    public ResponseEntity<?> listReviews(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String brand
+    ) {
+        try {
+            return ResponseEntity.ok(ApiResponse.success(reviewService.getReviewPage(page, size, brand)));
+        } catch (Exception e) {
+            log.error("Review list fetch failed", e);
+            return ResponseEntity.status(500).body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
     @GetMapping("/dashboard")
     public ResponseEntity<?> getDashboard() {
         try {

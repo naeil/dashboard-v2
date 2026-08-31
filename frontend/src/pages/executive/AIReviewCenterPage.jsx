@@ -48,6 +48,69 @@ function formatReviewDate(dateStr) {
   }
 }
 
+function SatisfactionCharts({ stats, channel }) {
+  if (!stats) return null
+  const key = channel === 'hifree' ? '하이프리' : channel === 'gukmin' ? '국민한상' : 'total'
+  const s = stats[key] || stats.total
+  if (!s) return null
+  const rating = s.rating || {}
+  const ratingTotal = ['5', '4', '3', '2', '1'].reduce((a, k) => a + Number(rating[k] || 0), 0)
+  const sen = s.sentiment || {}
+  const pos = Number(sen.POSITIVE || 0)
+  const neu = Number(sen.NEUTRAL || 0)
+  const neg = Number(sen.NEGATIVE || 0)
+  const senTotal = pos + neu + neg
+  if (ratingTotal === 0) return null
+  const pct = (v, t) => (t > 0 ? Math.round((v / t) * 100) : 0)
+  const label = channel === 'hifree' ? '하이프리' : channel === 'gukmin' ? '국민한상' : '전체'
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p className="text-sm font-black text-slate-800">별점 분포 <span className="font-bold text-slate-400">— {label} {ratingTotal.toLocaleString()}건</span></p>
+        <div className="mt-3 space-y-2">
+          {['5', '4', '3', '2', '1'].map((k) => {
+            const v = Number(rating[k] || 0)
+            return (
+              <div key={k} className="flex items-center gap-2" title={`${k}점 ${v.toLocaleString()}건 (${pct(v, ratingTotal)}%)`}>
+                <span className="w-8 shrink-0 text-right text-[12px] font-bold text-slate-500">★ {k}</span>
+                <div className="h-4 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-full rounded-full bg-sky-500" style={{ width: `${Math.max(v > 0 ? 1.5 : 0, (v / ratingTotal) * 100)}%` }} />
+                </div>
+                <span className="w-24 shrink-0 text-[12px] font-bold text-slate-600">{v.toLocaleString()}건 <span className="text-slate-400">({pct(v, ratingTotal)}%)</span></span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p className="text-sm font-black text-slate-800">만족 · 불만족 <span className="font-bold text-slate-400">— AI 감성 분석</span></p>
+        <div className="mt-4 flex h-5 w-full gap-0.5 overflow-hidden rounded-full">
+          {pos > 0 && <div className="h-full rounded-l-full bg-emerald-500" style={{ width: `${(pos / senTotal) * 100}%` }} title={`긍정 ${pos.toLocaleString()}건`} />}
+          {neu > 0 && <div className="h-full bg-slate-300" style={{ width: `${(neu / senTotal) * 100}%` }} title={`중립 ${neu.toLocaleString()}건`} />}
+          {neg > 0 && <div className="h-full rounded-r-full bg-rose-500" style={{ width: `${(neg / senTotal) * 100}%` }} title={`부정 ${neg.toLocaleString()}건`} />}
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-lg bg-emerald-50 px-2 py-2.5">
+            <p className="flex items-center justify-center gap-1 text-[11px] font-bold text-slate-500"><span className="h-2 w-2 rounded-full bg-emerald-500" />만족 (4~5점)</p>
+            <p className="mt-1 text-lg font-black text-emerald-600">{pct(pos, senTotal)}%</p>
+            <p className="text-[11px] font-bold text-slate-400">{pos.toLocaleString()}건</p>
+          </div>
+          <div className="rounded-lg bg-slate-50 px-2 py-2.5">
+            <p className="flex items-center justify-center gap-1 text-[11px] font-bold text-slate-500"><span className="h-2 w-2 rounded-full bg-slate-300" />중립 (3점)</p>
+            <p className="mt-1 text-lg font-black text-slate-600">{pct(neu, senTotal)}%</p>
+            <p className="text-[11px] font-bold text-slate-400">{neu.toLocaleString()}건</p>
+          </div>
+          <div className="rounded-lg bg-rose-50 px-2 py-2.5">
+            <p className="flex items-center justify-center gap-1 text-[11px] font-bold text-slate-500"><span className="h-2 w-2 rounded-full bg-rose-500" />불만족 (1~2점)</p>
+            <p className="mt-1 text-lg font-black text-rose-600">{pct(neg, senTotal)}%</p>
+            <p className="text-[11px] font-bold text-slate-400">{neg.toLocaleString()}건</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function StatCard({ icon, label, value, sub, colorClass }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -191,6 +254,8 @@ function VocChart({ vocData, brand }) {
 export default function AIReviewCenterPage() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [activeChannel, setActiveChannel] = useState('all')
+  const [page, setPage] = useState(0)
+  const [pageInfo, setPageInfo] = useState({ totalPages: 0, totalElements: 0 })
   const [dashboardData, setDashboardData] = useState(null)
   const [reviews, setReviews] = useState([])
   const [analyses, setAnalyses] = useState({})
@@ -259,7 +324,8 @@ export default function AIReviewCenterPage() {
       const data = res.data?.data || {}
       setUploadResult(data)
       setLastSync(new Date().toLocaleTimeString())
-      await Promise.all([loadDashboard(), loadVoc(), loadInsights()])
+      setPage(0)
+      await Promise.all([loadDashboard(), loadVoc(), loadInsights(), loadReviews(0, activeChannel)])
     } catch (e) {
       setUploadResult({ success: false, message: e?.response?.data?.message || '업로드에 실패했습니다.' })
     } finally {
@@ -267,17 +333,34 @@ export default function AIReviewCenterPage() {
     }
   }
 
+  const loadReviews = useCallback(async (pageNum, channelId) => {
+    try {
+      const params = { page: pageNum, size: 20 }
+      const brand = channelId !== 'all' ? (CHANNELS.find(c => c.id === channelId)?.brand || '') : ''
+      if (brand) params.brand = brand
+      const res = await api.get('/reviews/list', { params })
+      const d = res.data?.data
+      if (d) {
+        setReviews(d.content || [])
+        const m = {}
+        ;(d.analyses || []).forEach(a => { m[a.reviewId] = a })
+        setAnalyses(m)
+        setPageInfo({ totalPages: d.totalPages || 0, totalElements: d.totalElements || 0 })
+      }
+    } catch {
+      setReviews([])
+    }
+  }, [])
+
   useEffect(() => {
     setLoading(true)
     Promise.all([loadDashboard(), loadVoc(), loadInsights()]).finally(() => setLoading(false))
   }, [])
 
-  const filteredReviews = activeChannel === 'all'
-    ? reviews
-    : reviews.filter(r => {
-        const ch = CHANNELS.find(c => c.id === activeChannel)
-        return r.channel?.includes(ch?.brand || '')
-      })
+  useEffect(() => { setPage(0) }, [activeChannel])
+  useEffect(() => { loadReviews(page, activeChannel) }, [page, activeChannel, loadReviews])
+
+  const filteredReviews = reviews
 
   const urgentReviews = reviews.filter(r => analyses[r.id]?.isUrgent)
   const mockReviews = reviews.filter(r => r.reviewId?.startsWith('MOCK_'))
@@ -375,6 +458,8 @@ export default function AIReviewCenterPage() {
         <StatCard icon="warning" label="긴급 리뷰" value={urgentReviews.length} colorClass={urgentReviews.length > 0 ? 'text-red-500' : 'text-slate-400'} />
       </div>
 
+      <SatisfactionCharts stats={dashboardData?.stats} channel={activeChannel} />
+
       <div className="flex gap-3 flex-wrap">
         {CHANNELS.map(ch => (
           <a key={ch.id} href={ch.storeUrl} target="_blank" rel="noopener noreferrer"
@@ -416,7 +501,7 @@ export default function AIReviewCenterPage() {
           ) : (
             <>
               <div className="flex items-center justify-between">
-                <p className="text-xs text-slate-400 font-bold">{filteredReviews.length}건의 리뷰</p>
+                <p className="text-xs text-slate-400 font-bold">총 {pageInfo.totalElements.toLocaleString()}건 · {page + 1}/{Math.max(1, pageInfo.totalPages)} 페이지</p>
                 {mockReviews.length > 0 && (
                   <span className="text-xs text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
                     ⚠ 테스트 데이터 {mockReviews.length}건 포함
@@ -426,6 +511,33 @@ export default function AIReviewCenterPage() {
               {filteredReviews.map(review => (
                 <ReviewCard key={review.id} review={review} analysis={analyses[review.id]} />
               ))}
+              {pageInfo.totalPages > 1 && (
+                <div className="flex items-center justify-center gap-1 pt-3">
+                  <button type="button" disabled={page === 0} onClick={() => setPage(page - 1)}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300">
+                    <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+                  </button>
+                  {Array.from({ length: pageInfo.totalPages }, (_, i) => i)
+                    .filter(i => i === 0 || i === pageInfo.totalPages - 1 || Math.abs(i - page) <= 2)
+                    .reduce((acc, i, idx, arr) => {
+                      if (idx > 0 && i - arr[idx - 1] > 1) acc.push('...')
+                      acc.push(i)
+                      return acc
+                    }, [])
+                    .map((i, idx) => i === '...' ? (
+                      <span key={`gap-${idx}`} className="px-1 text-sm font-bold text-slate-400">…</span>
+                    ) : (
+                      <button key={i} type="button" onClick={() => setPage(i)}
+                        className={`h-9 min-w-9 rounded-lg px-2 text-sm font-black ${i === page ? 'bg-sky-500 text-white' : 'border border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                        {i + 1}
+                      </button>
+                    ))}
+                  <button type="button" disabled={page >= pageInfo.totalPages - 1} onClick={() => setPage(page + 1)}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300">
+                    <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>

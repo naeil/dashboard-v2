@@ -13,6 +13,8 @@ public interface AiReviewRepository extends JpaRepository<AiReview, Long> {
 
     boolean existsByChannelAndReviewId(String channel, String reviewId);
 
+    org.springframework.data.domain.Page<AiReview> findByBrand(String brand, org.springframework.data.domain.Pageable pageable);
+
     List<AiReview> findByChannelOrderByReviewDateDesc(String channel);
 
     List<AiReview> findByBrandOrderByReviewDateDesc(String brand);

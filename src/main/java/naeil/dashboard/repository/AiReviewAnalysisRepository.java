@@ -11,6 +11,8 @@ public interface AiReviewAnalysisRepository extends JpaRepository<AiReviewAnalys
 
     Optional<AiReviewAnalysis> findByReviewId(Long reviewId);
 
+    List<AiReviewAnalysis> findByReviewIdIn(List<Long> reviewIds);
+
     List<AiReviewAnalysis> findByIsUrgentTrue();
 
     List<AiReviewAnalysis> findByReplyStatus(String replyStatus);

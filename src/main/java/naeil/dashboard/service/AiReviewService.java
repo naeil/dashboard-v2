@@ -25,6 +25,7 @@ public class AiReviewService {
     private final AiReviewRepository reviewRepository;
     private final AiReviewAnalysisRepository analysisRepository;
     private final ObjectMapper objectMapper;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @Value("${app.ai.openai-api-key:}")
     private String openAiApiKey;
@@ -159,7 +160,80 @@ public class AiReviewService {
         result.put("hifree", buildBrandStats(hifreeReviews));
         result.put("gukmin", buildBrandStats(gukminReviews));
         result.put("recentReviews", allReviews.stream().limit(20).collect(Collectors.toList()));
+        result.put("stats", buildDistributionStats());
         return result;
+    }
+
+    /** 별점 분포 + 감성 분포 — 전체 및 브랜드별 (그래프용, 쿼리 1번) */
+    private Map<String, Object> buildDistributionStats() {
+        Map<String, Object> byBrand = new HashMap<>();
+        long[] totalRating = new long[6];
+        Map<String, Long> totalSentiment = new HashMap<>();
+        jdbcTemplate.query("""
+                SELECT COALESCE(r.brand, '기타') AS brand, r.rating,
+                       COALESCE(a.sentiment, 'NEUTRAL') AS sentiment, COUNT(*) AS cnt
+                FROM ai_reviews r
+                LEFT JOIN ai_review_analyses a ON a.review_id = r.id
+                GROUP BY 1, 2, 3
+                """, rs -> {
+            String brand = rs.getString("brand");
+            int rating = Math.min(5, Math.max(1, rs.getInt("rating")));
+            String sentiment = rs.getString("sentiment");
+            long cnt = rs.getLong("cnt");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> b = (Map<String, Object>) byBrand.computeIfAbsent(brand, k -> {
+                Map<String, Object> m = new HashMap<>();
+                m.put("rating", new long[6]);
+                m.put("sentiment", new HashMap<String, Long>());
+                return m;
+            });
+            ((long[]) b.get("rating"))[rating] += cnt;
+            @SuppressWarnings("unchecked")
+            Map<String, Long> sm = (Map<String, Long>) b.get("sentiment");
+            sm.merge(sentiment, cnt, Long::sum);
+            totalRating[rating] += cnt;
+            totalSentiment.merge(sentiment, cnt, Long::sum);
+        });
+        Map<String, Object> stats = new HashMap<>();
+        Map<String, Object> total = new HashMap<>();
+        total.put("rating", ratingMap(totalRating));
+        total.put("sentiment", totalSentiment);
+        stats.put("total", total);
+        for (Map.Entry<String, Object> e : byBrand.entrySet()) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> b = (Map<String, Object>) e.getValue();
+            Map<String, Object> out = new HashMap<>();
+            out.put("rating", ratingMap((long[]) b.get("rating")));
+            out.put("sentiment", b.get("sentiment"));
+            stats.put(e.getKey(), out);
+        }
+        return stats;
+    }
+
+    private static Map<String, Long> ratingMap(long[] counts) {
+        Map<String, Long> m = new LinkedHashMap<>();
+        for (int i = 5; i >= 1; i--) m.put(String.valueOf(i), counts[i]);
+        return m;
+    }
+
+    /** 전체 리뷰 페이지 조회 (+ 해당 페이지 분석 결과) */
+    public Map<String, Object> getReviewPage(int page, int size, String brand) {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(
+                Math.max(0, page), Math.min(100, Math.max(1, size)),
+                org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "reviewDate")
+                        .and(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "id")));
+        org.springframework.data.domain.Page<AiReview> result = (brand == null || brand.isBlank())
+                ? reviewRepository.findAll(pageable)
+                : reviewRepository.findByBrand(brand, pageable);
+        List<Long> ids = result.getContent().stream().map(AiReview::getId).toList();
+        List<AiReviewAnalysis> analyses = ids.isEmpty() ? List.of() : analysisRepository.findByReviewIdIn(ids);
+        Map<String, Object> body = new HashMap<>();
+        body.put("content", result.getContent());
+        body.put("analyses", analyses);
+        body.put("page", result.getNumber());
+        body.put("totalPages", result.getTotalPages());
+        body.put("totalElements", result.getTotalElements());
+        return body;
     }
 
     private Map<String, Object> buildBrandStats(List<AiReview> reviews) {
