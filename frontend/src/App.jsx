@@ -65,6 +65,7 @@ import Settings from './pages/Settings'
 import LoginPage from './pages/LoginPage'
 import ControlTowerPage from './pages/common/ControlTowerPage'
 import WeeklyBizReportPage from './pages/common/WeeklyBizReportPage'
+import TeamManagePage from './pages/common/TeamManagePage'
 import ProductionOrdersPage from './pages/production/ProductionOrdersPage'
 import ProductionCostPage from './pages/production/ProductionCostPage'
 import StaffDashboardPage from './pages/staff/StaffDashboardPage'
@@ -77,6 +78,7 @@ const pages = {
   platform: PlatformOverviewPage,
   'control-tower': ControlTowerPage,
   'weekly-biz-report': WeeklyBizReportPage,
+  'team-manage': TeamManagePage,
   'production-orders': ProductionOrdersPage,
   'production-costs': ProductionCostPage,
   'platform-admin': PlatformAdminPage,

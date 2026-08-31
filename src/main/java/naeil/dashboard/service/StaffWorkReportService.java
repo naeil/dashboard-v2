@@ -19,14 +19,33 @@ public class StaffWorkReportService {
 
     public List<Map<String, Object>> listReports(Long companyId, AuthUser user, String reportType) {
         String normalizedType = normalizeReportTypeOrNull(reportType);
-        if (UserRole.from(user.role()) != UserRole.EXECUTIVE) {
-            // 본인 보고 + 관리자가 열람 권한을 부여한 대상(report_view_permission)의 보고
+        UserRole viewerRole = UserRole.from(user.role());
+        if (viewerRole != UserRole.EXECUTIVE) {
+            // 본인 보고 + 열람 권한 부여 대상 + (팀장) 같은 부서 팀원 보고 자동 열람
+            boolean manager = viewerRole == UserRole.MANAGER;
             String visibility = """
                     AND (LOWER(username) = LOWER(?)
                          OR LOWER(username) IN (
                              SELECT LOWER(target_username) FROM report_view_permission
-                             WHERE company_id = ? AND LOWER(viewer_username) = LOWER(?)))
-                    """;
+                             WHERE company_id = ? AND LOWER(viewer_username) = LOWER(?))
+                    """ + (manager ? """
+                         OR LOWER(username) IN (
+                             SELECT LOWER(target.username)
+                             FROM dashboard_user me
+                             JOIN dashboard_user target
+                               ON target.company_id = me.company_id
+                              AND COALESCE(target.department, '미지정') = COALESCE(me.department, '미지정')
+                             WHERE me.company_id = ? AND LOWER(me.username) = LOWER(?))
+                    """ : "") + ")\n";
+            java.util.List<Object> params = new java.util.ArrayList<>();
+            params.add(companyId);
+            params.add(user.username());
+            params.add(companyId);
+            params.add(user.username());
+            if (manager) {
+                params.add(companyId);
+                params.add(user.username());
+            }
             if (normalizedType == null) {
                 return jdbcTemplate.queryForList("""
                         SELECT *
@@ -34,8 +53,9 @@ public class StaffWorkReportService {
                         WHERE company_id = ?
                         """ + visibility + """
                         ORDER BY report_date DESC, username, id DESC
-                        """, companyId, user.username(), companyId, user.username());
+                        """, params.toArray());
             }
+            params.add(normalizedType);
             return jdbcTemplate.queryForList("""
                     SELECT *
                     FROM staff_work_report
@@ -43,7 +63,7 @@ public class StaffWorkReportService {
                     """ + visibility + """
                       AND report_type = ?
                     ORDER BY report_date DESC, username, id DESC
-                    """, companyId, user.username(), companyId, user.username(), normalizedType);
+                    """, params.toArray());
         }
 
         if (normalizedType == null) {
