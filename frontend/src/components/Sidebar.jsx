@@ -130,11 +130,11 @@ export const defaultMenuSections = [
 
   {
     id: 'marketing',
-    title: '마케팅',
+    title: '프로젝트',
     group: 'staff',
     departments: ['marketing'],
     items: [
-      { id: 'promotion-margin', icon: 'sell', label: '마케팅 프로젝트', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'promotion-margin', icon: 'sell', label: '실시간 프로젝트', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'promotion-history', icon: 'receipt_long', label: '프로모션 내역', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'ad-performance', icon: 'campaign', label: '광고 성과', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'marketing-agent', icon: 'auto_awesome', label: '마케팅 에이전트', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },

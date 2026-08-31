@@ -138,6 +138,7 @@ export default function PersonalMemoPage({ displayName = '' }) {
   const [weekStart, setWeekStart] = useState(mondayOf(0))
   const [memos, setMemos] = useState([])
   const [loading, setLoading] = useState(true)
+  const [mobileDay, setMobileDay] = useState(todayStr())
 
   const load = useCallback((ws) => {
     setLoading(true)
@@ -150,6 +151,10 @@ export default function PersonalMemoPage({ displayName = '' }) {
     const t = setTimeout(() => load(weekStart), 0)
     return () => clearTimeout(t)
   }, [weekStart, load])
+  useEffect(() => {
+    if (mobileDay < weekStart || mobileDay > addDays(weekStart, 6)) setMobileDay(weekStart)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekStart])
 
   const add = async (payload) => {
     await api.post('/personal-memo', payload).catch(() => {})
@@ -251,7 +256,42 @@ export default function PersonalMemoPage({ displayName = '' }) {
         {loading ? (
           <p className="py-8 text-center text-sm font-bold text-slate-400">불러오는 중…</p>
         ) : (
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-7">
+          <>
+          {/* 모바일: 요일 탭 + 하루 보기 */}
+          <div className="lg:hidden">
+            <div className="mb-2 grid grid-cols-7 gap-1">
+              {DOW.map((label, i) => {
+                const date = addDays(weekStart, i)
+                const isToday = date === today
+                const selected = date === mobileDay
+                const count = (byDate[date] || []).filter((m) => !m.is_done).length
+                return (
+                  <button key={label} type="button" onClick={() => setMobileDay(date)}
+                    className={`flex flex-col items-center rounded-lg py-1.5 text-[11px] font-black ${
+                      selected ? 'bg-sky-500 text-white' : isToday ? 'bg-sky-50 text-sky-600' : 'bg-slate-50 text-slate-500'}`}>
+                    <span>{label}</span>
+                    <span className="text-[12px]">{Number(date.slice(8, 10))}</span>
+                    {count > 0 && <span className={`mt-0.5 h-1 w-1 rounded-full ${selected ? 'bg-white' : 'bg-sky-400'}`} />}
+                  </button>
+                )
+              })}
+            </div>
+            <div className={`rounded-lg border p-2 ${mobileDay === today ? 'border-sky-300 bg-sky-50/50' : 'border-slate-100'}`}>
+              <div className="space-y-0.5">
+                {(byDate[mobileDay] || []).length === 0 && (
+                  <p className="px-1 py-2 text-[12px] font-bold text-slate-300">이 날짜에 등록된 할 일이 없습니다.</p>
+                )}
+                {(byDate[mobileDay] || []).map((m) => (
+                  <MemoItem key={m.id} memo={m} onToggle={toggle} onDelete={remove}
+                    onMoveTomorrow={(memo) => moveTo(memo, addDays(mobileDay, 1))} />
+                ))}
+              </div>
+              <DayAdd date={mobileDay} onAdd={add} />
+            </div>
+          </div>
+
+          {/* 데스크톱: 7열 주간 캘린더 */}
+          <div className="hidden gap-2 lg:grid lg:grid-cols-7">
             {DOW.map((label, i) => {
               const date = addDays(weekStart, i)
               const isToday = date === today
@@ -275,6 +315,7 @@ export default function PersonalMemoPage({ displayName = '' }) {
               )
             })}
           </div>
+          </>
         )}
       </div>
     </div>
