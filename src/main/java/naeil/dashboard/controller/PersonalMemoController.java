@@ -30,6 +30,7 @@ public class PersonalMemoController {
 
     private static final Long COMPANY = 1L;
     private final JdbcTemplate jdbcTemplate;
+    private final naeil.dashboard.service.GoogleCalendarService googleCalendarService;
 
     @GetMapping
     public ResponseEntity<List<Map<String, Object>>> list(
@@ -131,6 +132,75 @@ public class PersonalMemoController {
                 ON CONFLICT (company_id, username) DO UPDATE SET content = EXCLUDED.content, updated_at = NOW()
                 """, COMPANY, user.username(), content);
         return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    /* ── 구글 캘린더 연동 (비공개 iCal 주소) ── */
+
+    @GetMapping("/gcal-link")
+    public ResponseEntity<Map<String, Object>> getGcalLink(HttpServletRequest request) {
+        AuthUser user = user(request);
+        String url = jdbcTemplate.query(
+                "SELECT ics_url FROM personal_gcal_link WHERE company_id = ? AND LOWER(username) = LOWER(?)",
+                rs -> rs.next() ? rs.getString(1) : null, COMPANY, user.username());
+        java.util.Map<String, Object> body = new java.util.HashMap<>();
+        body.put("linked", url != null);
+        return ResponseEntity.ok(body);
+    }
+
+    @PutMapping("/gcal-link")
+    public ResponseEntity<Map<String, Object>> saveGcalLink(@RequestBody Map<String, Object> p, HttpServletRequest request) {
+        AuthUser user = user(request);
+        String url = p.get("icsUrl") == null ? null : String.valueOf(p.get("icsUrl")).trim();
+        if (!naeil.dashboard.service.GoogleCalendarService.isValidIcsUrl(url)) {
+            return ResponseEntity.ok(Map.of("success", false,
+                    "message", "구글 캘린더의 비공개 iCal 주소(https://calendar.google.com/.../basic.ics)를 붙여넣어 주세요."));
+        }
+        // 등록 전에 실제로 읽히는지 1회 검증
+        try {
+            googleCalendarService.events(url, LocalDate.now().minusDays(7), LocalDate.now().plusDays(7));
+        } catch (Exception e) {
+            return ResponseEntity.ok(Map.of("success", false,
+                    "message", "캘린더를 읽지 못했습니다. 주소를 다시 복사해 주세요. (설정 > 캘린더의 비공개 주소 iCal 형식)"));
+        }
+        jdbcTemplate.update("""
+                INSERT INTO personal_gcal_link (company_id, username, ics_url, updated_at)
+                VALUES (?, ?, ?, NOW())
+                ON CONFLICT (company_id, username) DO UPDATE SET ics_url = EXCLUDED.ics_url, updated_at = NOW()
+                """, COMPANY, user.username(), url);
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    @DeleteMapping("/gcal-link")
+    public ResponseEntity<Map<String, Object>> deleteGcalLink(HttpServletRequest request) {
+        AuthUser user = user(request);
+        jdbcTemplate.update(
+                "DELETE FROM personal_gcal_link WHERE company_id = ? AND LOWER(username) = LOWER(?)",
+                COMPANY, user.username());
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    @GetMapping("/gcal")
+    public ResponseEntity<Map<String, Object>> gcalEvents(
+            @RequestParam String from, @RequestParam String to, HttpServletRequest request) {
+        AuthUser user = user(request);
+        String url = jdbcTemplate.query(
+                "SELECT ics_url FROM personal_gcal_link WHERE company_id = ? AND LOWER(username) = LOWER(?)",
+                rs -> rs.next() ? rs.getString(1) : null, COMPANY, user.username());
+        java.util.Map<String, Object> body = new java.util.HashMap<>();
+        if (url == null) {
+            body.put("linked", false);
+            body.put("events", java.util.List.of());
+            return ResponseEntity.ok(body);
+        }
+        try {
+            body.put("linked", true);
+            body.put("events", googleCalendarService.events(url, LocalDate.parse(from), LocalDate.parse(to)));
+        } catch (Exception e) {
+            body.put("linked", true);
+            body.put("events", java.util.List.of());
+            body.put("error", "캘린더를 불러오지 못했습니다. 잠시 후 다시 시도하세요.");
+        }
+        return ResponseEntity.ok(body);
     }
 
     /* ── 유틸 ── */

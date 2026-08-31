@@ -48,6 +48,90 @@ function MemoItem({ memo, onToggle, onDelete, onMoveTomorrow }) {
   )
 }
 
+/* ─────────────── 구글 캘린더 일정 (읽기 전용) ─────────────── */
+
+function GcalEvent({ event }) {
+  return (
+    <div className="flex items-start gap-1.5 rounded-lg border-l-2 border-sky-400 bg-sky-50/70 px-1.5 py-1">
+      <div className="min-w-0 flex-1">
+        {!event.allDay && event.start && (
+          <p className="text-[10px] font-black text-sky-600">{event.start}{event.end ? `–${event.end}` : ''}</p>
+        )}
+        <p className="break-words text-[12.5px] leading-4.5 text-slate-800">{event.title}</p>
+      </div>
+      <span className="mt-0.5 shrink-0 text-[9px] font-black text-sky-300">G</span>
+    </div>
+  )
+}
+
+function GcalLinkCard({ linked, onLinked, onUnlink }) {
+  const [open, setOpen] = useState(false)
+  const [url, setUrl] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  if (linked) {
+    return (
+      <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/50 px-3.5 py-2.5">
+        <p className="flex items-center gap-1.5 text-[12.5px] font-black text-emerald-700">
+          <span className="material-symbols-outlined text-[16px]">event_available</span>
+          구글 캘린더 연동됨 — 일정이 실시간으로 표시됩니다 (5분 간격 갱신)
+        </p>
+        <button type="button" onClick={onUnlink}
+          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-black text-slate-500 hover:text-rose-500">
+          연동 해제
+        </button>
+      </div>
+    )
+  }
+
+  const save = async () => {
+    if (!url.trim() || busy) return
+    setBusy(true)
+    setMsg('')
+    try {
+      const res = await api.put('/personal-memo/gcal-link', { icsUrl: url.trim() })
+      if (res.data?.success) { setUrl(''); setOpen(false); onLinked() }
+      else setMsg(res.data?.message || '연동에 실패했습니다.')
+    } catch (e) {
+      setMsg(e?.response?.data?.message || '연동에 실패했습니다.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between">
+        <p className="flex items-center gap-1.5 text-[12.5px] font-black text-slate-600">
+          <span className="material-symbols-outlined text-[16px] text-sky-500">calendar_add_on</span>
+          구글 캘린더 연동하기 — 내 일정을 여기서 바로 보기
+        </p>
+        <span className="material-symbols-outlined text-[18px] text-slate-300">{open ? 'expand_less' : 'expand_more'}</span>
+      </button>
+      {open && (
+        <div className="mt-2.5 border-t border-slate-100 pt-2.5">
+          <p className="text-[12px] leading-5 text-slate-500">
+            ① PC 구글 캘린더 → 왼쪽 <b>내 캘린더</b>에서 내 캘린더에 마우스 올리고 ⋮ → <b>설정 및 공유</b><br />
+            ② 아래로 내려 <b>캘린더 통합</b> → <b>iCal 형식의 비공개 주소</b> 복사<br />
+            ③ 여기에 붙여넣고 [연동] — 한 번만 하면 됩니다. 주소는 본인 계정에만 저장됩니다.
+          </p>
+          <div className="mt-2 flex items-center gap-1.5">
+            <input value={url} onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://calendar.google.com/calendar/ical/.../basic.ics"
+              className="h-9 min-w-0 flex-1 rounded-lg border border-slate-200 px-2.5 text-[12px] text-slate-700 placeholder:text-slate-300 focus:border-sky-400 focus:outline-none" />
+            <button type="button" onClick={save} disabled={busy || !url.trim()}
+              className="h-9 shrink-0 rounded-lg bg-sky-500 px-3.5 text-[12px] font-black text-white hover:bg-sky-600 disabled:bg-slate-200 disabled:text-slate-400">
+              {busy ? '확인 중...' : '연동'}
+            </button>
+          </div>
+          {msg && <p className="mt-1.5 text-[11.5px] font-bold text-rose-500">{msg}</p>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ─────────────── 요일 컬럼 추가 입력 ─────────────── */
 
 function DayAdd({ date, onAdd }) {
@@ -139,6 +223,7 @@ export default function PersonalMemoPage({ displayName = '' }) {
   const [memos, setMemos] = useState([])
   const [loading, setLoading] = useState(true)
   const [mobileDay, setMobileDay] = useState(todayStr())
+  const [gcal, setGcal] = useState({ linked: false, events: [], error: null })
 
   const load = useCallback((ws) => {
     setLoading(true)
@@ -146,6 +231,9 @@ export default function PersonalMemoPage({ displayName = '' }) {
       .then((res) => setMemos(res.data || []))
       .catch(() => setMemos([]))
       .finally(() => setLoading(false))
+    api.get('/personal-memo/gcal', { params: { from: addDays(ws, -7), to: addDays(ws, 6) } })
+      .then((res) => setGcal({ linked: !!res.data?.linked, events: res.data?.events || [], error: res.data?.error || null }))
+      .catch(() => setGcal((prev) => ({ ...prev, events: [] })))
   }, [])
   useEffect(() => {
     const t = setTimeout(() => load(weekStart), 0)
@@ -178,6 +266,10 @@ export default function PersonalMemoPage({ displayName = '' }) {
     ;(acc[key] = acc[key] || []).push(m)
     return acc
   }, {})
+  const gcalByDate = gcal.events.reduce((acc, e) => {
+    ;(acc[e.date] = acc[e.date] || []).push(e)
+    return acc
+  }, {})
   const today = todayStr()
   const todayMemos = byDate[today] || []
   const yesterdayUndone = (byDate[addDays(today, -1)] || []).filter((m) => !m.is_done)
@@ -208,6 +300,10 @@ export default function PersonalMemoPage({ displayName = '' }) {
         </div>
       </div>
 
+      <GcalLinkCard linked={gcal.linked} onLinked={() => load(weekStart)}
+        onUnlink={async () => { if (window.confirm('구글 캘린더 연동을 해제할까요?')) { await api.delete('/personal-memo/gcal-link').catch(() => {}); load(weekStart) } }} />
+      {gcal.error && <p className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] font-bold text-amber-600">{gcal.error}</p>}
+
       {/* 오늘 포커스 + 메모장 */}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <div className="rounded-xl border border-sky-200 bg-sky-50/40 p-3.5">
@@ -219,7 +315,8 @@ export default function PersonalMemoPage({ displayName = '' }) {
             <span className="text-[11px] font-bold text-sky-500">{doneToday}/{todayMemos.length} 완료</span>
           </div>
           <div className="mt-2 space-y-0.5">
-            {todayMemos.length === 0 && (
+            {(gcalByDate[today] || []).map((e, i) => <GcalEvent key={`g${i}`} event={e} />)}
+            {todayMemos.length === 0 && (gcalByDate[today] || []).length === 0 && (
               <p className="rounded-lg bg-white/60 px-2.5 py-2 text-[12px] font-bold text-slate-400">
                 오늘 등록된 할 일이 없습니다. 아래 캘린더의 오늘 칸에서 추가하세요.
               </p>
@@ -264,7 +361,7 @@ export default function PersonalMemoPage({ displayName = '' }) {
                 const date = addDays(weekStart, i)
                 const isToday = date === today
                 const selected = date === mobileDay
-                const count = (byDate[date] || []).filter((m) => !m.is_done).length
+                const count = (byDate[date] || []).filter((m) => !m.is_done).length + (gcalByDate[date] || []).length
                 return (
                   <button key={label} type="button" onClick={() => setMobileDay(date)}
                     className={`flex flex-col items-center rounded-lg py-1.5 text-[11px] font-black ${
@@ -278,7 +375,8 @@ export default function PersonalMemoPage({ displayName = '' }) {
             </div>
             <div className={`rounded-lg border p-2 ${mobileDay === today ? 'border-sky-300 bg-sky-50/50' : 'border-slate-100'}`}>
               <div className="space-y-0.5">
-                {(byDate[mobileDay] || []).length === 0 && (
+                {(gcalByDate[mobileDay] || []).map((e, i) => <GcalEvent key={`g${i}`} event={e} />)}
+                {(byDate[mobileDay] || []).length === 0 && (gcalByDate[mobileDay] || []).length === 0 && (
                   <p className="px-1 py-2 text-[12px] font-bold text-slate-300">이 날짜에 등록된 할 일이 없습니다.</p>
                 )}
                 {(byDate[mobileDay] || []).map((m) => (
@@ -305,6 +403,7 @@ export default function PersonalMemoPage({ displayName = '' }) {
                     {label} {Number(date.slice(8, 10))}{isToday ? ' · 오늘' : ''}
                   </p>
                   <div className="flex-1 space-y-0.5">
+                    {(gcalByDate[date] || []).map((e, gi) => <GcalEvent key={`g${gi}`} event={e} />)}
                     {dayMemos.map((m) => (
                       <MemoItem key={m.id} memo={m} onToggle={toggle} onDelete={remove}
                         onMoveTomorrow={(memo) => moveTo(memo, addDays(date, 1))} />
