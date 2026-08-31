@@ -42,6 +42,24 @@ public class AiReviewService {
         return reviewRepository.save(review);
     }
 
+    /** 분석 결과 계산만 (저장 없음) — 대량 업로드의 배치 INSERT 용 */
+    public AiReviewAnalysis buildAnalysis(AiReview review) {
+        String content = review.getReviewContent() != null ? review.getReviewContent() : "";
+        String sentiment = analyzeSentiment(content, review.getRating());
+        boolean isUrgent = checkUrgent(content);
+        return AiReviewAnalysis.builder()
+                .reviewId(review.getId())
+                .sentiment(sentiment)
+                .isUrgent(isUrgent)
+                .urgentKeywords(String.join(",", findUrgentKeywords(content)))
+                .keywords(String.join(",", extractKeywords(content, review.getBrand())))
+                .replyDraft(generateReplyDraft(review, sentiment))
+                .replyStatus(determineReplyStatus(review.getRating(), isUrgent))
+                .analysisStatus("COMPLETED")
+                .analyzedAt(LocalDateTime.now())
+                .build();
+    }
+
     @Transactional
     public AiReviewAnalysis analyzeReview(AiReview review) {
         try {

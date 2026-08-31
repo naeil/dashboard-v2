@@ -35,6 +35,7 @@ import org.springframework.stereotype.Service;
 public class ReviewUploadService {
 
     private final AiReviewService aiReviewService;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     public Map<String, Object> importFile(byte[] bytes, String filename, String channel) {
         if (bytes == null || bytes.length == 0) {
@@ -59,9 +60,9 @@ public class ReviewUploadService {
                     "리뷰 형식을 인식하지 못했습니다. 평점과 리뷰 내용 열이 포함된 판매자센터 리뷰 파일인지 확인하세요.");
         }
 
-        int added = 0;
-        int duplicated = 0;
+        // 1) 파싱 (메모리) — 파일 내 중복 review_id 는 첫 행만 유지
         int skipped = 0;
+        Map<String, AiReview> parsed = new LinkedHashMap<>();
         for (int i = cols.headerRow + 1; i < rows.size(); i++) {
             List<String> r = rows.get(i);
             String content = cell(r, cols.content);
@@ -77,7 +78,7 @@ public class ReviewUploadService {
                     ? "UP-" + reviewNo
                     : "UP-" + sha1(ch + "|" + (date == null ? "" : date.toLocalDate()) + "|" + author + "|" + product + "|" + content).substring(0, 24);
 
-            AiReview review = AiReview.builder()
+            parsed.putIfAbsent(reviewId, AiReview.builder()
                     .reviewId(reviewId)
                     .channel(ch)
                     .brand(inferBrand(ch, product))
@@ -88,14 +89,61 @@ public class ReviewUploadService {
                     .reviewDate(date == null ? LocalDateTime.now() : date)
                     .customerName(author.isEmpty() ? null : truncate(author, 90))
                     .orderNumber(orderNo.isEmpty() ? null : truncate(orderNo, 250))
-                    .build();
-            AiReview saved = aiReviewService.saveReviewIfNotExists(review);
-            if (saved == null) {
-                duplicated++;
-            } else {
-                aiReviewService.analyzeReview(saved);
-                added++;
+                    .build());
+        }
+
+        // 2) 기존 review_id 일괄 조회 (쿼리 1번) → 중복 제외
+        java.util.Set<String> existing = new java.util.HashSet<>(jdbcTemplate.queryForList(
+                "SELECT review_id FROM ai_reviews WHERE channel = ?", String.class, ch));
+        List<AiReview> fresh = parsed.values().stream().filter(r -> !existing.contains(r.getReviewId())).toList();
+        int duplicated = parsed.size() - fresh.size();
+        int added = fresh.size();
+
+        if (!fresh.isEmpty()) {
+            // 3) 리뷰 배치 INSERT (쿼리 1번)
+            jdbcTemplate.batchUpdate("""
+                    INSERT INTO ai_reviews (review_id, channel, brand, product_name, option_name,
+                                            rating, review_content, review_date, customer_name, order_number)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (channel, review_id) DO NOTHING
+                    """, fresh, 200, (ps, r) -> {
+                ps.setString(1, r.getReviewId());
+                ps.setString(2, r.getChannel());
+                ps.setString(3, r.getBrand());
+                ps.setString(4, r.getProductName());
+                ps.setString(5, r.getOptionName());
+                ps.setInt(6, r.getRating());
+                ps.setString(7, r.getReviewContent());
+                ps.setTimestamp(8, java.sql.Timestamp.valueOf(r.getReviewDate()));
+                ps.setString(9, r.getCustomerName());
+                ps.setString(10, r.getOrderNumber());
+            });
+
+            // 4) 방금 넣은 id 매핑 조회 (쿼리 1번)
+            Map<String, Long> idByReviewId = new java.util.HashMap<>();
+            jdbcTemplate.query("SELECT id, review_id FROM ai_reviews WHERE channel = ?",
+                    rs -> { idByReviewId.put(rs.getString("review_id"), rs.getLong("id")); }, ch);
+
+            // 5) 분석 결과 메모리 계산 → 배치 INSERT (쿼리 1번)
+            List<Object[]> analyses = new ArrayList<>();
+            for (AiReview r : fresh) {
+                Long id = idByReviewId.get(r.getReviewId());
+                if (id == null) continue;
+                var a = aiReviewService.buildAnalysis(r);
+                analyses.add(new Object[]{
+                        id, a.getSentiment(), a.getIsUrgent(), a.getUrgentKeywords(), a.getKeywords(),
+                        a.getReplyDraft(), a.getReplyStatus(), "COMPLETED",
+                        java.sql.Timestamp.valueOf(java.time.LocalDateTime.now())
+                });
             }
+            jdbcTemplate.batchUpdate("""
+                    INSERT INTO ai_review_analyses (review_id, sentiment, is_urgent, urgent_keywords, keywords,
+                                                    reply_draft, reply_status, analysis_status, analyzed_at)
+                    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    WHERE NOT EXISTS (SELECT 1 FROM ai_review_analyses WHERE review_id = ?)
+                    """, analyses.stream().map(a -> new Object[]{
+                        a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[0]
+                    }).toList());
         }
 
         Map<String, Object> result = new LinkedHashMap<>();
