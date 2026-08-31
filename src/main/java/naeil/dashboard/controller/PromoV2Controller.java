@@ -81,4 +81,17 @@ public class PromoV2Controller {
     public ResponseEntity<Map<String, Object>> realtime(@PathVariable Long id) {
         return ResponseEntity.ok(promoV2Service.getRealtimeSales(id));
     }
+
+    /** 여러 행사의 실시간 매출 일괄 조회 — 목록/상태보드 BPE 달성률 표시용 (ids=1,2,3) */
+    @GetMapping("/events/realtime-batch")
+    public ResponseEntity<List<Map<String, Object>>> realtimeBatch(@RequestParam String ids) {
+        List<Long> idList = new java.util.ArrayList<>();
+        for (String part : ids.split(",")) {
+            try {
+                idList.add(Long.parseLong(part.trim()));
+            } catch (NumberFormatException ignored) { /* skip */ }
+        }
+        if (idList.size() > 60) idList = idList.subList(0, 60);
+        return ResponseEntity.ok(promoV2Service.getRealtimeBatch(idList));
+    }
 }

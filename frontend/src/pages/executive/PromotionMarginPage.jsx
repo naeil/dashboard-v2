@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   getChannelDefaults, searchPromoProducts, listPromoEvents, getPromoEvent,
   createPromoEvent, updatePromoEvent, updatePromoStatus, deletePromoEvent, getPromoRealtime,
+  getPromoRealtimeBatch,
 } from '../../api/promoV2Api'
 
 /* ─────────────────────────── 상수 ─────────────────────────── */
@@ -78,7 +79,31 @@ function calcEvent(ev) {
     if (weightedMargin >= target) verdict = '진행 가능'
     else if (weightedMargin >= target - 5) verdict = '조건부 진행'
   }
-  return { mixTotal, revenue, optionProfit, eventProfit, weightedMargin, perOrderProfit, bep, verdict }
+  // 손익분기 매출액: 고정비 / (옵션이익률). 고정비 0이면 첫 주문부터 흑자(=0원)
+  const bepRevenue = fixedCost <= 0 ? 0
+    : (optionProfit > 0 && revenue > 0 ? fixedCost * revenue / optionProfit : null)
+  return { mixTotal, revenue, optionProfit, eventProfit, weightedMargin, perOrderProfit, bep, bepRevenue, verdict }
+}
+
+/**
+ * 실시간 BPE 달성 판정 — 실매출을 손익분기/목표/예상 매출과 비교
+ * plannedRevenue: 직접 입력한 예상 매출 우선, 없으면 자동 계산값
+ */
+function calcBpe(ev, summary, sales) {
+  const plannedRevenue = num(ev.expectedRevenue) > 0 ? num(ev.expectedRevenue) : summary.revenue
+  const targetRevenue = num(ev.targetRevenue)
+  const bepRevenue = summary.bepRevenue
+  const amount = num(sales)
+  const bpePct = bepRevenue == null ? null : bepRevenue === 0 ? (amount > 0 ? 100 : 0) : (amount / bepRevenue) * 100
+  return {
+    plannedRevenue,
+    targetRevenue,
+    bepRevenue,
+    bpePct,
+    bpeDone: bpePct != null && bpePct >= 100,
+    targetPct: targetRevenue > 0 ? (amount / targetRevenue) * 100 : null,
+    plannedPct: plannedRevenue > 0 ? (amount / plannedRevenue) * 100 : null,
+  }
 }
 
 /* 신호등 (기능정의서 6장) */
@@ -114,6 +139,8 @@ function fromServer(row) {
     fixedCost: num(row.fixed_cost),
     targetMarginRate: num(row.target_margin_rate) || 20,
     expectedOrders: num(row.expected_orders),
+    expectedRevenue: num(row.expected_revenue),
+    targetRevenue: num(row.target_revenue),
     blocks: (row.blocks || []).map((blk) => ({
       productCode: blk.product_code,
       productName: blk.product_name,
@@ -148,6 +175,8 @@ function newEvent(defaults) {
     fixedCost: 0,
     targetMarginRate: 20,
     expectedOrders: 100,
+    expectedRevenue: 0,
+    targetRevenue: 0,
     blocks: [],
   }
 }
@@ -480,6 +509,97 @@ function BlockCard({ block, ev, onChange, onRemove }) {
   )
 }
 
+/* ─────────────────────────── 최종 결과 — BPE 달성 (실시간) ─────────────────────────── */
+
+function ProgressBar({ pct, done, color }) {
+  const width = Math.max(0, Math.min(100, num(pct)))
+  return (
+    <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+      <div className={`h-full rounded-full transition-all ${color || (done ? 'bg-emerald-500' : 'bg-blue-500')}`}
+        style={{ width: `${width}%` }} />
+    </div>
+  )
+}
+
+function BpeResultPanel({ ev, summary, realtime }) {
+  const sales = realtime ? num(realtime.salesAmount) : null
+  const r = calcBpe(ev, summary, sales ?? 0)
+  const notReady = !ev.id
+  const loading = ev.id && realtime == null
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-black text-slate-800">최종 결과 · BPE 달성</p>
+          <span className="text-[10px] font-bold text-slate-400">실시간 매출 기준 · 1분마다 자동 갱신</span>
+        </div>
+        {!notReady && !loading && r.bpePct != null && (
+          <span className={`rounded-lg border px-3 py-1 text-[13px] font-black ${r.bpeDone
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-600'
+            : 'border-amber-200 bg-amber-50 text-amber-600'}`}>
+            {r.bpeDone ? 'BPE 달성' : 'BPE 미달성'} · {pct1(r.bpePct)}
+          </span>
+        )}
+      </div>
+      {notReady ? (
+        <p className="py-2 text-[12px] font-bold text-slate-400">행사를 저장하면 실시간 매출로 BPE 달성 여부가 표시됩니다.</p>
+      ) : loading ? (
+        <p className="py-2 text-[12px] font-bold text-slate-400">실시간 매출 조회 중…</p>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-lg bg-slate-50 p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-bold text-slate-400">손익분기(BPE) 매출</p>
+              <p className={`text-[12px] font-black ${r.bpeDone ? 'text-emerald-600' : 'text-amber-600'}`}>
+                {r.bpePct != null ? pct1(r.bpePct) : '-'}
+              </p>
+            </div>
+            <p className="mt-1 text-[13px] font-black text-slate-800">
+              {won(sales)} <span className="font-bold text-slate-400">/ {r.bepRevenue == null ? '계산 불가' : r.bepRevenue === 0 ? '고정비 없음' : won(r.bepRevenue)}</span>
+            </p>
+            {r.bepRevenue != null ? (
+              <ProgressBar pct={r.bpePct} done={r.bpeDone} />
+            ) : (
+              <p className="mt-1 text-[10px] text-slate-400">옵션 이익이 0 이하라 손익분기 매출을 계산할 수 없습니다.</p>
+            )}
+            {r.bepRevenue != null && r.bepRevenue > 0 && (
+              <p className="mt-1 text-[10px] text-slate-400">
+                {r.bpeDone ? `손익분기 초과 ${won(sales - r.bepRevenue)}` : `달성까지 ${won(r.bepRevenue - sales)} 남음`}
+              </p>
+            )}
+          </div>
+          <div className="rounded-lg bg-slate-50 p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-bold text-slate-400">최종 목표 매출 달성</p>
+              <p className={`text-[12px] font-black ${r.targetPct != null && r.targetPct >= 100 ? 'text-emerald-600' : 'text-slate-600'}`}>
+                {r.targetPct != null ? pct1(r.targetPct) : '-'}
+              </p>
+            </div>
+            <p className="mt-1 text-[13px] font-black text-slate-800">
+              {won(sales)} <span className="font-bold text-slate-400">/ {r.targetRevenue > 0 ? won(r.targetRevenue) : '목표 미입력'}</span>
+            </p>
+            {r.targetPct != null ? (
+              <ProgressBar pct={r.targetPct} done={r.targetPct >= 100} color={r.targetPct >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'} />
+            ) : (
+              <p className="mt-1 text-[10px] text-slate-400">행사 기본 정보에 최종 목표 매출을 입력하면 달성률이 표시됩니다.</p>
+            )}
+          </div>
+          <div className="rounded-lg bg-slate-50 p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-bold text-slate-400">예상 매출 대비</p>
+              <p className="text-[12px] font-black text-slate-600">{r.plannedPct != null ? pct1(r.plannedPct) : '-'}</p>
+            </div>
+            <p className="mt-1 text-[13px] font-black text-slate-800">
+              {won(sales)} <span className="font-bold text-slate-400">/ {r.plannedRevenue > 0 ? won(r.plannedRevenue) : '예상 미입력'}</span>
+            </p>
+            {r.plannedPct != null && <ProgressBar pct={r.plannedPct} done={r.plannedPct >= 100} color="bg-sky-500" />}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ─────────────────────────── 행사 편집기 ─────────────────────────── */
 
 function EventEditor({ initial, channelDefaults, onSaved, onCancel }) {
@@ -499,7 +619,10 @@ function EventEditor({ initial, channelDefaults, onSaved, onCancel }) {
 
   useEffect(() => {
     if (!initial.id) return
-    getPromoRealtime(initial.id).then(setRealtime).catch(() => setRealtime(null))
+    const fetchRealtime = () => getPromoRealtime(initial.id).then(setRealtime).catch(() => {})
+    fetchRealtime()
+    const timer = setInterval(fetchRealtime, 60_000) // 실시간 반영: 1분마다 갱신
+    return () => clearInterval(timer)
   }, [initial.id])
 
   const applyChannelDefault = (channelName) => {
@@ -617,6 +740,12 @@ function EventEditor({ initial, channelDefaults, onSaved, onCancel }) {
           <Field label="예상 총주문수">
             <NumInput value={ev.expectedOrders} onChange={(v) => set({ expectedOrders: v })} />
           </Field>
+          <Field label="예상 매출 (원) · 비우면 자동계산">
+            <NumInput value={ev.expectedRevenue} onChange={(v) => set({ expectedRevenue: v })} />
+          </Field>
+          <Field label="최종 목표 매출 (원)">
+            <NumInput value={ev.targetRevenue} onChange={(v) => set({ targetRevenue: v })} />
+          </Field>
         </div>
         <label className="mt-3 flex items-center gap-2 text-xs font-bold text-slate-600">
           <input type="checkbox" checked={ev.isAlwaysOn} onChange={(e) => set({ isAlwaysOn: e.target.checked })} />
@@ -699,8 +828,11 @@ function EventEditor({ initial, channelDefaults, onSaved, onCancel }) {
         </div>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
           <div className="rounded-lg bg-slate-50 p-3">
-            <p className="text-[11px] font-bold text-slate-400">예상 매출</p>
-            <p className="mt-1 text-lg font-black text-slate-900">{won(summary.revenue)}</p>
+            <p className="text-[11px] font-bold text-slate-400">예상 매출 {num(ev.expectedRevenue) > 0 && <span className="text-blue-400">(직접 입력)</span>}</p>
+            <p className="mt-1 text-lg font-black text-slate-900">{won(num(ev.expectedRevenue) > 0 ? ev.expectedRevenue : summary.revenue)}</p>
+            {num(ev.expectedRevenue) > 0 && (
+              <p className="text-[10px] text-slate-400">자동계산 {won(summary.revenue)}</p>
+            )}
           </div>
           <div className="rounded-lg bg-slate-50 p-3">
             <p className="text-[11px] font-bold text-slate-400">행사 영업이익 (고정비 차감)</p>
@@ -724,6 +856,9 @@ function EventEditor({ initial, channelDefaults, onSaved, onCancel }) {
           </div>
         </div>
       </div>
+
+      {/* G. 최종 결과 — BPE 달성 (실시간) */}
+      <BpeResultPanel ev={ev} summary={summary} realtime={realtime} />
 
       {error && (
         <div className="rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-bold text-rose-500">{error}</div>
@@ -753,7 +888,20 @@ function EventEditor({ initial, channelDefaults, onSaved, onCancel }) {
 
 /* ─────────────────────────── 행사 목록 ─────────────────────────── */
 
-function EventList({ events, loading, onEdit, onDelete, onStatus }) {
+/** 목록/보드 공용 — 실시간 매출로 BPE 달성 배지 계산 */
+function bpeBadge(ev, s, rt) {
+  if (!rt) return null
+  const r = calcBpe(ev, s, num(rt.salesAmount))
+  if (r.bpePct == null) return null
+  return {
+    pct: r.bpePct,
+    done: r.bpeDone,
+    label: `BPE ${r.bpePct >= 999.5 ? '999%+' : pct1(r.bpePct)}`,
+    cls: r.bpeDone ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-amber-50 text-amber-600 border-amber-200',
+  }
+}
+
+function EventList({ events, loading, rtMap, onEdit, onDelete, onStatus }) {
   if (loading) return <p className="py-12 text-center text-sm text-slate-400">불러오는 중…</p>
   if (!events.length) {
     return (
@@ -764,7 +912,7 @@ function EventList({ events, loading, onEdit, onDelete, onStatus }) {
   }
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-      <table className="w-full min-w-[760px]">
+      <table className="w-full min-w-[840px]">
         <thead>
           <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400">
             <th className="px-3 py-2.5 text-left">행사명</th>
@@ -774,6 +922,7 @@ function EventList({ events, loading, onEdit, onDelete, onStatus }) {
             <th className="px-3 py-2.5 text-right">예상매출</th>
             <th className="px-3 py-2.5 text-right">가중평균 마진</th>
             <th className="px-3 py-2.5 text-center">판단</th>
+            <th className="px-3 py-2.5 text-center">BPE 달성</th>
             <th className="px-3 py-2.5 text-center">상태</th>
             <th className="px-2 py-2.5" />
           </tr>
@@ -782,6 +931,7 @@ function EventList({ events, loading, onEdit, onDelete, onStatus }) {
           {events.map((row) => {
             const ev = fromServer(row)
             const s = calcEvent(ev)
+            const bpe = bpeBadge(ev, s, rtMap?.[row.id])
             return (
               <tr key={row.id} className="cursor-pointer border-b border-slate-50 last:border-b-0 hover:bg-blue-50/40"
                 onClick={() => onEdit(row.id)}>
@@ -799,6 +949,13 @@ function EventList({ events, loading, onEdit, onDelete, onStatus }) {
                 <td className="px-3 py-2.5 text-center">
                   {s.revenue > 0 && (
                     <span className={`rounded border px-1.5 py-0.5 text-[11px] font-black ${verdictStyle(s.verdict)}`}>{s.verdict}</span>
+                  )}
+                </td>
+                <td className="px-3 py-2.5 text-center">
+                  {bpe ? (
+                    <span className={`rounded border px-1.5 py-0.5 text-[11px] font-black ${bpe.cls}`}>{bpe.label}</span>
+                  ) : (
+                    <span className="text-[11px] text-slate-300">-</span>
                   )}
                 </td>
                 <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
@@ -956,7 +1113,7 @@ function PromoTimelineSection({ month, events, onEdit, onMonthChange }) {
   )
 }
 
-function PromoStatusBoard({ events, onEdit }) {
+function PromoStatusBoard({ events, rtMap, onEdit }) {
   const today = parseDate(todayStr())
   const groups = useMemo(() => {
     const g = Object.fromEntries(STATUS_LIST.map((st) => [st, []]))
@@ -1028,6 +1185,14 @@ function PromoStatusBoard({ events, onEdit }) {
                             {calc.verdict} · 마진 {pct1(calc.weightedMargin)}
                           </span>
                         )}
+                        {(() => {
+                          const bpe = (st === '진행중' || st === '종료') ? bpeBadge(ev, calc, rtMap?.[row.id]) : null
+                          return bpe ? (
+                            <span className={`rounded border px-1.5 py-0.5 text-[10px] font-black ${bpe.cls}`}>
+                              {bpe.done ? '✓ ' : ''}{bpe.label}
+                            </span>
+                          ) : null
+                        })()}
                       </div>
                     </button>
                   )
@@ -1052,6 +1217,7 @@ export default function PromotionMarginPage() {
   const [channelDefaults, setChannelDefaults] = useState([])
   const [editing, setEditing] = useState(null)
   const [loadError, setLoadError] = useState('')
+  const [rtMap, setRtMap] = useState({})
 
   const load = useCallback(() => {
     setLoading(true)
@@ -1061,6 +1227,20 @@ export default function PromotionMarginPage() {
       .catch((e) => setLoadError(e?.response?.data?.message || '행사 목록을 불러오지 못했습니다.'))
       .finally(() => setLoading(false))
   }, [month, brand, channel])
+
+  // 목록/상태보드 BPE 달성률 — 실시간 매출 일괄 조회 (1분 주기 갱신)
+  useEffect(() => {
+    const ids = (events || []).map((e) => e.id).filter(Boolean)
+    const fetchBatch = () => {
+      if (!ids.length) { setRtMap({}); return }
+      getPromoRealtimeBatch(ids)
+        .then((rows) => setRtMap(Object.fromEntries((rows || []).map((r) => [r.eventId, r]))))
+        .catch(() => {})
+    }
+    const kick = setTimeout(fetchBatch, 0)
+    const timer = ids.length ? setInterval(fetchBatch, 60_000) : null
+    return () => { clearTimeout(kick); if (timer) clearInterval(timer) }
+  }, [events])
 
   useEffect(() => {
     const t = setTimeout(load, 0)
@@ -1123,12 +1303,12 @@ export default function PromotionMarginPage() {
             </select>
           </div>
           {loadError && <div className="rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-bold text-rose-500">{loadError}</div>}
-          <EventList events={events} loading={loading}
+          <EventList events={events} loading={loading} rtMap={rtMap}
             onEdit={openEdit} onDelete={remove} onStatus={changeStatus} />
           {!loading && (
             <>
               <PromoTimelineSection month={month} events={events} onEdit={openEdit} onMonthChange={setMonth} />
-              <PromoStatusBoard events={events} onEdit={openEdit} />
+              <PromoStatusBoard events={events} rtMap={rtMap} onEdit={openEdit} />
             </>
           )}
         </>

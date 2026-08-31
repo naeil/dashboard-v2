@@ -146,11 +146,14 @@ public class PromoV2Service {
                 PreparedStatement ps = con.prepareStatement("""
                         INSERT INTO promo_event
                         (company_id, brand_name, channel_name, title, start_date, end_date, promo_type, is_always_on,
-                         status, fee_rate, ad_rate, sga_rate, shipping_cost, fixed_cost, target_margin_rate, expected_orders, created_by)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                         status, fee_rate, ad_rate, sga_rate, shipping_cost, fixed_cost, target_margin_rate, expected_orders,
+                         expected_revenue, target_revenue, created_by)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                         """, Statement.RETURN_GENERATED_KEYS);
                 fillEventParams(ps, brand, channelName, title, startDate, endDate, p, fixedCost);
-                ps.setString(17, str(p.getOrDefault("createdBy", "")));
+                ps.setLong(17, num(p.get("expectedRevenue")));
+                ps.setLong(18, num(p.get("targetRevenue")));
+                ps.setString(19, str(p.getOrDefault("createdBy", "")));
                 return ps;
             }, keyHolder);
             Map<String, Object> keys = keyHolder.getKeys();
@@ -162,11 +165,14 @@ public class PromoV2Service {
                         UPDATE promo_event SET
                           company_id = company_id, brand_name = ?, channel_name = ?, title = ?, start_date = ?, end_date = ?,
                           promo_type = ?, is_always_on = ?, status = ?, fee_rate = ?, ad_rate = ?, sga_rate = ?,
-                          shipping_cost = ?, fixed_cost = ?, target_margin_rate = ?, expected_orders = ?, updated_at = NOW()
+                          shipping_cost = ?, fixed_cost = ?, target_margin_rate = ?, expected_orders = ?,
+                          expected_revenue = ?, target_revenue = ?, updated_at = NOW()
                         WHERE id = ?
                         """);
                 fillEventParamsForUpdate(ps, brand, channelName, title, startDate, endDate, p, fixedCost);
-                ps.setLong(16, finalId);
+                ps.setLong(16, num(p.get("expectedRevenue")));
+                ps.setLong(17, num(p.get("targetRevenue")));
+                ps.setLong(18, finalId);
                 return ps;
             });
             jdbcTemplate.update("DELETE FROM promo_block WHERE event_id = ?", eventId);
@@ -299,6 +305,22 @@ public class PromoV2Service {
         return Map.of(
                 "salesAmount", row.getOrDefault("sales_amount", 0),
                 "orderCount", row.getOrDefault("order_count", 0));
+    }
+
+    /** 여러 행사의 기간 내 실판매 일괄 조회 — 목록·상태보드에서 BPE 달성률 표시용 */
+    public List<Map<String, Object>> getRealtimeBatch(List<Long> ids) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Long eventId : ids) {
+            try {
+                Map<String, Object> row = getRealtimeSales(eventId);
+                out.add(Map.of("eventId", eventId,
+                        "salesAmount", row.getOrDefault("salesAmount", 0),
+                        "orderCount", row.getOrDefault("orderCount", 0)));
+            } catch (Exception e) {
+                out.add(Map.of("eventId", eventId, "salesAmount", 0, "orderCount", 0));
+            }
+        }
+        return out;
     }
 
     private static LocalDate parseDate(Object value) {

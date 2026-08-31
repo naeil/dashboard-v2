@@ -33,3 +33,7 @@ export const deletePromoEvent = (id) => api.delete(`${BASE}/events/${id}`).then(
 
 /** 행사 기간 내 매핑 상품 실시간 매출 (직연동 orders 기준) */
 export const getPromoRealtime = (id) => api.get(`${BASE}/events/${id}/realtime`).then((r) => r.data)
+
+/** 여러 행사 실시간 매출 일괄 조회 — 목록/상태보드 BPE 달성률 표시용 */
+export const getPromoRealtimeBatch = (ids) =>
+  api.get(`${BASE}/events/realtime-batch`, { params: { ids: ids.join(',') } }).then((r) => r.data)
