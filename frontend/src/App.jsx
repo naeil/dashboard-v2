@@ -66,6 +66,7 @@ import LoginPage from './pages/LoginPage'
 import ControlTowerPage from './pages/common/ControlTowerPage'
 import WeeklyBizReportPage from './pages/common/WeeklyBizReportPage'
 import TeamManagePage from './pages/common/TeamManagePage'
+import PersonalMemoPage from './pages/common/PersonalMemoPage'
 import ProductionOrdersPage from './pages/production/ProductionOrdersPage'
 import ProductionCostPage from './pages/production/ProductionCostPage'
 import StaffDashboardPage from './pages/staff/StaffDashboardPage'
@@ -79,6 +80,7 @@ const pages = {
   'control-tower': ControlTowerPage,
   'weekly-biz-report': WeeklyBizReportPage,
   'team-manage': TeamManagePage,
+  'my-memo': PersonalMemoPage,
   'production-orders': ProductionOrdersPage,
   'production-costs': ProductionCostPage,
   'platform-admin': PlatformAdminPage,

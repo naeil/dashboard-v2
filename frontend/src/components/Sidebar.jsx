@@ -66,6 +66,7 @@ export const defaultMenuSections = [
     items: [
       { id: 'platform', icon: 'apps', label: '업무 홈', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], emphasis: true },
       { id: 'control-tower', icon: 'space_dashboard', label: '종합 상황판', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'my-memo', icon: 'edit_note', label: '내 업무 메모', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'weekly-biz-report', icon: 'summarize', label: '주간 업무 보고', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'team-manage', icon: 'groups', label: '팀 관리', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'staff-dashboard', icon: 'dashboard', label: '직원 대시보드', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
