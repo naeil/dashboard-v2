@@ -128,6 +128,31 @@ public class AuthService {
                 .flatMap(this::findActiveUserById);
     }
 
+    /** 계정 권한(역할·부서) 변경 — 대표 전용. 팀 관리 접근 권한과 팀 범위가 이 값으로 결정된다. */
+    public Map<String, Object> updateUserProfile(Long id, String role, String department, AuthUser actor) {
+        requireRole(actor, UserRole.EXECUTIVE);
+        String normalizedRole = role == null ? null : role.trim().toUpperCase();
+        if (normalizedRole != null && !List.of("EMPLOYEE", "MANAGER", "EXECUTIVE").contains(normalizedRole)) {
+            throw new naeil.dashboard.common.exception.CustomException(400, "역할은 EMPLOYEE/MANAGER/EXECUTIVE 중 하나여야 합니다.");
+        }
+        String normalizedDept = department == null ? null : department.trim();
+        if (normalizedDept != null && normalizedDept.isEmpty()) normalizedDept = null;
+        StringBuilder sql = new StringBuilder("UPDATE dashboard_user SET updated_at = NOW()");
+        List<Object> params = new java.util.ArrayList<>();
+        if (normalizedRole != null) { sql.append(", role = ?"); params.add(normalizedRole); }
+        if (department != null) { sql.append(", department = ?"); params.add(normalizedDept); }
+        if (params.isEmpty()) {
+            return Map.of("success", false, "message", "변경할 값이 없습니다.");
+        }
+        sql.append(" WHERE id = ?");
+        params.add(id);
+        int updated = jdbcTemplate.update(sql.toString(), params.toArray());
+        if (updated == 0) {
+            return Map.of("success", false, "message", "대상 계정을 찾지 못했습니다.");
+        }
+        return Map.of("success", true);
+    }
+
     public List<Map<String, Object>> listUsers() {
         return jdbcTemplate.queryForList("""
                 SELECT id, username, display_name, department, position_name, role, account_scope,

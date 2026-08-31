@@ -130,6 +130,18 @@ public class AuthController {
         return ResponseEntity.ok(Map.of("message", "\uBE44\uBC00\uBC88\uD638\uAC00 \uBCC0\uACBD\uB418\uC5C8\uC2B5\uB2C8\uB2E4."));
     }
 
+    @PostMapping("/users/{id}/profile")
+    public ResponseEntity<Map<String, Object>> updateUserProfile(
+        HttpServletRequest request,
+        @PathVariable Long id,
+        @RequestBody Map<String, Object> payload
+    ) {
+        AuthUser actor = requireUser(request);
+        String role = payload.get("role") == null ? null : String.valueOf(payload.get("role"));
+        String department = payload.get("department") == null ? null : String.valueOf(payload.get("department"));
+        return ResponseEntity.ok(authService.updateUserProfile(id, role, department, actor));
+    }
+
     @PostMapping("/users/{id}/password")
     public ResponseEntity<Map<String, String>> resetPassword(
         HttpServletRequest request,

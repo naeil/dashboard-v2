@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  authApi,
   createInvite,
   deleteInvite,
   deleteUser,
@@ -307,6 +308,9 @@ export default function EmployeeManagementPage({ accessPermissions, embedded = f
   const canCreateInvite = isFeatureAllowed(parsedAccess, FEATURE_PERMISSIONS.CREATE_INVITE)
   const canResetPassword = isFeatureAllowed(parsedAccess, FEATURE_PERMISSIONS.RESET_PASSWORD)
   const canManagePermissions = isFeatureAllowed(parsedAccess, FEATURE_PERMISSIONS.MANAGE_PERMISSIONS)
+  const [profileUser, setProfileUser] = useState(null)
+  const [profileForm, setProfileForm] = useState({ role: 'EMPLOYEE', department: '' })
+  const [profileSaving, setProfileSaving] = useState(false)
   const canDeleteUsers = isFeatureAllowed(parsedAccess, FEATURE_PERMISSIONS.DELETE_USERS)
   const [users, setUsers] = useState([])
   const [invites, setInvites] = useState([])
@@ -448,6 +452,14 @@ export default function EmployeeManagementPage({ accessPermissions, embedded = f
                 searchable: false,
                 render: (row) => (
                   <div className="flex flex-wrap gap-2">
+                    {row.role !== 'EXECUTIVE' && (
+                      <button type="button"
+                        onClick={() => { setProfileUser(row); setProfileForm({ role: row.role || 'EMPLOYEE', department: row.department || '' }) }}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-200 px-2 text-xs font-black text-emerald-600 hover:bg-emerald-50">
+                        <span className="material-symbols-outlined text-sm">badge</span>
+                        역할·팀
+                      </button>
+                    )}
                     {canResetPassword && (
                       <button type="button" onClick={() => { setSelectedUser(row); setNewPassword('') }} className="inline-flex h-8 items-center gap-1 rounded-lg border border-sky-200 px-2 text-xs font-black text-sky-600 hover:bg-sky-50">
                         <span className="material-symbols-outlined text-sm">lock_reset</span>
@@ -524,6 +536,55 @@ export default function EmployeeManagementPage({ accessPermissions, embedded = f
           </Panel>
         </div>
       </section>
+      {profileUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setProfileUser(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <p className="text-sm font-black text-slate-900">역할 · 팀 변경 — {profileUser.display_name}</p>
+            <p className="mt-1 text-[12px] font-bold text-slate-400">
+              역할과 팀(부서)이 곧 권한입니다. 팀장은 [팀 관리]에서 같은 팀 실무자를 자동으로 관리합니다.
+            </p>
+            <label className="mt-4 block">
+              <span className="mb-1.5 block text-[12px] font-black text-slate-600">역할</span>
+              <select value={profileForm.role} onChange={(e) => setProfileForm((f) => ({ ...f, role: e.target.value }))}
+                className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-bold outline-none focus:border-sky-400">
+                <option value="EMPLOYEE">실무자 (EMPLOYEE)</option>
+                <option value="MANAGER">팀장 (MANAGER) — 팀 관리 사용 가능</option>
+                <option value="EXECUTIVE">대표 (EXECUTIVE) — 전체 권한</option>
+              </select>
+            </label>
+            <label className="mt-3 block">
+              <span className="mb-1.5 block text-[12px] font-black text-slate-600">팀 (부서)</span>
+              <input value={profileForm.department} onChange={(e) => setProfileForm((f) => ({ ...f, department: e.target.value }))}
+                placeholder="예: 마케팅팀" list="dept-options"
+                className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-bold outline-none focus:border-sky-400" />
+              <datalist id="dept-options">
+                {[...new Set(users.map((u) => u.department).filter(Boolean))].map((d) => <option key={d} value={d} />)}
+              </datalist>
+            </label>
+            <div className="mt-4 flex gap-2">
+              <button type="button" onClick={() => setProfileUser(null)}
+                className="h-11 flex-1 rounded-lg border border-slate-200 text-sm font-black text-slate-500 hover:bg-slate-50">취소</button>
+              <button type="button" disabled={profileSaving}
+                onClick={async () => {
+                  setProfileSaving(true)
+                  try {
+                    const res = await authApi.post(`/auth/users/${profileUser.id}/profile`, profileForm)
+                    if (res.data?.success === false) window.alert(res.data?.message || '저장 실패')
+                    setProfileUser(null)
+                    await load()
+                  } catch (err) {
+                    window.alert(err?.response?.data?.message || '저장에 실패했습니다.')
+                  } finally {
+                    setProfileSaving(false)
+                  }
+                }}
+                className="h-11 flex-1 rounded-lg bg-sky-500 text-sm font-black text-white hover:bg-sky-600 disabled:bg-slate-200 disabled:text-slate-400">
+                {profileSaving ? '저장 중...' : '저장'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
