@@ -486,6 +486,7 @@ function EventEditor({ initial, channelDefaults, onSaved, onCancel }) {
   const [ev, setEv] = useState(initial)
   const [costOpen, setCostOpen] = useState(!initial.id)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [customChannel, setCustomChannel] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [realtime, setRealtime] = useState(null)
@@ -571,10 +572,32 @@ function EventEditor({ initial, channelDefaults, onSaved, onCancel }) {
             </select>
           </Field>
           <Field label="채널">
-            <select className={inputCls} value={ev.channelName} onChange={(e) => onChannelChange(e.target.value)}>
-              {channelDefaults.map((c) => <option key={c.channel_name}>{c.channel_name}</option>)}
-              {!channelDefaults.some((c) => c.channel_name === ev.channelName) && ev.channelName && <option>{ev.channelName}</option>}
-            </select>
+            {customChannel ? (
+              <div className="flex items-center gap-1">
+                <input
+                  autoFocus
+                  className={`${inputCls} min-w-0 flex-1`}
+                  placeholder="채널명 직접 입력 (예: 올웨이즈)"
+                  value={ev.channelName}
+                  onChange={(e) => set({ channelName: e.target.value })}
+                />
+                <button type="button" title="목록에서 선택"
+                  onClick={() => { setCustomChannel(false); if (!ev.channelName.trim()) onChannelChange(channelDefaults[0]?.channel_name || '') }}
+                  className="flex h-9 shrink-0 items-center rounded-lg border border-slate-200 px-2 text-[11px] font-bold text-slate-500 hover:bg-slate-50">
+                  목록
+                </button>
+              </div>
+            ) : (
+              <select className={inputCls} value={ev.channelName}
+                onChange={(e) => {
+                  if (e.target.value === '__custom__') { setCustomChannel(true); set({ channelName: '' }) }
+                  else onChannelChange(e.target.value)
+                }}>
+                {channelDefaults.map((c) => <option key={c.channel_name}>{c.channel_name}</option>)}
+                {!channelDefaults.some((c) => c.channel_name === ev.channelName) && ev.channelName && <option>{ev.channelName}</option>}
+                <option value="__custom__">+ 직접 입력…</option>
+              </select>
+            )}
           </Field>
           <Field label="행사명" className="col-span-2">
             <input className={inputCls} placeholder="예) 9월 슈퍼세일 하이프리 기획전"
