@@ -161,23 +161,54 @@ public class AiReviewService {
         return result;
     }
 
+    /** 실데이터 기반 인사이트 — 하드코딩 문구 대신 실제 리뷰·분석 결과에서 계산 */
     public List<Map<String, Object>> getInsights() {
         List<Map<String, Object>> insights = new ArrayList<>();
-        Map<String, Object> i1 = new HashMap<>();
-        i1.put("brand", "하이프리");
-        i1.put("text", "당근효소 고객은 변비보다 붓기 개선 목적으로 구매하는 비중이 증가하고 있습니다.");
-        i1.put("date", LocalDate.now().toString());
-        insights.add(i1);
-        Map<String, Object> i2 = new HashMap<>();
-        i2.put("brand", "하이프리");
-        i2.put("text", "단백깡 리뷰에서 맥주안주 언급량이 증가하고 있습니다.");
-        i2.put("date", LocalDate.now().toString());
-        insights.add(i2);
-        Map<String, Object> i3 = new HashMap<>();
-        i3.put("brand", "국민한상");
-        i3.put("text", "국민한상 제품군은 배송 만족도가 전월 대비 상승했습니다.");
-        i3.put("date", LocalDate.now().toString());
-        insights.add(i3);
+        List<AiReview> all = reviewRepository.findAllOrderByReviewDateDesc();
+        if (all.isEmpty()) return insights;
+
+        Map<String, List<AiReview>> byBrand = all.stream()
+                .collect(Collectors.groupingBy(r -> r.getBrand() == null ? "기타" : r.getBrand()));
+        for (Map.Entry<String, List<AiReview>> e : byBrand.entrySet()) {
+            List<AiReview> reviews = e.getValue();
+            double avg = reviews.stream().mapToInt(AiReview::getRating).average().orElse(0);
+            long negative = reviews.stream().filter(r -> r.getRating() <= 2).count();
+            Map<String, Long> keywordCount = new HashMap<>();
+            for (AiReview r : reviews) {
+                analysisRepository.findByReviewId(r.getId()).ifPresent(a -> {
+                    if (a.getKeywords() != null) {
+                        for (String k : a.getKeywords().split(",")) {
+                            String key = k.trim();
+                            if (!key.isEmpty()) keywordCount.merge(key, 1L, Long::sum);
+                        }
+                    }
+                });
+            }
+            String topKeywords = keywordCount.entrySet().stream()
+                    .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                    .limit(3).map(Map.Entry::getKey).collect(Collectors.joining(", "));
+            StringBuilder text = new StringBuilder();
+            text.append("리뷰 ").append(reviews.size()).append("건 · 평균 ")
+                    .append(Math.round(avg * 10.0) / 10.0).append("점");
+            if (negative > 0) {
+                text.append(" · 부정(1~2점) ").append(negative).append("건 (")
+                        .append(Math.round(negative * 100.0 / reviews.size())).append("%)");
+            }
+            if (!topKeywords.isEmpty()) text.append(" · 주요 키워드: ").append(topKeywords);
+            Map<String, Object> insight = new HashMap<>();
+            insight.put("brand", e.getKey());
+            insight.put("text", text.toString());
+            insight.put("date", LocalDate.now().toString());
+            insights.add(insight);
+        }
+        long urgent = analysisRepository.countByIsUrgentTrue();
+        if (urgent > 0) {
+            Map<String, Object> alert = new HashMap<>();
+            alert.put("brand", "전체");
+            alert.put("text", "긴급 키워드(환불·불량·상함 등) 포함 리뷰 " + urgent + "건 — VOC 센터에서 우선 확인이 필요합니다.");
+            alert.put("date", LocalDate.now().toString());
+            insights.add(0, alert);
+        }
         return insights;
     }
 }

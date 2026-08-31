@@ -199,6 +199,8 @@ export default function AIReviewCenterPage() {
   const [loading, setLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [lastSync, setLastSync] = useState(null)
+  const [uploadChannel, setUploadChannel] = useState('하이프리 스마트스토어')
+  const [uploadResult, setUploadResult] = useState(null)
   const [alerts, setAlerts] = useState([])
 
   const loadDashboard = useCallback(async () => {
@@ -231,8 +233,8 @@ export default function AIReviewCenterPage() {
     try {
       const res = await api.get('/reviews/voc')
       if (res.data?.data) setVocData(res.data.data)
-    } catch (e) {
-      setVocData({ brandStats: { '하이프리': 45, '국민한상': 32 } })
+    } catch {
+      setVocData({ brandStats: {} })
     }
   }, [])
 
@@ -240,24 +242,26 @@ export default function AIReviewCenterPage() {
     try {
       const res = await api.get('/reviews/insights')
       if (res.data?.data) setInsights(res.data.data)
-    } catch (e) {
-      setInsights([
-        { brand: '하이프리', text: '당근효소 고객은 변비보다 붓기 개선 목적으로 구매하는 비중이 증가하고 있습니다.', date: new Date().toLocaleDateString() },
-        { brand: '하이프리', text: '단백깡 리뷰에서 맥주안주 언급량이 증가하고 있습니다.', date: new Date().toLocaleDateString() },
-        { brand: '국민한상', text: '국민한상 제품군은 배송 만족도가 전월 대비 상승했습니다.', date: new Date().toLocaleDateString() },
-      ])
+    } catch {
+      setInsights([])
     }
   }, [])
 
-  const handleSync = async (channel) => {
+  const handleUpload = async (file) => {
+    if (!file) return
     setSyncing(true)
+    setUploadResult(null)
     try {
-      const body = channel !== 'all' ? { channel: CHANNELS.find(c => c.id === channel)?.name } : {}
-      await api.post('/reviews/sync', body)
+      const form = new FormData()
+      form.append('file', file)
+      form.append('channel', uploadChannel)
+      const res = await api.post('/reviews/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const data = res.data?.data || {}
+      setUploadResult(data)
       setLastSync(new Date().toLocaleTimeString())
-      await loadDashboard()
+      await Promise.all([loadDashboard(), loadVoc(), loadInsights()])
     } catch (e) {
-      console.error('Sync failed', e)
+      setUploadResult({ success: false, message: e?.response?.data?.message || '업로드에 실패했습니다.' })
     } finally {
       setSyncing(false)
     }
@@ -266,8 +270,6 @@ export default function AIReviewCenterPage() {
   useEffect(() => {
     setLoading(true)
     Promise.all([loadDashboard(), loadVoc(), loadInsights()]).finally(() => setLoading(false))
-    const interval = setInterval(() => { handleSync('all') }, 10 * 60 * 1000)
-    return () => clearInterval(interval)
   }, [])
 
   const filteredReviews = activeChannel === 'all'
@@ -289,15 +291,29 @@ export default function AIReviewCenterPage() {
           <h1 className="text-2xl font-black text-slate-900">AI 고객 인텔리전스 센터</h1>
           <p className="text-sm text-slate-500 mt-0.5">하이프리 · 국민한상 리뷰 자동수집 · AI 분석 · VOC 센터</p>
         </div>
-        <div className="flex items-center gap-3">
-          {lastSync && <span className="text-xs text-slate-400">최근 동기화: {lastSync}</span>}
-          <button type="button" onClick={() => handleSync(activeChannel)} disabled={syncing}
-            className="flex items-center gap-2 rounded-lg bg-sky-500 px-4 py-2 text-sm font-black text-white shadow-sm hover:bg-sky-600 disabled:opacity-60 transition-colors">
-            <span className={`material-symbols-outlined text-base ${syncing ? 'animate-spin' : ''}`}>sync</span>
-            {syncing ? '수집 중...' : '리뷰 수집'}
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {lastSync && <span className="text-xs text-slate-400">최근 업로드: {lastSync}</span>}
+          <select value={uploadChannel} onChange={(e) => setUploadChannel(e.target.value)}
+            className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 focus:border-sky-400 focus:outline-none">
+            <option>하이프리 스마트스토어</option>
+            <option>국민한상 스마트스토어</option>
+            <option>쿠팡</option>
+            <option>기타 채널</option>
+          </select>
+          <label className={`flex cursor-pointer items-center gap-2 rounded-lg bg-sky-500 px-4 py-2 text-sm font-black text-white shadow-sm transition-colors hover:bg-sky-600 ${syncing ? 'pointer-events-none opacity-60' : ''}`}>
+            <span className={`material-symbols-outlined text-base ${syncing ? 'animate-spin' : ''}`}>{syncing ? 'sync' : 'upload_file'}</span>
+            {syncing ? '업로드 중...' : '리뷰 엑셀 업로드'}
+            <input type="file" accept=".xlsx,.xls,.csv" className="hidden" disabled={syncing}
+              onChange={(e) => { handleUpload(e.target.files?.[0]); e.target.value = '' }} />
+          </label>
         </div>
       </div>
+
+      {uploadResult && (
+        <div className={`rounded-lg border px-4 py-3 text-sm font-bold ${uploadResult.success ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-600'}`}>
+          {uploadResult.success ? `[${uploadResult.channel}] ${uploadResult.message}` : (uploadResult.message || '업로드에 실패했습니다.')}
+        </div>
+      )}
 
       {mockReviews.length > 0 && mockReviews.length === reviews.length && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 flex items-start gap-3">
@@ -305,7 +321,7 @@ export default function AIReviewCenterPage() {
           <div className="flex-1">
             <p className="text-sm font-black text-amber-800">현재 리뷰 데이터가 실제 후기가 아닌 테스트 데이터입니다</p>
             <p className="text-xs text-amber-700 mt-0.5">
-              총 {mockReviews.length}건의 테스트 데이터가 표시되고 있습니다. 실제 스마트스토어 리뷰를 수집하려면 리뷰 수집 버튼을 클릭하거나 스마트스토어 API 연동 설정을 확인하세요.
+              테스트 데이터 {mockReviews.length}건이 남아 있습니다. 네이버·쿠팡은 리뷰 API를 제공하지 않으므로, 판매자센터에서 내려받은 리뷰 엑셀을 위의 [리뷰 엑셀 업로드]로 올리면 실제 후기로 교체됩니다.
             </p>
             <div className="mt-2 flex gap-2 flex-wrap">
               {CHANNELS.map(ch => (
@@ -394,11 +410,8 @@ export default function AIReviewCenterPage() {
           ) : filteredReviews.length === 0 ? (
             <div className="rounded-xl border border-slate-200 bg-white p-12 text-center">
               <span className="material-symbols-outlined text-4xl text-slate-300">rate_review</span>
-              <p className="mt-3 text-sm font-bold text-slate-500">수집된 리뷰가 없습니다</p>
-              <button type="button" onClick={() => handleSync(activeChannel)}
-                className="mt-4 rounded-lg bg-sky-500 px-4 py-2 text-sm font-bold text-white hover:bg-sky-600">
-                지금 수집하기
-              </button>
+              <p className="mt-3 text-sm font-bold text-slate-500">등록된 실제 후기가 없습니다</p>
+              <p className="mt-2 text-xs text-slate-400">스마트스토어·쿠팡 판매자센터에서 리뷰 엑셀을 내려받아<br />우측 상단 [리뷰 엑셀 업로드]로 올리면 AI가 자동 분석합니다.</p>
             </div>
           ) : (
             <>

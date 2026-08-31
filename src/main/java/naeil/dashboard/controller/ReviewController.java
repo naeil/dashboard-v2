@@ -3,12 +3,11 @@ package naeil.dashboard.controller;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import naeil.dashboard.common.ApiResponse;
-import naeil.dashboard.entity.AiReview;
-import naeil.dashboard.entity.AiReviewAnalysis;
 import naeil.dashboard.service.AiReviewService;
+import naeil.dashboard.service.ReviewUploadService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import java.time.LocalDateTime;
+import org.springframework.web.multipart.MultipartFile;
 import java.util.*;
 
 @Slf4j
@@ -18,31 +17,34 @@ import java.util.*;
 public class ReviewController {
 
     private final AiReviewService reviewService;
+    private final ReviewUploadService reviewUploadService;
 
-    @PostMapping("/sync")
-    public ResponseEntity<?> syncReviews(@RequestBody(required = false) Map<String, Object> body) {
+    /**
+     * 실제 후기 업로드 — 스마트스토어/쿠팡 판매자센터에서 내려받은 리뷰 엑셀(.xlsx)·CSV.
+     * 네이버·쿠팡 모두 공식 리뷰 조회 API가 없어(공식 확인) 업로드 방식으로 실데이터를 수집한다.
+     */
+    @PostMapping("/upload")
+    public ResponseEntity<?> uploadReviews(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(required = false) String channel
+    ) {
         try {
-            String channel = body != null ? (String) body.get("channel") : null;
-            List<AiReview> mockReviews = generateMockReviews(channel);
-            int saved = 0;
-            int analyzed = 0;
-            for (AiReview review : mockReviews) {
-                AiReview saved_review = reviewService.saveReviewIfNotExists(review);
-                if (saved_review != null) {
-                    saved++;
-                    AiReviewAnalysis analysis = reviewService.analyzeReview(saved_review);
-                    if (analysis != null) analyzed++;
-                }
-            }
-            Map<String, Object> result = new HashMap<>();
-            result.put("synced", saved);
-            result.put("analyzed", analyzed);
-            result.put("channel", channel != null ? channel : "all");
+            Map<String, Object> result = reviewUploadService.importFile(
+                    file.getBytes(), file.getOriginalFilename(), channel);
             return ResponseEntity.ok(ApiResponse.success(result));
         } catch (Exception e) {
-            log.error("Review sync failed", e);
+            log.error("Review upload failed", e);
             return ResponseEntity.status(500).body(ApiResponse.error(e.getMessage()));
         }
+    }
+
+    /** (구) 목업 동기화 — 목업 생성 제거. 자동 수집 API가 없음을 안내한다. */
+    @PostMapping("/sync")
+    public ResponseEntity<?> syncReviews(@RequestBody(required = false) Map<String, Object> body) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("synced", 0);
+        result.put("message", "네이버·쿠팡은 공식 리뷰 API를 제공하지 않아 자동 수집이 불가합니다. [리뷰 엑셀 업로드]를 사용하세요.");
+        return ResponseEntity.ok(ApiResponse.success(result));
     }
 
     @PostMapping("/analyze")
@@ -101,47 +103,4 @@ public class ReviewController {
             return ResponseEntity.status(500).body(ApiResponse.error(e.getMessage()));
         }
     }
-
-    private List<AiReview> generateMockReviews(String channel) {
-        List<AiReview> reviews = new ArrayList<>();
-        String[] channels = channel != null ? new String[]{channel} : new String[]{"하이프리 스마트스토어", "국민한상 스마트스토어"};
-        Random rand = new Random();
-        for (String ch : channels) {
-            boolean isHifree = ch.contains("하이프리");
-            String brand = isHifree ? "하이프리" : "국민한상";
-            String[] products = isHifree
-                ? new String[]{"당근효소", "단백깡"}
-                : new String[]{"국민한상 닭다리살", "국민한상 돈까스"};
-            String[] reviews_content = isHifree
-                ? new String[]{
-                    "변비에 정말 효과적이에요. 재구매 확정!",
-                    "붓기가 많이 빠졌어요. 만족합니다.",
-                    "맥주안주로 정말 최고네요! 맛있어요",
-                    "배송이 빨랐고 맛도 좋아요."
-                }
-                : new String[]{
-                    "양이 많고 가격도 합리적이에요!",
-                    "배송이 빠르고 품질이 좋아요. 재구매할게요.",
-                    "맛있어요. 양도 많고 만족합니다.",
-                    "가격 대비 품질이 정말 좋아요."
-                };
-            for (int i = 0; i < 2; i++) {
-                String uniqueId = "MOCK_" + ch + "_" + System.currentTimeMillis() + "_" + rand.nextInt(10000);
-                AiReview review = AiReview.builder()
-                    .reviewId(uniqueId)
-                    .channel(ch)
-                    .brand(brand)
-                    .productName(products[rand.nextInt(products.length)])
-                    .optionName("기본")
-                    .rating(3 + rand.nextInt(3))
-                    .reviewContent(reviews_content[rand.nextInt(reviews_content.length)])
-                    .reviewDate(LocalDateTime.now().minusHours(rand.nextInt(24)))
-                    .customerName("고객**")
-                    .orderNumber("ORD_" + rand.nextInt(999999))
-                    .build();
-                reviews.add(review);
-            }
-        }
-        return reviews;
-    }
-        }
+}
