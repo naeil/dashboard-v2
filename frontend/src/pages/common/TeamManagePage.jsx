@@ -99,67 +99,115 @@ function ReportItem({ report, onClose }) {
   )
 }
 
-/* ─────────────── 팀원 카드 ─────────────── */
+/* ─────────────── 팀원 행 (좌측 리스트) ─────────────── */
 
-function MemberCard({ member, weekStart, reports }) {
-  const [openReportId, setOpenReportId] = useState(null)
-  const myReports = reports.filter((r) => String(r.username || '').toLowerCase() === String(member.username).toLowerCase()).slice(0, 5)
-  const delayed = Number(member.delayedTasks || 0)
-
+function WeekDots({ member, weekStart, size = 'sm' }) {
+  const todayStr = new Date().toISOString().slice(0, 10)
   return (
-    <div className={`rounded-xl border bg-white p-4 ${member.todaySubmitted ? 'border-slate-200' : 'border-amber-200'}`}>
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-black text-slate-600">
+    <div className={`flex items-center ${size === 'lg' ? 'gap-1.5' : 'gap-1'}`}>
+      {DOW_LABEL.map((label, i) => {
+        const date = addDays(weekStart, i)
+        const done = (member.weekDates || []).includes(date)
+        const today = todayStr === date
+        const future = date > todayStr
+        const cls = done ? 'bg-sky-500 text-white'
+          : future ? 'bg-slate-100 text-slate-300'
+            : today ? 'border border-amber-300 bg-amber-50 text-amber-600'
+              : 'bg-slate-100 text-slate-400'
+        return size === 'lg' ? (
+          <div key={label} title={`${date} ${done ? '제출' : future ? '' : '미제출'}`}
+            className={`flex h-9 w-12 flex-col items-center justify-center rounded-lg text-[11px] font-black ${cls}`}>
+            {label}
+          </div>
+        ) : (
+          <span key={label} title={`${label} ${done ? '제출' : future ? '' : '미제출'}`}
+            className={`flex h-5 w-5 items-center justify-center rounded text-[9px] font-black ${cls}`}>
+            {label}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+function MemberRow({ member, weekStart, selected, onSelect }) {
+  const delayed = Number(member.delayedTasks || 0)
+  return (
+    <button type="button" onClick={onSelect}
+      className={`flex w-full items-center gap-2.5 border-b border-slate-50 px-3 py-2.5 text-left transition-colors last:border-b-0 ${
+        selected ? 'bg-sky-50' : 'hover:bg-slate-50'}`}>
+      <span className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-black ${
+        selected ? 'bg-sky-500 text-white' : 'bg-slate-100 text-slate-600'}`}>
+        {String(member.display_name || '?').slice(0, 1)}
+        {!member.todaySubmitted && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-amber-400" />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className="truncate text-[13px] font-black text-slate-900">{member.display_name}</span>
+          {member.role === 'MANAGER' && <span className="shrink-0 rounded bg-indigo-50 px-1 py-0.5 text-[9px] font-black text-indigo-600">팀장</span>}
+          {member.isSelf && <span className="shrink-0 text-[10px] font-bold text-slate-400">나</span>}
+        </span>
+        <span className="block truncate text-[11px] font-bold text-slate-400">{member.department}</span>
+      </span>
+      <span className="flex shrink-0 flex-col items-end gap-1">
+        <WeekDots member={member} weekStart={weekStart} size="sm" />
+        <span className="flex items-center gap-1.5 text-[10px] font-bold">
+          <span className="text-slate-400">진행 {member.openTasks}</span>
+          {delayed > 0 && <span className="rounded bg-rose-50 px-1 py-0.5 font-black text-rose-500">지연 {delayed}</span>}
+        </span>
+      </span>
+    </button>
+  )
+}
+
+/* ─────────────── 우측 상세 패널 ─────────────── */
+
+function MemberDetail({ member, weekStart, reports }) {
+  const [openReportId, setOpenReportId] = useState(null)
+  if (!member) {
+    return (
+      <div className="flex h-full min-h-[300px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 text-sm font-bold text-slate-400">
+        왼쪽에서 팀원을 선택하세요
+      </div>
+    )
+  }
+  const myReports = reports.filter((r) => String(r.username || '').toLowerCase() === String(member.username).toLowerCase()).slice(0, 10)
+  const delayed = Number(member.delayedTasks || 0)
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-sky-500 text-lg font-black text-white">
             {String(member.display_name || '?').slice(0, 1)}
           </span>
           <div>
-            <p className="text-[14px] font-black text-slate-900">
+            <p className="text-[16px] font-black text-slate-900">
               {member.display_name}
               {member.role === 'MANAGER' && <span className="ml-1.5 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-black text-indigo-600">팀장</span>}
-              {member.isSelf && <span className="ml-1.5 text-[10px] font-bold text-slate-400">(나)</span>}
             </p>
-            <p className="text-[11px] font-bold text-slate-400">{member.department}</p>
+            <p className="text-[12px] font-bold text-slate-400">{member.department}</p>
           </div>
         </div>
-        <div className="text-right">
-          <p className="text-[11px] font-bold text-slate-400">진행중 {member.openTasks}건</p>
+        <div className="flex items-center gap-2">
+          <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] font-black text-slate-600">진행중 {member.openTasks}건</span>
           {delayed > 0
-            ? <p className="text-[11px] font-black text-rose-500">지연 {delayed}건</p>
-            : <p className="text-[11px] font-bold text-emerald-500">지연 없음</p>}
+            ? <span className="rounded-lg bg-rose-50 px-2.5 py-1.5 text-[11px] font-black text-rose-500">지연 {delayed}건</span>
+            : <span className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[11px] font-black text-emerald-600">지연 없음</span>}
+          {!member.todaySubmitted && <span className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] font-black text-amber-600">오늘 보고 미제출</span>}
         </div>
       </div>
 
-      {/* 이번 주 제출 도트 (월~금) */}
-      <div className="mt-3 flex items-center gap-1.5">
-        {DOW_LABEL.map((label, i) => {
-          const date = addDays(weekStart, i)
-          const done = (member.weekDates || []).includes(date)
-          const today = new Date().toISOString().slice(0, 10) === date
-          const future = date > new Date().toISOString().slice(0, 10)
-          return (
-            <div key={label} title={`${date} ${done ? '제출' : future ? '' : '미제출'}`}
-              className={`flex h-8 flex-1 flex-col items-center justify-center rounded-lg text-[10px] font-black ${
-                done ? 'bg-sky-500 text-white'
-                  : future ? 'bg-slate-50 text-slate-300'
-                    : today ? 'border border-amber-300 bg-amber-50 text-amber-600'
-                      : 'bg-slate-100 text-slate-400'}`}>
-              {label}
-            </div>
-          )
-        })}
+      <div className="mt-3">
+        <WeekDots member={member} weekStart={weekStart} size="lg" />
       </div>
-      {!member.todaySubmitted && (
-        <p className="mt-1.5 text-[11px] font-black text-amber-600">오늘 보고 미제출</p>
-      )}
 
-      {/* 최근 보고 */}
-      <div className="mt-3 space-y-1">
-        {myReports.length === 0 && <p className="text-[12px] font-bold text-slate-300">최근 일일보고 없음</p>}
+      <p className="mt-4 text-[12px] font-black text-slate-500">최근 일일보고</p>
+      <div className="mt-1.5 space-y-1">
+        {myReports.length === 0 && <p className="rounded-lg bg-slate-50 px-3 py-3 text-[12px] font-bold text-slate-400">최근 일일보고가 없습니다.</p>}
         {myReports.map((r) => (
           <div key={r.id}>
             <button type="button" onClick={() => setOpenReportId(openReportId === r.id ? null : r.id)}
-              className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-[12.5px] font-bold hover:bg-slate-50 ${openReportId === r.id ? 'bg-slate-50 text-slate-900' : 'text-slate-600'}`}>
+              className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-[13px] font-bold hover:bg-slate-50 ${openReportId === r.id ? 'bg-slate-50 text-slate-900' : 'text-slate-600'}`}>
               <span className="truncate">[{fmtDate(r.report_date).slice(5)}] {r.title}</span>
               <span className="material-symbols-outlined shrink-0 text-[16px] text-slate-300">
                 {openReportId === r.id ? 'expand_less' : 'expand_more'}
@@ -180,12 +228,21 @@ export default function TeamManagePage({ role = 'EMPLOYEE' }) {
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [selectedUsername, setSelectedUsername] = useState(null)
 
   const load = useCallback(() => {
     setLoading(true)
     setError('')
     Promise.all([
-      api.get('/team/overview').then((res) => setOverview(res.data)),
+      api.get('/team/overview').then((res) => {
+        setOverview(res.data)
+        const ms = res.data?.members || []
+        setSelectedUsername((prev) => {
+          if (prev && ms.some((m) => m.username === prev)) return prev
+          const urgent = ms.find((m) => !m.todaySubmitted) || ms[0]
+          return urgent ? urgent.username : null
+        })
+      }),
       getStaffWorkReports({ reportType: 'DAILY' }).then((res) => setReports(res.data || [])),
     ]).catch((e) => {
       setError(e?.response?.data?.message || '팀 현황을 불러오지 못했습니다.')
@@ -254,18 +311,33 @@ export default function TeamManagePage({ role = 'EMPLOYEE' }) {
           표시할 팀원이 없습니다. 계정 관리에서 팀원의 부서를 설정해 주세요.
         </div>
       ) : (
-        Object.entries(byDept).map(([dept, deptMembers]) => (
-          <div key={dept}>
-            {Object.keys(byDept).length > 1 && (
-              <p className="mb-2 mt-1 text-[13px] font-black text-slate-500">{dept} <span className="font-bold text-slate-300">({deptMembers.length}명)</span></p>
-            )}
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {deptMembers.map((m) => (
-                <MemberCard key={m.username} member={m} weekStart={overview.weekStart} reports={reports} />
-              ))}
-            </div>
+        <div className="grid items-start gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
+          {/* 좌측: 팀원 리스트 */}
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            {Object.entries(byDept).map(([dept, deptMembers]) => (
+              <div key={dept}>
+                {Object.keys(byDept).length > 1 && (
+                  <p className="border-b border-slate-100 bg-slate-50/80 px-3 py-1.5 text-[11px] font-black text-slate-400">
+                    {dept} <span className="font-bold text-slate-300">({deptMembers.length})</span>
+                  </p>
+                )}
+                {deptMembers.map((m) => (
+                  <MemberRow key={m.username} member={m} weekStart={overview.weekStart}
+                    selected={selectedUsername === m.username}
+                    onSelect={() => setSelectedUsername(m.username)} />
+                ))}
+              </div>
+            ))}
           </div>
-        ))
+
+          {/* 우측: 선택 팀원 상세 */}
+          <MemberDetail
+            key={selectedUsername || 'none'}
+            member={members.find((m) => m.username === selectedUsername)}
+            weekStart={overview.weekStart}
+            reports={reports}
+          />
+        </div>
       )}
     </div>
   )
