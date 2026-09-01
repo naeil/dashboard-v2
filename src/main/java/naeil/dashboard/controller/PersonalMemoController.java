@@ -150,6 +150,21 @@ public class PersonalMemoController {
     @PutMapping("/gcal-link")
     public ResponseEntity<Map<String, Object>> saveGcalLink(@RequestBody Map<String, Object> p, HttpServletRequest request) {
         AuthUser user = user(request);
+        // 대표(EXECUTIVE)는 username 지정으로 다른 계정의 캘린더도 등록 가능 (일괄 셋업용)
+        String targetUsername = user.username();
+        String requested = p.get("username") == null ? null : String.valueOf(p.get("username")).trim();
+        if (requested != null && !requested.isEmpty() && !requested.equalsIgnoreCase(user.username())) {
+            if (!"EXECUTIVE".equals(user.role())) {
+                return ResponseEntity.ok(Map.of("success", false, "message", "다른 사용자의 캘린더는 대표만 등록할 수 있습니다."));
+            }
+            Integer exists = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM dashboard_user WHERE company_id = ? AND LOWER(username) = LOWER(?)",
+                    Integer.class, COMPANY, requested);
+            if (exists == null || exists == 0) {
+                return ResponseEntity.ok(Map.of("success", false, "message", "존재하지 않는 계정입니다: " + requested));
+            }
+            targetUsername = requested;
+        }
         String url = p.get("icsUrl") == null ? null : String.valueOf(p.get("icsUrl")).trim();
         if (!naeil.dashboard.service.GoogleCalendarService.isValidIcsUrl(url)) {
             return ResponseEntity.ok(Map.of("success", false,
@@ -166,8 +181,8 @@ public class PersonalMemoController {
                 INSERT INTO personal_gcal_link (company_id, username, ics_url, updated_at)
                 VALUES (?, ?, ?, NOW())
                 ON CONFLICT (company_id, username) DO UPDATE SET ics_url = EXCLUDED.ics_url, updated_at = NOW()
-                """, COMPANY, user.username(), url);
-        return ResponseEntity.ok(Map.of("success", true));
+                """, COMPANY, targetUsername, url);
+        return ResponseEntity.ok(Map.of("success", true, "username", targetUsername));
     }
 
     @DeleteMapping("/gcal-link")
