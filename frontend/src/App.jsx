@@ -51,6 +51,7 @@ import AIReviewCenterPage from './pages/executive/AIReviewCenterPage'
 import CSAutoReplyPage from './pages/executive/CSAutoReplyPage'
 import PaymentApprovalPage from './pages/executive/PaymentApprovalPage'
 import PaymentRequestPage from './pages/executive/PaymentRequestPage'
+import EApprovalPage from './pages/executive/EApprovalPage'
 import PlatformOverviewPage from './pages/executive/PlatformOverviewPage'
 import ProductForecastPage from './pages/executive/ProductForecastPage'
 import ProductMovementPage from './pages/executive/ProductMovementPage'
@@ -114,6 +115,7 @@ const pages = {
   'employee-performance': EmployeePerformancePage,
   'payment-request': PaymentRequestPage,
   'payment-approval': PaymentApprovalPage,
+  'e-approval': EApprovalPage,
   'work-input': WorkInputPage,
   'work-management': WorkManagementPage,
   inventory: InventoryRiskPage,

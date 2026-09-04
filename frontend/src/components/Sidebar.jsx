@@ -31,7 +31,7 @@ export const defaultMenuSections = [
     items: [
       { id: 'cash-position', icon: 'sync_alt', label: '자금 현황 (한눈에)', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'cash-flow', icon: 'account_balance_wallet', label: '현금 흐름', roles: ['EXECUTIVE'] },
-      { id: 'payment-approval', icon: 'approval', label: '입출금 결재 관리', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'e-approval', icon: 'approval', label: '지출결의 결재함', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'debts', icon: 'credit_score', label: '대출 / 부채', roles: ['EXECUTIVE'] },
       { id: 'operating-expenses', icon: 'receipt_long', label: '운영 비용', roles: ['EXECUTIVE'] },
       { id: 'support-programs', icon: 'volunteer_activism', label: '지원사업 현황', roles: ['EXECUTIVE'] },
@@ -76,7 +76,7 @@ export const defaultMenuSections = [
       { id: 'brand-health', icon: 'storefront', label: '브랜드 사업 현황', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'field-data-input', icon: 'edit_note', label: '실무 입력 (매출·광고비·재고·비용)', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'work-input', icon: 'edit_note', label: '내 업무 입력', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], personal: true },
-      { id: 'payment-request', icon: 'request_page', label: '지출결의 / 기안서', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'e-approval', icon: 'approval', label: '지출결의 (전자결재)', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
     ],
   },
   {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getExecutiveSummary, getExecutiveWorkTasks } from '../api/executiveApi'
+import NotificationBell from './NotificationBell'
 
 const normalizeRisk = (value) => {
   if (['위험', '주의', '정상', '확인중'].includes(value)) return value
@@ -57,7 +58,7 @@ const isMentioned = (task, names = []) => {
   return keys.some((key) => mentions.some((mention) => mention === key || mention.startsWith(key)))
 }
 
-export default function ExecutiveHeader({ username, displayName }) {
+export default function ExecutiveHeader({ username, displayName, onNavigate }) {
   const [summary, setSummary] = useState(null)
   const [mentionCount, setMentionCount] = useState(0)
   const today = new Intl.DateTimeFormat('ko-KR', {
@@ -119,6 +120,7 @@ export default function ExecutiveHeader({ username, displayName }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <NotificationBell onNavigate={onNavigate} />
           <HeaderStatusCard label="알림" value={alertValue} tone={alertTone} icon={mentionCount > 0 ? 'alternate_email' : 'notifications'} />
           <HeaderStatusCard label="현금 위험 상태" value={risk} tone={riskTone} icon="account_balance_wallet" />
           <HeaderStatusCard label="긴급 이슈" value={urgentIssueCount ? '확인 필요' : '없음'} tone={urgentIssueCount > 0 ? 'rose' : 'emerald'} icon="priority_high" />
