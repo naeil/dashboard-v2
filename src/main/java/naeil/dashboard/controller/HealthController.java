@@ -14,6 +14,7 @@ public class HealthController {
         return ResponseEntity.ok(Map.of(
                 "status", "ok",
                 "service", "dashboard",
+                "version", "hr-v1",
                 "timestamp", Instant.now().toString()
         ));
     }
