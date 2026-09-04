@@ -9,6 +9,7 @@ import BrandHealthPage from './pages/executive/BrandHealthPage'
 import FieldDataInputPage from './pages/executive/FieldDataInputPage'
 import PersonalTaskBoardPage from './pages/executive/PersonalTaskBoardPage'
 import CashFlowPage from './pages/executive/CashFlowPage'
+import CashPositionPage from './pages/executive/CashPositionPage'
 import CfoDashboardPage from './pages/executive/cfo/CfoDashboardPage'
 import ChannelCredentialPage from './pages/executive/ChannelCredentialPage'
 import ChannelOperationsPage from './pages/executive/ChannelOperationsPage'
@@ -93,6 +94,7 @@ const pages = {
   'ceo-dashboard': CEOStrategicDashboard,
   'cfo-dashboard': CfoDashboardPage,
   summary: ExecutiveSummary,
+  'cash-position': CashPositionPage,
   'cash-flow': CashFlowPage,
   'channel-credentials': ChannelCredentialPage,
   'customer-db': CustomerDatabasePage,

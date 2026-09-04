@@ -135,6 +135,15 @@ public class ExecutiveDashboardController {
         return ResponseEntity.ok(executiveDashboardService.approvePaymentRequest(id));
     }
 
+    /** 통합 자금현황 — 한 달 지출·입금·순액 한 화면 */
+    @GetMapping("/cash-position")
+    public ResponseEntity<Map<String, Object>> getCashPosition(
+            @RequestParam(defaultValue = "1") Long companyId,
+            @RequestParam(required = false) String month
+    ) {
+        return ResponseEntity.ok(executiveDashboardService.getCashPosition(companyId, month));
+    }
+
     @GetMapping("/channel-sales")
     public ResponseEntity<List<Map<String, Object>>> getChannelSales(@RequestParam(defaultValue = "1") Long companyId) {
         return ResponseEntity.ok(executiveDashboardService.getChannelSales(companyId));

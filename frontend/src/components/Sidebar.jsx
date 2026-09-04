@@ -29,6 +29,7 @@ export const defaultMenuSections = [
     group: 'executive',
     departments: ['manager'],
     items: [
+      { id: 'cash-position', icon: 'sync_alt', label: '자금 현황 (한눈에)', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'cash-flow', icon: 'account_balance_wallet', label: '현금 흐름', roles: ['EXECUTIVE'] },
       { id: 'payment-approval', icon: 'approval', label: '입출금 결재 관리', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'debts', icon: 'credit_score', label: '대출 / 부채', roles: ['EXECUTIVE'] },

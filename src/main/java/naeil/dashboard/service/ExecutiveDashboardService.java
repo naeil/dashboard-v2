@@ -1067,6 +1067,97 @@ public class ExecutiveDashboardService {
                 """, companyId, user.username());
     }
 
+    /**
+     * 통합 자금현황 — 한 달의 나간 돈(지출)·들어온 돈(입금)을 한 화면에 모은다.
+     * 지출: 확정 현금흐름(OUTFLOW) + 아직 승인 안 된 지출결의(대기).
+     * 입금: 현금흐름(INFLOW) — 온라인 정산 자동연동·컨설팅·수기 포함.
+     */
+    public Map<String, Object> getCashPosition(Long companyId, String month) {
+        LocalDate monthStart;
+        try {
+            java.time.YearMonth ym = java.time.YearMonth.parse(month);
+            monthStart = ym.atDay(1);
+        } catch (Exception e) {
+            monthStart = LocalDate.now().withDayOfMonth(1);
+        }
+        LocalDate monthEnd = monthStart.plusMonths(1).minusDays(1);
+        java.sql.Date start = java.sql.Date.valueOf(monthStart);
+        java.sql.Date end = java.sql.Date.valueOf(monthEnd);
+
+        // 지출 (OUTFLOW) — 현금흐름 + 지출결의 상세 결합
+        List<Map<String, Object>> expenses = jdbcTemplate.queryForList("""
+                SELECT cf.id, cf.flow_date, cf.category, cf.counterparty, cf.amount, cf.status,
+                       cf.confidence_level, cf.source_type, cf.memo,
+                       pr.id AS request_id, pr.purpose, pr.requester_name, pr.department,
+                       pr.evidence_url, pr.expense_category, pr.status AS request_status
+                FROM executive_cash_flow cf
+                LEFT JOIN executive_payment_request pr ON pr.cash_flow_id = cf.id
+                WHERE cf.company_id = ? AND cf.flow_type = 'OUTFLOW'
+                  AND cf.flow_date BETWEEN ? AND ?
+                ORDER BY cf.flow_date, cf.id
+                """, companyId, start, end);
+
+        // 입금 (INFLOW)
+        List<Map<String, Object>> deposits = jdbcTemplate.queryForList("""
+                SELECT id, flow_date, category, counterparty, amount, status,
+                       confidence_level, source_type, memo
+                FROM executive_cash_flow cf
+                WHERE cf.company_id = ? AND cf.flow_type = 'INFLOW'
+                  AND cf.flow_date BETWEEN ? AND ?
+                ORDER BY cf.flow_date, cf.id
+                """, companyId, start, end);
+
+        // 승인 대기 지출결의 (아직 현금흐름에 반영 안 됨)
+        List<Map<String, Object>> pending = jdbcTemplate.queryForList("""
+                SELECT id AS request_id, scheduled_date AS flow_date, expense_category AS category,
+                       counterparty, amount, status, purpose, requester_name, department,
+                       evidence_url, urgent
+                FROM executive_payment_request
+                WHERE company_id = ? AND flow_type = 'OUTFLOW'
+                  AND cash_flow_id IS NULL
+                  AND status NOT IN ('REJECTED', 'CASH_APPLIED')
+                  AND scheduled_date BETWEEN ? AND ?
+                ORDER BY urgent DESC, scheduled_date, id
+                """, companyId, start, end);
+
+        Map<String, Object> sums = jdbcTemplate.queryForMap("""
+                SELECT
+                    COALESCE(SUM(amount) FILTER (WHERE flow_type = 'INFLOW'), 0) AS inflow,
+                    COALESCE(SUM(amount) FILTER (WHERE flow_type = 'OUTFLOW'), 0) AS outflow,
+                    COALESCE(SUM(amount) FILTER (WHERE flow_type = 'INFLOW'
+                        AND (confidence_level = 'CONFIRMED' OR status = 'DONE')), 0) AS confirmed_inflow,
+                    COALESCE(SUM(amount) FILTER (WHERE flow_type = 'OUTFLOW'
+                        AND (confidence_level = 'CONFIRMED' OR status = 'DONE')), 0) AS confirmed_outflow
+                FROM executive_cash_flow
+                WHERE company_id = ? AND flow_date BETWEEN ? AND ?
+                """, companyId, start, end);
+
+        BigDecimal inflow = decimalValue(sums.get("inflow"));
+        BigDecimal outflow = decimalValue(sums.get("outflow"));
+        BigDecimal pendingAmount = pending.stream()
+                .map(p -> decimalValue(p.get("amount")))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("inflow", inflow);
+        summary.put("outflow", outflow);
+        summary.put("net", inflow.subtract(outflow));
+        summary.put("confirmedInflow", decimalValue(sums.get("confirmed_inflow")));
+        summary.put("confirmedOutflow", decimalValue(sums.get("confirmed_outflow")));
+        summary.put("pendingApprovalCount", pending.size());
+        summary.put("pendingApprovalAmount", pendingAmount);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("month", monthStart.toString().substring(0, 7));
+        result.put("monthStart", monthStart.toString());
+        result.put("monthEnd", monthEnd.toString());
+        result.put("summary", summary);
+        result.put("expenses", expenses);
+        result.put("deposits", deposits);
+        result.put("pendingApprovals", pending);
+        return result;
+    }
+
     public Map<String, Object> approvePaymentRequest(Long id) {
         Map<String, Object> request = jdbcTemplate.queryForMap("""
                 SELECT *
@@ -1077,7 +1168,7 @@ public class ExecutiveDashboardService {
         if (existingCashFlowId != null) {
             jdbcTemplate.update("""
                     UPDATE executive_payment_request
-                    SET status = 'CASH_APPLIED', review_comment = COALESCE(review_comment, '?꾧툑?먮쫫 諛섏쁺 ?꾨즺')
+                    SET status = 'CASH_APPLIED', review_comment = COALESCE(review_comment, '현금흐름 반영 완료')
                     WHERE id = ?
                     """, id);
             return jdbcTemplate.queryForMap("SELECT * FROM executive_payment_request WHERE id = ?", id);
@@ -1097,7 +1188,7 @@ public class ExecutiveDashboardService {
                 request.get("counterparty"),
                 request.get("amount"),
                 String.valueOf(id),
-                "[?낆텧湲??붿껌 ?뱀씤] " + request.get("purpose")
+                "[지출결의 승인] " + request.get("purpose")
         );
 
         Long cashFlowId = jdbcTemplate.queryForObject("""
@@ -1110,7 +1201,7 @@ public class ExecutiveDashboardService {
 
         jdbcTemplate.update("""
                 UPDATE executive_payment_request
-                SET status = 'CASH_APPLIED', cash_flow_id = ?, review_comment = '?뱀씤?섏뼱 ?꾧툑?먮쫫??諛섏쁺?섏뿀?듬땲??'
+                SET status = 'CASH_APPLIED', cash_flow_id = ?, review_comment = '승인되어 현금흐름에 반영되었습니다.'
                 WHERE id = ?
                 """, cashFlowId, id);
 

@@ -21,6 +21,8 @@ export const saveChannelCredential = (payload) =>
   api.post('/executive/channel-credentials', payload, { params: companyParams })
 export const getExecutivePaymentRequests = () => api.get('/executive/payment-requests', { params: companyParams })
 export const approvePaymentRequest = (id) => api.post(`/executive/payment-requests/${id}/approve`)
+export const getCashPosition = (month) =>
+  api.get('/executive/cash-position', { params: { ...companyParams, ...(month ? { month } : {}) } })
 export const getExecutiveChannelSales = () => api.get('/executive/channel-sales', { params: companyParams })
 export const getExecutiveConsultingRevenues = () => api.get('/executive/consulting-revenues', { params: companyParams })
 export const getExecutiveChannelSalesAnalytics = (params = {}) =>
