@@ -38,6 +38,16 @@ public class PaymentApprovalService {
                 """, companyId);
     }
 
+    /* ── 협조/참조 후보 (전체 활성 구성원) ── */
+    public List<Map<String, Object>> members(Long companyId) {
+        return jdbcTemplate.queryForList("""
+                SELECT username, display_name, department, role
+                FROM dashboard_user
+                WHERE company_id = ? AND status = 'ACTIVE'
+                ORDER BY department, display_name
+                """, companyId);
+    }
+
     /* ── 결의 제출 (기안) ── */
     @Transactional
     public Map<String, Object> submit(Long companyId, AuthUser user, Map<String, Object> p) {
@@ -84,11 +94,36 @@ public class PaymentApprovalService {
         jdbcTemplate.update("UPDATE executive_payment_request SET account_name = ? WHERE id = ?",
                 user.username(), id);
 
+        // 협조자 / 참조자
+        List<String> cooperators = usernameList(p.get("cooperatorUsernames"));
+        List<String> referrers = usernameList(p.get("referrerUsernames"));
+        if (!cooperators.isEmpty() || !referrers.isEmpty()) {
+            jdbcTemplate.update("""
+                    UPDATE executive_payment_request
+                    SET cooperator_usernames = ?, cooperator_names = ?, referrer_usernames = ?, referrer_names = ?
+                    WHERE id = ?
+                    """,
+                    joinCsv(cooperators), joinCsv(namesOf(companyId, cooperators)),
+                    joinCsv(referrers), joinCsv(namesOf(companyId, referrers)), id);
+        }
+
         notificationService.notify(companyId, approver1, "PAYMENT_APPROVAL_REQUEST",
                 "결재 요청 · " + title,
                 String.format("%s님이 %,d원 지출결의를 올렸습니다. 1차 승인 대기 중입니다.",
                         user.displayName(), amount.longValue()),
                 "payment-approval", id);
+        for (String c : cooperators) {
+            notificationService.notify(companyId, c, "PAYMENT_COOPERATION_REQUEST",
+                    "협조 요청 · " + title,
+                    String.format("%s님이 올린 %,d원 지출결의에 협조 검토를 요청했습니다.", user.displayName(), amount.longValue()),
+                    "payment-approval", id);
+        }
+        for (String r : referrers) {
+            notificationService.notify(companyId, r, "PAYMENT_REFERENCE",
+                    "참조 · " + title,
+                    String.format("%s님이 올린 %,d원 지출결의에 참조로 지정되었습니다.", user.displayName(), amount.longValue()),
+                    "payment-approval", id);
+        }
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("success", true);
@@ -114,6 +149,45 @@ public class PaymentApprovalService {
                 """;
         if (exec) return jdbcTemplate.queryForList(sql, companyId);
         return jdbcTemplate.queryForList(sql, companyId, user.username(), user.username());
+    }
+
+    /* ── 협조 요청함: 내가 협조자로 지정된 결의 ── */
+    public List<Map<String, Object>> cooperationInbox(Long companyId, AuthUser user) {
+        return jdbcTemplate.queryForList("""
+                SELECT r.*,
+                       EXISTS (SELECT 1 FROM payment_approval_step s
+                               WHERE s.request_id = r.id AND s.action = 'COOPERATE'
+                                 AND LOWER(s.approver_username) = LOWER(?)) AS cooperated
+                FROM executive_payment_request r
+                WHERE r.company_id = ?
+                  AND ('' || LOWER(COALESCE(r.cooperator_usernames, '')))
+                      ~ ('(^|,)' || LOWER(?) || '(,|$)')
+                ORDER BY r.id DESC
+                """, user.username(), companyId, user.username());
+    }
+
+    /* ── 협조 의견 (비차단) ── */
+    @Transactional
+    public Map<String, Object> cooperate(Long companyId, Long id, AuthUser user, String comment) {
+        Map<String, Object> req;
+        try {
+            req = jdbcTemplate.queryForMap(
+                    "SELECT * FROM executive_payment_request WHERE id = ? AND company_id = ?", id, companyId);
+        } catch (Exception e) { return fail("결의를 찾을 수 없습니다."); }
+        String coops = String.valueOf(req.getOrDefault("cooperator_usernames", ""));
+        boolean isCoop = usernameList(coops).stream().anyMatch(u -> u.equalsIgnoreCase(user.username()));
+        if (!isCoop) return fail("이 결의의 협조자가 아닙니다.");
+        jdbcTemplate.update("""
+                INSERT INTO payment_approval_step
+                (company_id, request_id, step_no, approver_username, approver_name, action, comment)
+                VALUES (?, ?, 0, ?, ?, 'COOPERATE', ?)
+                """, companyId, id, user.username(), user.displayName(), str(comment));
+        notificationService.notify(companyId, String.valueOf(req.get("account_name")), "PAYMENT_COOPERATED",
+                "협조 완료 · " + req.getOrDefault("title", "지출결의"),
+                String.format("%s님이 협조 의견을 남겼습니다.%s", user.displayName(),
+                        comment == null || comment.isBlank() ? "" : " (" + comment.trim() + ")"),
+                "payment-request", id);
+        return ok("협조 의견을 등록했습니다.");
     }
 
     /* ── 내가 올린 결의 ── */
@@ -232,6 +306,28 @@ public class PaymentApprovalService {
     }
 
     /* ── 유틸 ── */
+    @SuppressWarnings("unchecked")
+    private static List<String> usernameList(Object value) {
+        List<String> out = new ArrayList<>();
+        if (value == null) return out;
+        if (value instanceof List<?> list) {
+            for (Object o : list) { String s = str(o); if (s != null && !out.contains(s)) out.add(s); }
+        } else {
+            for (String part : String.valueOf(value).split(",")) {
+                String s = str(part); if (s != null && !out.contains(s)) out.add(s);
+            }
+        }
+        return out;
+    }
+    private static String joinCsv(List<String> list) {
+        return list == null || list.isEmpty() ? null : String.join(",", list);
+    }
+    private List<String> namesOf(Long companyId, List<String> usernames) {
+        List<String> names = new ArrayList<>();
+        for (String u : usernames) names.add(nameOf(companyId, u));
+        return names;
+    }
+
     private String nameOf(Long companyId, String username) {
         if (username == null) return null;
         List<String> names = jdbcTemplate.query(

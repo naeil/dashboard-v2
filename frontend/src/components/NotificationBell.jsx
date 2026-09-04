@@ -5,6 +5,9 @@ const typeStyle = {
   PAYMENT_APPROVAL_REQUEST: { icon: 'approval', cls: 'text-sky-600 bg-sky-50' },
   PAYMENT_APPROVED: { icon: 'check_circle', cls: 'text-emerald-600 bg-emerald-50' },
   PAYMENT_REJECTED: { icon: 'cancel', cls: 'text-rose-600 bg-rose-50' },
+  PAYMENT_COOPERATION_REQUEST: { icon: 'handshake', cls: 'text-indigo-600 bg-indigo-50' },
+  PAYMENT_COOPERATED: { icon: 'handshake', cls: 'text-emerald-600 bg-emerald-50' },
+  PAYMENT_REFERENCE: { icon: 'visibility', cls: 'text-slate-500 bg-slate-100' },
 }
 const timeAgo = (ts) => {
   if (!ts) return ''

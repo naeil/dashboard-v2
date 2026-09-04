@@ -2,6 +2,10 @@ import { authApi as api } from './authApi'
 
 /* 지출결의 전자결재 */
 export const getApprovers = () => api.get('/payment-approval/approvers').then((r) => r.data)
+export const getMembers = () => api.get('/payment-approval/members').then((r) => r.data)
+export const getCooperations = () => api.get('/payment-approval/cooperations').then((r) => r.data)
+export const cooperateOnApproval = (id, comment) =>
+  api.post(`/payment-approval/${id}/cooperate`, { comment }).then((r) => r.data)
 export const submitPaymentApproval = (payload) => api.post('/payment-approval/submit', payload).then((r) => r.data)
 export const getApprovalInbox = () => api.get('/payment-approval/inbox').then((r) => r.data)
 export const getMyApprovals = () => api.get('/payment-approval/mine').then((r) => r.data)

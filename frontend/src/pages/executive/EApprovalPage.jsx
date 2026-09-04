@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   getApprovers, submitPaymentApproval, getApprovalInbox, getMyApprovals,
-  getApprovalDetail, actOnApproval,
+  getApprovalDetail, actOnApproval, getMembers, getCooperations, cooperateOnApproval,
 } from '../../api/paymentApprovalApi'
 
 const THRESHOLD = 300000
@@ -36,14 +36,35 @@ function Row({ label, children }) {
   )
 }
 
+/* 협조/참조 다중 선택 (체크박스 칩) */
+function MemberMultiSelect({ members, value, onChange, me, exclude = [] }) {
+  const toggle = (u) => onChange(value.includes(u) ? value.filter((x) => x !== u) : [...value, u])
+  const pool = members.filter((m) => m.username !== me && !exclude.includes(m.username))
+  return (
+    <div className="flex flex-wrap gap-1.5 rounded-lg border border-slate-200 bg-white p-2">
+      {pool.length === 0 ? <span className="px-1 text-[12px] text-slate-400">선택 가능한 구성원이 없습니다.</span>
+        : pool.map((m) => {
+          const on = value.includes(m.username)
+          return (
+            <button type="button" key={m.username} onClick={() => toggle(m.username)}
+              className={`rounded-full border px-2.5 py-1 text-[12px] font-bold ${on ? 'border-sky-400 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}>
+              {on && <span className="mr-0.5">✓</span>}{m.display_name}
+            </button>
+          )
+        })}
+    </div>
+  )
+}
+
 /* ─────────── 결의 작성 (다우오피스 지출결의서) ─────────── */
-function WriteForm({ approvers, me, onSubmitted }) {
+function WriteForm({ approvers, members, me, onSubmitted }) {
   const [f, setF] = useState({
     title: '', counterparty: '', amount: '', detailReason: '',
     expenseItem1: '', expenseItem2: '', scheduledDate: todayStr(),
     payMethod: '계좌이체', payBank: '', accountHolder: '', accountNumber: '',
     expenseCategory: '운영비', evidenceUrl: '', urgent: false,
     approver1Username: '', approver2Username: '',
+    cooperatorUsernames: [], referrerUsernames: [],
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -124,6 +145,19 @@ function WriteForm({ approvers, me, onSubmitted }) {
           </label>
         </div>
         <p className="mt-2 text-[11px] font-bold text-slate-400">{won(THRESHOLD)} 이하는 1차 승인자 전결(1단계), 초과는 2차 최종 승인까지(2단계) 진행됩니다.</p>
+
+        <div className="mt-4 grid grid-cols-1 gap-3">
+          <div>
+            <p className="mb-1.5 text-[12px] font-black text-slate-500">협조 <span className="font-bold text-slate-400">(검토·의견 — 승인 진행은 막지 않음)</span></p>
+            <MemberMultiSelect members={members} me={me} value={f.cooperatorUsernames}
+              exclude={f.referrerUsernames} onChange={(v) => set({ cooperatorUsernames: v })} />
+          </div>
+          <div>
+            <p className="mb-1.5 text-[12px] font-black text-slate-500">참조 <span className="font-bold text-slate-400">(통보만 받음)</span></p>
+            <MemberMultiSelect members={members} me={me} value={f.referrerUsernames}
+              exclude={f.cooperatorUsernames} onChange={(v) => set({ referrerUsernames: v })} />
+          </div>
+        </div>
       </div>
 
       {error && <div className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-[13px] font-bold text-rose-600">{error}</div>}
@@ -141,7 +175,7 @@ function WriteForm({ approvers, me, onSubmitted }) {
 }
 
 /* ─────────── 상세 모달 (결재/이력) ─────────── */
-function DetailModal({ id, onClose, onActed, canAct }) {
+function DetailModal({ id, onClose, onActed, canAct, me }) {
   const [d, setD] = useState(null)
   const [comment, setComment] = useState('')
   const [busy, setBusy] = useState('')
@@ -159,6 +193,18 @@ function DetailModal({ id, onClose, onActed, canAct }) {
       setError(e?.response?.data?.message || e.message || '처리에 실패했습니다.')
     } finally { setBusy('') }
   }
+  const cooperate = async () => {
+    setError(''); setBusy('COOPERATE')
+    try {
+      const res = await cooperateOnApproval(id, comment)
+      if (res.success === false) throw new Error(res.message)
+      onActed(res.message)
+    } catch (e) {
+      setError(e?.response?.data?.message || e.message || '처리에 실패했습니다.')
+    } finally { setBusy('') }
+  }
+  const coopList = (d?.cooperator_usernames || '').split(',').map((s) => s.trim()).filter(Boolean)
+  const iAmCooperator = me && coopList.some((u) => u.toLowerCase() === String(me).toLowerCase())
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
@@ -184,6 +230,8 @@ function DetailModal({ id, onClose, onActed, canAct }) {
                 <Row label="입금계좌"><span className="text-slate-700">{[d.pay_bank, d.account_holder, d.account_number].filter(Boolean).join(' · ') || '-'}</span></Row>
                 <Row label="기안자"><span className="text-slate-700">{d.requester_name} · {dayFull(d.request_date)}</span></Row>
                 <Row label="결재선"><span className="text-slate-700">1차 {d.approver1_name || '-'}{d.approver2_name ? ` → 2차 ${d.approver2_name}` : ' (1차 전결)'}</span></Row>
+                {d.cooperator_names && <Row label="협조"><span className="text-slate-700">{d.cooperator_names}</span></Row>}
+                {d.referrer_names && <Row label="참조"><span className="text-slate-700">{d.referrer_names}</span></Row>}
                 {d.evidence_url && <Row label="증빙"><a href={d.evidence_url} target="_blank" rel="noreferrer" className="font-bold text-sky-600 hover:underline">첨부 보기</a></Row>}
               </tbody>
             </table>
@@ -218,6 +266,19 @@ function DetailModal({ id, onClose, onActed, canAct }) {
                 </div>
               </div>
             )}
+
+            {/* 협조 액션 (비차단) */}
+            {!canAct && iAmCooperator && (d.status === 'SUBMITTED' || d.status === 'REVIEWING') && (
+              <div className="mt-4 border-t border-slate-100 pt-4">
+                <p className="mb-1.5 text-[12px] font-black text-slate-500">협조 의견 <span className="font-bold text-slate-400">(승인 진행은 막지 않습니다)</span></p>
+                <input className={`${input} mb-2`} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="협조 의견 (선택)" />
+                {error && <div className="mb-2 rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-bold text-rose-600">{error}</div>}
+                <div className="flex justify-end">
+                  <button type="button" disabled={busy} onClick={cooperate}
+                    className="rounded-lg border border-sky-200 bg-sky-50 px-5 py-2 text-sm font-black text-sky-700 hover:bg-sky-100 disabled:opacity-50">{busy === 'COOPERATE' ? '처리 중…' : '협조'}</button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -244,27 +305,38 @@ function ReqRow({ r, onOpen }) {
 export default function EApprovalPage({ username = 'admin' }) {
   const [tab, setTab] = useState('inbox')
   const [approvers, setApprovers] = useState([])
+  const [members, setMembers] = useState([])
   const [inbox, setInbox] = useState([])
   const [mine, setMine] = useState([])
+  const [coops, setCoops] = useState([])
   const [loading, setLoading] = useState(true)
   const [detailId, setDetailId] = useState(null)
   const [flash, setFlash] = useState('')
 
   const load = useCallback(() => {
     setLoading(true)
-    Promise.all([getApprovalInbox().catch(() => []), getMyApprovals().catch(() => [])])
-      .then(([i, m]) => { setInbox(i || []); setMine(m || []) })
+    Promise.all([
+      getApprovalInbox().catch(() => []),
+      getMyApprovals().catch(() => []),
+      getCooperations().catch(() => []),
+    ])
+      .then(([i, m, c]) => { setInbox(i || []); setMine(m || []); setCoops(c || []) })
       .finally(() => setLoading(false))
   }, [])
 
-  useEffect(() => { getApprovers().then(setApprovers).catch(() => {}) }, [])
+  useEffect(() => {
+    getApprovers().then(setApprovers).catch(() => {})
+    getMembers().then(setMembers).catch(() => {})
+  }, [])
   useEffect(() => { const t = setTimeout(load, 0); return () => clearTimeout(t) }, [load])
 
+  const pendingCoops = coops.filter((c) => !c.cooperated && (c.status === 'SUBMITTED' || c.status === 'REVIEWING')).length
   const tabs = useMemo(() => ([
     { id: 'inbox', label: `결재함${inbox.length ? ` (${inbox.length})` : ''}` },
+    { id: 'coop', label: `협조 요청${pendingCoops ? ` (${pendingCoops})` : ''}` },
     { id: 'write', label: '결의 작성' },
     { id: 'mine', label: '내가 올린 결의' },
-  ]), [inbox.length])
+  ]), [inbox.length, pendingCoops])
 
   const openDetail = (id) => setDetailId(id)
   const onActed = (msg) => { setDetailId(null); setFlash(msg || '처리했습니다.'); load(); setTimeout(() => setFlash(''), 4000) }
@@ -287,7 +359,31 @@ export default function EApprovalPage({ username = 'admin' }) {
         ))}
       </div>
 
-      {tab === 'write' && <WriteForm approvers={approvers} me={username} onSubmitted={() => { setTab('mine'); load() }} />}
+      {tab === 'write' && <WriteForm approvers={approvers} members={members} me={username} onSubmitted={() => { setTab('mine'); load() }} />}
+
+      {tab === 'coop' && (
+        <div className="rounded-xl border border-slate-200 bg-white">
+          {loading ? <p className="py-12 text-center text-sm text-slate-400">불러오는 중…</p>
+            : coops.length === 0 ? <p className="py-12 text-center text-sm text-slate-400">협조 요청받은 결의가 없습니다.</p>
+            : (
+              <table className="w-full">
+                <thead><tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400">
+                  <th className="px-3 py-2.5 text-left">결의</th><th className="px-3 py-2.5 text-right">금액</th><th className="px-3 py-2.5 text-center">지급요청일</th><th className="px-3 py-2.5 text-center">협조</th>
+                </tr></thead>
+                <tbody>{coops.map((r) => (
+                  <tr key={r.id} className="cursor-pointer border-b border-slate-50 last:border-0 hover:bg-sky-50/40" onClick={() => openDetail(r.id)}>
+                    <td className="px-3 py-2.5"><p className="text-[13px] font-black text-slate-800">{r.title || r.purpose}</p><p className="text-[11px] text-slate-400">{r.counterparty || '-'} · 기안 {r.requester_name}</p></td>
+                    <td className="px-3 py-2.5 text-right text-[13px] font-black text-rose-600">{won(r.amount)}</td>
+                    <td className="px-3 py-2.5 text-center text-[12px] text-slate-500">{dayFull(r.scheduled_date)}</td>
+                    <td className="px-3 py-2.5 text-center">{r.cooperated
+                      ? <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-black text-emerald-700">협조 완료</span>
+                      : <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-black text-amber-700">협조 대기</span>}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            )}
+        </div>
+      )}
 
       {tab === 'inbox' && (
         <div className="rounded-xl border border-slate-200 bg-white">
@@ -319,7 +415,7 @@ export default function EApprovalPage({ username = 'admin' }) {
         </div>
       )}
 
-      {detailId && <DetailModal id={detailId} canAct={tab === 'inbox'} onClose={() => setDetailId(null)} onActed={onActed} />}
+      {detailId && <DetailModal id={detailId} me={username} canAct={tab === 'inbox'} onClose={() => setDetailId(null)} onActed={onActed} />}
     </div>
   )
 }

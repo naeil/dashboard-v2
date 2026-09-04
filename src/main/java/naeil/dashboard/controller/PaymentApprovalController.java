@@ -26,6 +26,23 @@ public class PaymentApprovalController {
         return ResponseEntity.ok(paymentApprovalService.approvers(COMPANY));
     }
 
+    @GetMapping("/members")
+    public ResponseEntity<List<Map<String, Object>>> members() {
+        return ResponseEntity.ok(paymentApprovalService.members(COMPANY));
+    }
+
+    @GetMapping("/cooperations")
+    public ResponseEntity<List<Map<String, Object>>> cooperations(HttpServletRequest request) {
+        return ResponseEntity.ok(paymentApprovalService.cooperationInbox(COMPANY, user(request)));
+    }
+
+    @PostMapping("/{id}/cooperate")
+    public ResponseEntity<Map<String, Object>> cooperate(
+            @PathVariable Long id, @RequestBody Map<String, Object> payload, HttpServletRequest request) {
+        String comment = payload.get("comment") == null ? null : String.valueOf(payload.get("comment"));
+        return ResponseEntity.ok(paymentApprovalService.cooperate(COMPANY, id, user(request), comment));
+    }
+
     @PostMapping("/submit")
     public ResponseEntity<Map<String, Object>> submit(@RequestBody Map<String, Object> payload, HttpServletRequest request) {
         return ResponseEntity.ok(paymentApprovalService.submit(COMPANY, user(request), payload));
