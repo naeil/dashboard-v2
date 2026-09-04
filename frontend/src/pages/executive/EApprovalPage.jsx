@@ -90,7 +90,7 @@ function WriteForm({ approvers, members, me, onSubmitted }) {
   const approverOptions = approvers.filter((a) => a.username !== me)
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div>
       <div className="mb-3 rounded-lg border border-slate-200 bg-white overflow-hidden">
         <p className="border-b border-slate-100 bg-slate-50 px-4 py-3 text-center text-base font-black text-slate-900">지출결의서</p>
         <div className="grid grid-cols-2 gap-x-4 px-4 py-3 text-[12px]">
@@ -303,7 +303,7 @@ function ReqRow({ r, onOpen }) {
 
 /* ─────────── 메인 ─────────── */
 export default function EApprovalPage({ username = 'admin' }) {
-  const [tab, setTab] = useState('inbox')
+  const [tab, setTab] = useState('work')
   const [approvers, setApprovers] = useState([])
   const [members, setMembers] = useState([])
   const [inbox, setInbox] = useState([])
@@ -332,10 +332,9 @@ export default function EApprovalPage({ username = 'admin' }) {
 
   const pendingCoops = coops.filter((c) => !c.cooperated && (c.status === 'SUBMITTED' || c.status === 'REVIEWING')).length
   const tabs = useMemo(() => ([
+    { id: 'work', label: '결의 작성 · 내 결의' },
     { id: 'inbox', label: `결재함${inbox.length ? ` (${inbox.length})` : ''}` },
     { id: 'coop', label: `협조 요청${pendingCoops ? ` (${pendingCoops})` : ''}` },
-    { id: 'write', label: '결의 작성' },
-    { id: 'mine', label: '내가 올린 결의' },
   ]), [inbox.length, pendingCoops])
 
   const openDetail = (id) => setDetailId(id)
@@ -359,7 +358,41 @@ export default function EApprovalPage({ username = 'admin' }) {
         ))}
       </div>
 
-      {tab === 'write' && <WriteForm approvers={approvers} members={members} me={username} onSubmitted={() => { setTab('mine'); load() }} />}
+      {tab === 'work' && (
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
+          {/* 결의 작성 */}
+          <div className="xl:col-span-3">
+            <p className="mb-2 text-sm font-black text-slate-700">결의 작성</p>
+            <WriteForm approvers={approvers} members={members} me={username}
+              onSubmitted={() => { setFlash('결재 상신 완료 — 승인자에게 알림이 전달되었습니다.'); load(); setTimeout(() => setFlash(''), 4000) }} />
+          </div>
+          {/* 내가 올린 결의 */}
+          <div className="xl:col-span-2">
+            <p className="mb-2 text-sm font-black text-slate-700">내가 올린 결의 <span className="text-slate-400">({mine.length})</span></p>
+            <div className="rounded-xl border border-slate-200 bg-white">
+              {loading ? <p className="py-12 text-center text-sm text-slate-400">불러오는 중…</p>
+                : mine.length === 0 ? <p className="py-12 text-center text-sm text-slate-400">올린 결의가 없습니다.<br />왼쪽에서 결의를 작성해 상신하세요.</p>
+                : (
+                  <div className="divide-y divide-slate-50">
+                    {mine.map((r) => (
+                      <button key={r.id} type="button" onClick={() => openDetail(r.id)}
+                        className="flex w-full items-center gap-3 px-3.5 py-3 text-left hover:bg-sky-50/40">
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[13px] font-black text-slate-800">{r.title || r.purpose}</span>
+                          <span className="block text-[11px] text-slate-400">{r.counterparty || '-'} · {dayFull(r.scheduled_date)}</span>
+                        </span>
+                        <span className="shrink-0 text-right">
+                          <span className="block text-[13px] font-black text-rose-600">{won(r.amount)}</span>
+                          <span className="mt-0.5 block"><StatusBadge status={r.status} /></span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {tab === 'coop' && (
         <div className="rounded-xl border border-slate-200 bg-white">
@@ -395,21 +428,6 @@ export default function EApprovalPage({ username = 'admin' }) {
                   <th className="px-3 py-2.5 text-left">결의</th><th className="px-3 py-2.5 text-right">금액</th><th className="px-3 py-2.5 text-center">지급요청일</th><th className="px-3 py-2.5 text-center">상태</th>
                 </tr></thead>
                 <tbody>{inbox.map((r) => <ReqRow key={r.id} r={r} onOpen={openDetail} />)}</tbody>
-              </table>
-            )}
-        </div>
-      )}
-
-      {tab === 'mine' && (
-        <div className="rounded-xl border border-slate-200 bg-white">
-          {loading ? <p className="py-12 text-center text-sm text-slate-400">불러오는 중…</p>
-            : mine.length === 0 ? <p className="py-12 text-center text-sm text-slate-400">올린 결의가 없습니다. [결의 작성]에서 시작하세요.</p>
-            : (
-              <table className="w-full">
-                <thead><tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400">
-                  <th className="px-3 py-2.5 text-left">결의</th><th className="px-3 py-2.5 text-right">금액</th><th className="px-3 py-2.5 text-center">지급요청일</th><th className="px-3 py-2.5 text-center">상태</th>
-                </tr></thead>
-                <tbody>{mine.map((r) => <ReqRow key={r.id} r={r} onOpen={openDetail} />)}</tbody>
               </table>
             )}
         </div>
