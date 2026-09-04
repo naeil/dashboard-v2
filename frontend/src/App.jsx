@@ -39,6 +39,8 @@ import OrganizationManagementPage from './pages/executive/OrganizationManagement
 import PartnerManagementPage from './pages/executive/PartnerManagementPage'
 import PartnerPaymentLedgerPage from './pages/executive/PartnerPaymentLedgerPage'
 import PayrollPage from './pages/executive/PayrollPage'
+import HrRosterPage from './pages/executive/HrRosterPage'
+import HrLeavePage from './pages/executive/HrLeavePage'
 import QuotationPage from './pages/executive/QuotationPage'
 import PlatformAdminPage from './pages/executive/PlatformAdminPage'
 import ProfitManagementPage from './pages/executive/ProfitManagementPage'
@@ -140,6 +142,8 @@ const pages = {
   'incentive-summary': IncentiveManagementPage,
   'channel-api-settings': ChannelApiSettingsPage,
   payroll: PayrollPage,
+  'hr-roster': HrRosterPage,
+  'hr-leave': HrLeavePage,
   quotation: QuotationPage,
   'profit-management': ProfitManagementPage,
   'product-cost': ProductCostPage,

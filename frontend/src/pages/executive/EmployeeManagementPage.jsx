@@ -26,6 +26,7 @@ const roleLabels = {
   EMPLOYEE: '직원',
   MANAGER: '관리자',
   EXECUTIVE: '대표',
+  HR_MANAGER: '인사담당자',
 }
 
 const statusLabels = {
@@ -549,6 +550,7 @@ export default function EmployeeManagementPage({ accessPermissions, embedded = f
                 className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-bold outline-none focus:border-sky-400">
                 <option value="EMPLOYEE">실무자 (EMPLOYEE)</option>
                 <option value="MANAGER">팀장 (MANAGER) — 팀 관리 사용 가능</option>
+                <option value="HR_MANAGER">인사담당자 (HR_MANAGER) — 인사 관리 사용 가능</option>
                 <option value="EXECUTIVE">대표 (EXECUTIVE) — 전체 권한</option>
               </select>
             </label>

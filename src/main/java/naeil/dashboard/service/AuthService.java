@@ -132,8 +132,8 @@ public class AuthService {
     public Map<String, Object> updateUserProfile(Long id, String role, String department, AuthUser actor) {
         requireRole(actor, UserRole.EXECUTIVE);
         String normalizedRole = role == null ? null : role.trim().toUpperCase();
-        if (normalizedRole != null && !List.of("EMPLOYEE", "MANAGER", "EXECUTIVE").contains(normalizedRole)) {
-            throw new naeil.dashboard.common.exception.CustomException(400, "역할은 EMPLOYEE/MANAGER/EXECUTIVE 중 하나여야 합니다.");
+        if (normalizedRole != null && !List.of("EMPLOYEE", "MANAGER", "EXECUTIVE", "HR_MANAGER").contains(normalizedRole)) {
+            throw new naeil.dashboard.common.exception.CustomException(400, "역할은 EMPLOYEE/MANAGER/EXECUTIVE/HR_MANAGER 중 하나여야 합니다.");
         }
         String normalizedDept = department == null ? null : department.trim();
         if (normalizedDept != null && normalizedDept.isEmpty()) normalizedDept = null;

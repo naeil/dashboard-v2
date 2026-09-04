@@ -8,6 +8,9 @@ const typeStyle = {
   PAYMENT_COOPERATION_REQUEST: { icon: 'handshake', cls: 'text-indigo-600 bg-indigo-50' },
   PAYMENT_COOPERATED: { icon: 'handshake', cls: 'text-emerald-600 bg-emerald-50' },
   PAYMENT_REFERENCE: { icon: 'visibility', cls: 'text-slate-500 bg-slate-100' },
+  LEAVE_REQUEST: { icon: 'beach_access', cls: 'text-indigo-600 bg-indigo-50' },
+  LEAVE_APPROVED: { icon: 'event_available', cls: 'text-emerald-600 bg-emerald-50' },
+  LEAVE_REJECTED: { icon: 'event_busy', cls: 'text-rose-600 bg-rose-50' },
 }
 const timeAgo = (ts) => {
   if (!ts) return ''

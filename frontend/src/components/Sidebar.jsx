@@ -60,6 +60,18 @@ export const defaultMenuSections = [
     ],
   },
   {
+    id: 'hr-management',
+    title: '인사 관리',
+    group: 'staff',
+    departments: ['all'],
+    items: [
+      { id: 'hr-roster', icon: 'badge', label: '직원 명부 · 인사카드', roles: ['EXECUTIVE', 'HR_MANAGER'] },
+      { id: 'attendance-admin', icon: 'schedule', label: '근태 관리', roles: ['EXECUTIVE', 'HR_MANAGER'] },
+      { id: 'payroll', icon: 'payments', label: '급여 · 임금 지급', roles: ['EXECUTIVE', 'HR_MANAGER'] },
+      { id: 'hr-leave', icon: 'beach_access', label: '휴가 · 연차 관리', roles: ['EXECUTIVE', 'HR_MANAGER'] },
+    ],
+  },
+  {
     id: 'common',
     title: '공통',
     group: 'staff',
@@ -77,6 +89,7 @@ export const defaultMenuSections = [
       { id: 'field-data-input', icon: 'edit_note', label: '실무 입력 (매출·광고비·재고·비용)', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'work-input', icon: 'edit_note', label: '내 업무 입력', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'], personal: true },
       { id: 'e-approval', icon: 'approval', label: '지출결의 (전자결재)', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
+      { id: 'hr-leave', icon: 'beach_access', label: '휴가 · 연차 신청', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
     ],
   },
   {
@@ -204,6 +217,7 @@ const roleLabels = {
   EXECUTIVE: '대표 / 임원',
   MANAGER: '관리자',
   EMPLOYEE: '직원',
+  HR_MANAGER: '인사담당자',
 }
 
 function normalizeDepartment(value) {
@@ -300,7 +314,9 @@ export function useVisibleMenuSections({ role = 'EXECUTIVE', department, allowed
           return merged
         })
         .filter(Boolean)
-        .filter((item) => item.roles.includes(role) || (hasItemLevelPermissions && isItemAllowed(item.id, allowedMenuIds)))
+        .filter((item) => item.roles.includes(role)
+          || (role === 'HR_MANAGER' && item.roles.includes('EMPLOYEE'))
+          || (hasItemLevelPermissions && isItemAllowed(item.id, allowedMenuIds)))
 
       if (hasItemLevelPermissions) {
         items = items.filter((item) => isItemAllowed(item.id, allowedMenuIds))

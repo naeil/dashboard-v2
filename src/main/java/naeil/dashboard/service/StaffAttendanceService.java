@@ -138,8 +138,9 @@ public class StaffAttendanceService {
     }
 
     public List<Map<String, Object>> listAdminAttendance(Long companyId, AuthUser user, LocalDate month) {
-        if (UserRole.from(user.role()) != UserRole.EXECUTIVE) {
-            throw new CustomException(403, "대표 관리자만 출퇴근 IP 기록을 확인할 수 있습니다.");
+        UserRole viewerRole = UserRole.from(user.role());
+        if (viewerRole != UserRole.EXECUTIVE && viewerRole != UserRole.HR_MANAGER) {
+            throw new CustomException(403, "대표 관리자 또는 인사담당자만 출퇴근 기록을 확인할 수 있습니다.");
         }
         LocalDate monthStart = (month == null ? LocalDate.now(SEOUL_ZONE) : month).withDayOfMonth(1);
         LocalDate monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth());
