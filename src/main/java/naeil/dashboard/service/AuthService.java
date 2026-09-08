@@ -626,6 +626,7 @@ public class AuthService {
         return switch (role) {
             case EMPLOYEE -> 1;
             case MANAGER -> 2;
+            case HR_MANAGER -> 2;
             case EXECUTIVE -> 3;
         };
     }
@@ -634,6 +635,7 @@ public class AuthService {
         return switch (UserRole.from(role)) {
             case EXECUTIVE -> "ADMIN";
             case MANAGER -> "MANAGER";
+            case HR_MANAGER -> "MANAGER";
             case EMPLOYEE -> "EMPLOYEE";
         };
     }
