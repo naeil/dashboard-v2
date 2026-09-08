@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -75,18 +76,20 @@ public class SheetSalesPullService {
         }
 
         // 기존 시트 주문 제거(항상). 필요 시 비시트 주문도 제거.
+        // 시트를 단일 진실원본으로: 회사의 기존 주문(PlayAuto 포함)을 모두 제거하고 시트로 대체.
+        // (PlayAuto 연동이 끊긴 상태이므로 이중집계 방지를 위해 canonical replace)
         List<Orders> existing = ordersRepository.findAllByCompanyId(companyId);
-        List<Orders> toDelete = new ArrayList<>();
-        for (Orders o : existing) {
-            boolean isSheet = o.getUniq() != null && o.getUniq().startsWith(UNIQ_PREFIX);
-            if (isSheet || purgeNonSheet) {
-                toDelete.add(o);
-            }
-        }
-        if (!toDelete.isEmpty()) {
-            ordersRepository.deleteAll(toDelete);
+        int deletedExisting = existing.size();
+        if (!existing.isEmpty()) {
+            ordersRepository.deleteAll(existing);
             ordersRepository.flush();
         }
+        log.info("[SheetSalesPull] start companyId={} csvRows={} deletedExisting={}", companyId, csv.size(), deletedExisting);
+
+        // 채널/브랜드/상품 조회 캐시 (행마다 DB 왕복하던 N+1 제거)
+        Map<String, Shop> shopCache = new HashMap<>();
+        Map<String, Brand> brandCache = new HashMap<>();
+        Map<String, Product> productCache = new HashMap<>();
 
         int inserted = 0, skipped = 0;
         long seq = 0;
@@ -109,9 +112,9 @@ public class SheetSalesPullService {
             BigDecimal discount = money(get(r, 6));    // 할인금액
             BigDecimal shipping = money(get(r, 8));    // 배송비
 
-            Shop shop = resolveShop(companyId, channel);
-            Brand brand = resolveBrand(companyId, prodGroup);
-            Product product = resolveProduct(companyId, brand.getId(), prodGroup);
+            Shop shop = shopCache.computeIfAbsent(channel, c -> resolveShop(companyId, c));
+            Brand brand = brandCache.computeIfAbsent(prodGroup, n -> resolveBrand(companyId, n));
+            Product product = productCache.computeIfAbsent(prodGroup, n -> resolveProduct(companyId, brand.getId(), n));
 
             Orders o = Orders.builder()
                     .uniq(UNIQ_PREFIX + companyId + "-" + (seq++))
@@ -139,16 +142,18 @@ public class SheetSalesPullService {
         }
         if (!batch.isEmpty()) ordersRepository.saveAll(batch);
         ordersRepository.flush();
+        log.info("[SheetSalesPull] inserted={} skipped={} shops={} products={} → rebuilding stats",
+                inserted, skipped, shopCache.size(), productCache.size());
 
         // 매출현황(daily_sales_stats) 재빌드
         playAutoSyncService.rebuildDailySalesStats(companyId);
+        log.info("[SheetSalesPull] done companyId={} inserted={}", companyId, inserted);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("success", true);
         result.put("insertedOrders", inserted);
         result.put("skippedRows", skipped);
-        result.put("deletedExisting", toDelete.size());
-        result.put("purgeNonSheet", purgeNonSheet);
+        result.put("deletedExisting", deletedExisting);
         result.put("byChannel", byChannel);
         result.put("message", inserted + "건 적재 후 매출현황 재빌드 완료");
         return result;
