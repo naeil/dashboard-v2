@@ -1,6 +1,7 @@
 package naeil.dashboard.service;
 
 import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -28,6 +29,8 @@ import naeil.dashboard.repository.BrandRepository;
 import naeil.dashboard.repository.OrdersRepository;
 import naeil.dashboard.repository.ProductRepository;
 import naeil.dashboard.repository.ShopRepository;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,7 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
  * DailySalesStats 를 재빌드하여 매출현황 화면에 반영한다.
  *
  * 안전장치:
- *  - 스케줄러 없음. 수동 엔드포인트로만 실행된다(배포 즉시 자동 실행되지 않음).
+ *  - 매시 정각 자동 수집(scheduledPull) + 수동 엔드포인트. 시트를 실시간 반영.
  *  - 시트에서 만든 주문은 uniq="SHEET-..." 네임스페이스로 구분되어, 재실행 시 기존 시트 주문만 교체한다.
  *  - purgeNonSheet=true 일 때만 PlayAuto 등 비(非)시트 주문을 함께 제거(시트를 단일 진실원본으로).
  *
@@ -60,11 +63,23 @@ public class SheetSalesPullService {
     private final BrandRepository brandRepository;
     private final ProductRepository productRepository;
     private final PlayAutoSyncService playAutoSyncService;
+    private final JdbcTemplate jdbcTemplate;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)
             .connectTimeout(Duration.ofSeconds(20))
             .build();
+
+    /** 매시 정각 자동 수집 — 시트를 실시간(최대 1시간 지연)으로 매출현황에 반영. 배경 작업이라 응답시간 무관. */
+    @Scheduled(cron = "0 0 * * * *", zone = "Asia/Seoul")
+    public void scheduledPull() {
+        try {
+            Map<String, Object> r = pull(1L, null, null, true);
+            log.info("[SheetSalesPull] scheduled: {}", r.get("message"));
+        } catch (Exception e) {
+            log.warn("[SheetSalesPull] scheduled 실패: {}", e.getMessage());
+        }
+    }
 
     @Transactional
     public Map<String, Object> pull(Long companyId, String sheetId, LocalDate fromDate, boolean purgeNonSheet) {
@@ -75,15 +90,10 @@ public class SheetSalesPullService {
                     "message", "시트에서 매출 데이터를 읽지 못했습니다. 시트 공유설정(링크 열람)과 '[raw]매출관리' 탭을 확인하세요.");
         }
 
-        // 기존 시트 주문 제거(항상). 필요 시 비시트 주문도 제거.
         // 시트를 단일 진실원본으로: 회사의 기존 주문(PlayAuto 포함)을 모두 제거하고 시트로 대체.
         // (PlayAuto 연동이 끊긴 상태이므로 이중집계 방지를 위해 canonical replace)
-        List<Orders> existing = ordersRepository.findAllByCompanyId(companyId);
-        int deletedExisting = existing.size();
-        if (!existing.isEmpty()) {
-            ordersRepository.deleteAll(existing);
-            ordersRepository.flush();
-        }
+        // 대용량이므로 단일 벌크 SQL 로 처리(행별 JPA 왕복 = 시간초과 원인 제거).
+        int deletedExisting = jdbcTemplate.update("DELETE FROM orders WHERE company_id = ?", companyId);
         log.info("[SheetSalesPull] start companyId={} csvRows={} deletedExisting={}", companyId, csv.size(), deletedExisting);
 
         // 채널/브랜드/상품 조회 캐시 (행마다 DB 왕복하던 N+1 제거)
@@ -94,8 +104,8 @@ public class SheetSalesPullService {
         int inserted = 0, skipped = 0;
         long seq = 0;
         Map<String, Integer> byChannel = new LinkedHashMap<>();
-        List<Orders> batch = new ArrayList<>();
-        LocalDateTime now = LocalDateTime.now();
+        List<Object[]> args = new ArrayList<>();
+        Timestamp nowTs = Timestamp.valueOf(LocalDateTime.now());
 
         // 헤더 행(0) 제외
         for (int i = 1; i < csv.size(); i++) {
@@ -115,33 +125,24 @@ public class SheetSalesPullService {
             Shop shop = shopCache.computeIfAbsent(channel, c -> resolveShop(companyId, c));
             Brand brand = brandCache.computeIfAbsent(prodGroup, n -> resolveBrand(companyId, n));
             Product product = productCache.computeIfAbsent(prodGroup, n -> resolveProduct(companyId, brand.getId(), n));
+            Timestamp dts = Timestamp.valueOf(date.atStartOfDay());
 
-            Orders o = Orders.builder()
-                    .uniq(UNIQ_PREFIX + companyId + "-" + (seq++))
-                    .companyId(companyId)
-                    .brandId(brand.getId())
-                    .shopId(shop.getId())
-                    .productId(product.getId())
-                    .skuCd(truncate(prodGroup, 100))
-                    .grossAmt(pay.add(discount).add(shipping))
-                    .discountAmt(discount)
-                    .shippingFee(shipping)
-                    .payAmt(pay)
-                    .orderQuantity(1)
-                    .cancelAmt(BigDecimal.ZERO)
-                    .ordStatus(SHEET_STATUS)
-                    .ordTime(date.atStartOfDay())
-                    .payTime(date.atStartOfDay())
-                    .wdate(date.atStartOfDay())
-                    .createdAt(now)
-                    .build();
-            batch.add(o);
+            args.add(new Object[]{
+                    UNIQ_PREFIX + companyId + "-" + (seq++), companyId, brand.getId(), shop.getId(), product.getId(),
+                    truncate(prodGroup, 100), pay.add(discount).add(shipping), discount, shipping, pay,
+                    1, BigDecimal.ZERO, SHEET_STATUS, dts, dts, dts, nowTs
+            });
             byChannel.merge(channel, 1, Integer::sum);
             inserted++;
-            if (batch.size() >= 500) { ordersRepository.saveAll(batch); batch.clear(); }
         }
-        if (!batch.isEmpty()) ordersRepository.saveAll(batch);
-        ordersRepository.flush();
+
+        // 벌크 배치 INSERT
+        jdbcTemplate.batchUpdate(
+                "INSERT INTO orders (uniq, company_id, brand_id, shop_id, product_id, sku_cd, "
+                        + "gross_amt, discount_amt, shipping_fee, pay_amt, order_quantity, cancel_amt, "
+                        + "ord_status, pay_time, ord_time, wdate, created_at) "
+                        + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                args);
         log.info("[SheetSalesPull] inserted={} skipped={} shops={} products={} → rebuilding stats",
                 inserted, skipped, shopCache.size(), productCache.size());
 
