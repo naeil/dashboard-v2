@@ -45,6 +45,7 @@ export const defaultMenuSections = [
     items: [
       { id: 'profit-management', icon: 'trending_up', label: 'BEP / 손익 시뮬레이션', roles: ['EXECUTIVE'] },
       { id: 'product-cost', icon: 'calculate', label: '제품 원가 관리', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'supply-price', icon: 'sell', label: '공급가 (오프라인)', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'customer-intelligence', icon: 'insights', label: '고객 가치 분석', roles: ['EXECUTIVE'] },
     ],
   },
