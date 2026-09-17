@@ -40,6 +40,7 @@ import PartnerManagementPage from './pages/executive/PartnerManagementPage'
 import PartnerPaymentLedgerPage from './pages/executive/PartnerPaymentLedgerPage'
 import PayrollPage from './pages/executive/PayrollPage'
 import HrRosterPage from './pages/executive/HrRosterPage'
+import SupplyPriceSheetPage from './pages/executive/SupplyPriceSheetPage'
 import HrLeavePage from './pages/executive/HrLeavePage'
 import QuotationPage from './pages/executive/QuotationPage'
 import PlatformAdminPage from './pages/executive/PlatformAdminPage'
@@ -98,6 +99,7 @@ const pages = {
   'cfo-dashboard': CfoDashboardPage,
   summary: ExecutiveSummary,
   'cash-position': CashPositionPage,
+  'supply-price': SupplyPriceSheetPage,
   'cash-flow': CashFlowPage,
   'channel-credentials': ChannelCredentialPage,
   'customer-db': CustomerDatabasePage,
