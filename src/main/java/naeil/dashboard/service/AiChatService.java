@@ -30,6 +30,7 @@ public class AiChatService {
 
     private final JdbcTemplate jdbcTemplate;
     private final AiApiClient aiApiClient;
+    private final AiAgentService aiAgentService;
     private final AiProviderSettingRepository aiProviderSettingRepository;
     private final AiProviderSettingService aiProviderSettingService;
 
@@ -43,6 +44,21 @@ public class AiChatService {
         }
         boolean executive = UserRole.from(user.role()) == UserRole.EXECUTIVE;
         String model = resolveModel(companyId, setting.getProvider());
+
+        // Gemini는 에이전트 경로(도구로 데이터 직접 조회 + 구글 웹검색) 우선.
+        // 어떤 이유로든 실패하면 아래 단발 응답으로 폴백 → AI가 오늘보다 나빠지지 않는다.
+        if (setting.getProvider() == AiProvider.GEMINI) {
+            try {
+                String agentPrompt = buildAgentSystemPrompt(user, executive);
+                String answer = aiAgentService.run(setting, model, agentPrompt, history, message, companyId, executive);
+                if (answer != null && !answer.isBlank()) {
+                    return Map.of("success", true, "answer", answer.trim(), "model", model);
+                }
+            } catch (Exception e) {
+                log.warn("AI 에이전트 실패, 단발 응답으로 폴백: {}", e.getMessage());
+            }
+        }
+
         String systemPrompt = buildSystemPrompt(companyId, user, executive, message);
         String userMessage = buildUserMessage(history, message);
         try {
@@ -60,15 +76,42 @@ public class AiChatService {
 
     /* ───────── 프롬프트 구성 ───────── */
 
+    /** 에이전트(Gemini) 경로용 — 데이터를 미리 넣지 않고, 모델이 도구로 조회하게 한다. */
+    private String buildAgentSystemPrompt(AuthUser user, boolean executive) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("""
+                너는 주식회사 내일그룹의 대시보드 AI 비서다. 세 가지를 할 수 있다.
+                1) 회사 실데이터 도구 — 매출·현금·업무·발주·일일보고·마케팅을 필요할 때 도구로 조회한다.
+                   회사 수치가 필요하면 반드시 도구를 호출해 최신 값을 가져오고, 절대 추측하지 않는다.
+                2) 구글 웹 검색 — 회사 밖의 최신 정보(시세, 경쟁사, 뉴스, 규정, 일반 사실)가 필요하면 웹을 검색해 근거와 함께 답한다.
+                3) 일반 업무 — 글쓰기·요약·번역·계산·기획·조언 등은 도구 없이도 네 지식으로 자유롭게 돕는다.
+
+                규칙:
+                - 한국어로, 간결하고 실용적으로. 숫자는 원 단위 콤마 표기.
+                - 회사 데이터로 답할 땐 도구가 돌려준 값만 쓴다. 값이 없으면 없다고 말한다.
+                - 웹 검색으로 답할 땐 핵심 출처를 한 줄 덧붙인다.
+                - 판단을 물으면 근거(데이터 또는 출처)를 한 줄 붙여 답한다.
+                - 오늘 날짜: %s
+                """.formatted(LocalDate.now()));
+        sb.append("\n[사용자] ").append(user.displayName() == null ? user.username() : user.displayName())
+                .append(" (").append(executive ? "대표" : "직원").append(")\n");
+        if (!executive) {
+            sb.append("- 이 사용자는 직원이다. 매출·현금·이익·마케팅 등 경영 정보 도구는 권한 밖이라 호출해도 서버가 거부한다. "
+                    + "그런 질문에는 \"대표 권한 정보라 답할 수 없습니다\"라고 답한다.\n");
+        }
+        return sb.toString();
+    }
+
     private String buildSystemPrompt(Long companyId, AuthUser user, boolean executive, String question) {
         StringBuilder sb = new StringBuilder();
         sb.append("""
                 너는 주식회사 내일그룹의 대시보드 AI 비서다. 아래 [데이터]는 지금 이 순간 대시보드에서 조회한 실데이터다.
 
                 규칙:
-                - [데이터]에 있는 내용만 근거로 답한다. 없는 수치는 지어내지 않고 "대시보드에서 확인이 필요합니다"라고 말한다.
+                - 아래 [데이터]는 회사 실데이터다. 회사 수치를 물으면 [데이터]에 있는 값만 근거로 답하고, 없으면 "대시보드에서 확인이 필요합니다"라고 말한다.
+                - 회사 데이터와 무관한 일반 질문(글쓰기·요약·번역·계산·일반 지식·조언)은 네 지식으로 자유롭게 돕는다.
                 - 한국어, 간결한 개조식 또는 2~4문장. 숫자는 원 단위 콤마 표기.
-                - 판단을 물으면 데이터 근거를 한 줄 붙여서 답한다.
+                - 판단을 물으면 근거를 한 줄 붙여서 답한다.
                 - 오늘 날짜: %s
                 """.formatted(LocalDate.now()));
         if (!executive) {

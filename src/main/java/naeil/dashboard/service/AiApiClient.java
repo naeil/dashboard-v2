@@ -112,34 +112,46 @@ public class AiApiClient {
 
     private String completeGemini(AiProviderSetting setting, String model, String systemPrompt, String userMessage) {
         try {
-            Map<String, Object> body = Map.of(
-                    "system_instruction", Map.of(
-                            "parts", List.of(Map.of("text", systemPrompt))
-                    ),
-                    "contents", List.of(Map.of(
-                            "role", "user",
-                            "parts", List.of(Map.of("text", userMessage))
-                    )),
-                    "generationConfig", Map.of("maxOutputTokens", 4096)
-            );
-
             String encodedModel = URLEncoder.encode(model, StandardCharsets.UTF_8).replace("+", "%20");
             URI uri = URI.create(GEMINI_URL_PREFIX + encodedModel + ":generateContent");
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(uri)
-                    .timeout(Duration.ofSeconds(120))
-                    .header("Content-Type", "application/json")
-                    .header("x-goog-api-key", setting.getApiKey().trim())
-                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
-                    .build();
-
-            JsonNode root = sendJson(request, "Gemini");
-            return root.path("candidates").path(0).path("content").path("parts").path(0).path("text").asText();
+            try {
+                // 1차: thinking 끄고 호출(데이터 조회 비서라 "생각"은 불필요, 지연만 유발).
+                JsonNode root = sendJson(buildGeminiRequest(setting, uri, systemPrompt, userMessage, true), "Gemini");
+                return root.path("candidates").path(0).path("content").path("parts").path(0).path("text").asText();
+            } catch (CustomException e) {
+                // thinkingConfig 미지원 모델이면 400이 날 수 있음 → 그 설정만 빼고 1회 재시도(AI 전체가 죽는 것 방지).
+                String m = String.valueOf(e.getMessage()).toLowerCase();
+                if (m.contains("400") && (m.contains("think") || m.contains("thinking"))) {
+                    JsonNode root = sendJson(buildGeminiRequest(setting, uri, systemPrompt, userMessage, false), "Gemini");
+                    return root.path("candidates").path(0).path("content").path("parts").path(0).path("text").asText();
+                }
+                throw e;
+            }
         } catch (CustomException e) {
             throw e;
         } catch (Exception e) {
             throw new CustomException(500, "Gemini 호출 실패: " + e.getMessage());
         }
+    }
+
+    private HttpRequest buildGeminiRequest(AiProviderSetting setting, URI uri, String systemPrompt,
+                                           String userMessage, boolean disableThinking) throws Exception {
+        // maxOutputTokens 1024 → 2~4문장 답변에 충분하고 폭주 생성 방지.
+        Map<String, Object> genConfig = disableThinking
+                ? Map.of("maxOutputTokens", 1024, "thinkingConfig", Map.of("thinkingBudget", 0))
+                : Map.of("maxOutputTokens", 1024);
+        Map<String, Object> body = Map.of(
+                "system_instruction", Map.of("parts", List.of(Map.of("text", systemPrompt))),
+                "contents", List.of(Map.of("role", "user", "parts", List.of(Map.of("text", userMessage)))),
+                "generationConfig", genConfig
+        );
+        return HttpRequest.newBuilder()
+                .uri(uri)
+                .timeout(Duration.ofSeconds(120))
+                .header("Content-Type", "application/json")
+                .header("x-goog-api-key", setting.getApiKey().trim())
+                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+                .build();
     }
 
     private JsonNode sendJson(HttpRequest request, String providerLabel) throws Exception {
