@@ -4,8 +4,8 @@ spring:
 
   servlet:
     multipart:
-      max-file-size: 15MB
-      max-request-size: 20MB
+      max-file-size: 60MB
+      max-request-size: 70MB
 
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5433/naeil_dashboard}
@@ -67,6 +67,9 @@ app:
 
 server:
   port: 8080
+  tomcat:
+    # 업로드 초과 시 Tomcat이 초과 본문을 끝까지 읽어 버려야 413 에러 응답이 클라이언트에 전달된다(-1 = 무제한).
+    max-swallow-size: -1
 
 logging:
   level:
