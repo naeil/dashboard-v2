@@ -73,6 +73,14 @@ public class WeeklyBizReportService {
     private volatile AiProvider cachedModelProvider;
     private volatile long cachedModelAt;
 
+    // AI 분석을 업로드 요청과 분리해 백그라운드에서 돌린다(동기 호출이 요청을 붙잡아 타임아웃 → 등록 실패로 보이는 문제 방지).
+    private final java.util.concurrent.ExecutorService analysisExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "weekly-biz-ai");
+                t.setDaemon(true);
+                return t;
+            });
+
     private final JdbcTemplate jdbcTemplate;
     private final AiApiClient aiApiClient;
     private final AiProviderSettingRepository aiProviderSettingRepository;
@@ -109,19 +117,25 @@ public class WeeklyBizReportService {
         Long id = jdbcTemplate.queryForObject(
                 "SELECT id FROM weekly_biz_report WHERE company_id = ? ORDER BY id DESC LIMIT 1", Long.class, companyId);
 
-        // 등록 즉시 AI 분석 시도 (실패해도 등록은 유지 — 화면에서 재시도 가능)
-        Map<String, Object> analysis = analyze(companyId, id);
+        // 등록은 즉시 확정하고, AI 분석은 백그라운드에서 best-effort로 실행한다.
+        // (동기로 붙잡으면 무료 한도로 느려진 AI 호출이 게이트웨이 타임아웃을 넘겨 "등록 실패"로 보임)
+        final Long reportId = id;
+        analysisExecutor.submit(() -> {
+            try {
+                analyze(companyId, reportId);
+            } catch (Exception e) {
+                log.warn("[WeeklyBiz] 백그라운드 AI 분석 실패(등록은 정상): {}", e.getMessage());
+            }
+        });
+
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("success", true);
         result.put("id", id);
         result.put("weekStart", weekStart.toString());
         result.put("title", finalTitle);
         result.put("textLength", text.length());
-        result.put("aiAnalyzed", Boolean.TRUE.equals(analysis.get("success")));
-        if (analysis.get("registeredTasks") != null) result.put("registeredTasks", analysis.get("registeredTasks"));
-        if (!Boolean.TRUE.equals(analysis.get("success"))) {
-            result.put("aiMessage", analysis.get("message"));
-        }
+        result.put("aiAnalyzed", false);
+        result.put("aiMessage", "AI 분석은 백그라운드에서 진행됩니다. 잠시 후 새로고침하거나 [AI 분석]으로 확인하세요.");
         return result;
     }
 
