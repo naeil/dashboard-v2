@@ -41,6 +41,7 @@ import PartnerPaymentLedgerPage from './pages/executive/PartnerPaymentLedgerPage
 import PayrollPage from './pages/executive/PayrollPage'
 import HrRosterPage from './pages/executive/HrRosterPage'
 import SupplyPriceSheetPage from './pages/executive/SupplyPriceSheetPage'
+import CustomerCrmPage from './pages/executive/CustomerCrmPage'
 import HrLeavePage from './pages/executive/HrLeavePage'
 import QuotationPage from './pages/executive/QuotationPage'
 import PlatformAdminPage from './pages/executive/PlatformAdminPage'
@@ -100,6 +101,7 @@ const pages = {
   summary: ExecutiveSummary,
   'cash-position': CashPositionPage,
   'supply-price': SupplyPriceSheetPage,
+  'customer-crm': CustomerCrmPage,
   'cash-flow': CashFlowPage,
   'channel-credentials': ChannelCredentialPage,
   'customer-db': CustomerDatabasePage,
