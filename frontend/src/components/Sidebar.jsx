@@ -47,6 +47,7 @@ export const defaultMenuSections = [
       { id: 'product-cost', icon: 'calculate', label: '제품 원가 관리', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'supply-price', icon: 'sell', label: '공급가 (오프라인)', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'customer-intelligence', icon: 'insights', label: '고객 가치 분석', roles: ['EXECUTIVE'] },
+      { id: 'customer-crm', icon: 'campaign', label: '구매주기 마케팅 (실행)', roles: ['EXECUTIVE', 'MANAGER'] },
     ],
   },
   {
