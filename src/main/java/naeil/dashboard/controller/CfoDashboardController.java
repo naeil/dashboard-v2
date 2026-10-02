@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import naeil.dashboard.dto.AuthUser;
 import naeil.dashboard.service.AuthService;
 import naeil.dashboard.service.CfoFinanceService;
+import naeil.dashboard.service.SettleAutoSheetService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -36,6 +37,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class CfoDashboardController {
 
     private final CfoFinanceService cfoFinanceService;
+    private final SettleAutoSheetService settleAutoSheetService;
 
     private Long resolveCompanyId(HttpServletRequest request, Long fallback) {
         Object attr = request.getAttribute(AuthService.AUTHENTICATED_USER_ATTR);
@@ -56,6 +58,15 @@ public class CfoDashboardController {
 
     private LocalDate defaultTo(LocalDate to) {
         return to != null ? to : LocalDate.now();
+    }
+
+    /** 구글시트 '월말정산_자동' 연동 손익 + 대시보드 대사 (시트 읽기 전용, 5분 캐시). */
+    @GetMapping("/settlement-sheet")
+    public ResponseEntity<Map<String, Object>> settlementSheet(
+            HttpServletRequest request,
+            @RequestParam(required = false) Long companyId,
+            @RequestParam(defaultValue = "false") boolean refresh) {
+        return ResponseEntity.ok(settleAutoSheetService.getReport(resolveCompanyId(request, companyId), refresh));
     }
 
     @GetMapping("/summary")
