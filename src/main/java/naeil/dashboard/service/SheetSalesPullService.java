@@ -221,7 +221,7 @@ public class SheetSalesPullService {
         }
     }
 
-    private static List<List<String>> parseCsv(String text) {
+    static List<List<String>> parseCsv(String text) {
         List<List<String>> rows = new ArrayList<>();
         List<String> row = new ArrayList<>();
         StringBuilder f = new StringBuilder();

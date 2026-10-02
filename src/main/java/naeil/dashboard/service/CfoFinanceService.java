@@ -276,6 +276,11 @@ public class CfoFinanceService {
     }
 
     /** 한 기간의 손익 핵심 수치 계산 (요약/손익 공용). */
+    /** 월말정산 시트 대사(SettleAutoSheetService)용 공개 진입점 — 계산식은 buildPeriodFinancials 와 동일. */
+    public Map<String, Object> periodFinancials(Long companyId, LocalDate from, LocalDate to) {
+        return buildPeriodFinancials(companyId, from, to);
+    }
+
     private Map<String, Object> buildPeriodFinancials(Long companyId, LocalDate from, LocalDate to) {
         Map<String, Object> orders = orderBlock(companyId, from, to);
         Map<String, Object> field = fieldBlock(companyId, from, to);
