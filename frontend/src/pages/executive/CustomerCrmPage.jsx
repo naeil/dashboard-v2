@@ -34,15 +34,28 @@ export default function CustomerCrmPage() {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState(null)
   const [err, setErr] = useState(null)
+  const [individualOnly, setIndividualOnly] = useState(true)
+  const [assignee, setAssignee] = useState('')
+  const [assigning, setAssigning] = useState(false)
+  const [assignMsg, setAssignMsg] = useState(null)
 
   const load = useCallback(() => {
     setLoading(true); setErr(null)
-    api.get('/executive/customer-crm')
+    api.get('/executive/customer-crm', { params: { individualOnly } })
       .then((res) => setData(res.data))
       .catch((e) => setErr(e?.response?.data?.message || '분석을 불러오지 못했습니다.'))
       .finally(() => setLoading(false))
-  }, [])
+  }, [individualOnly])
   useEffect(() => { load() }, [load])
+
+  const assign = (segments, label) => {
+    if (!assignee.trim()) { setAssignMsg({ ok: false, text: '담당자 이름을 입력하세요.' }); return }
+    setAssigning(true); setAssignMsg(null)
+    api.post('/executive/customer-crm/assign', { assignee: assignee.trim(), segments, individualOnly, limit: 50 })
+      .then((res) => setAssignMsg({ ok: !!res.data?.success, text: res.data?.message || '완료' }))
+      .catch((e) => setAssignMsg({ ok: false, text: e?.response?.data?.message || '업무 등록 실패' }))
+      .finally(() => setAssigning(false))
+  }
 
   const health = data?.dataHealth
   const summary = data?.summary
@@ -58,10 +71,16 @@ export default function CustomerCrmPage() {
             [raw]매출관리 시트의 고객 구매 데이터로 "몇 번째 구매 · 다음 구매 시점"을 예측해, 지금 혜택을 쏠 대상을 뽑습니다.
           </p>
         </div>
-        <button onClick={load} disabled={loading}
-          className="shrink-0 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-slate-700 disabled:opacity-50">
-          {loading ? '분석 중…' : '새로고침'}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-[13px] font-bold text-slate-600">
+            <input type="checkbox" checked={individualOnly} onChange={(e) => setIndividualOnly(e.target.checked)} />
+            개인고객만
+          </label>
+          <button onClick={load} disabled={loading}
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-slate-700 disabled:opacity-50">
+            {loading ? '분석 중…' : '새로고침'}
+          </button>
+        </div>
       </div>
 
       {err && <div className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-[13px] font-bold text-rose-700">{err}</div>}
@@ -117,6 +136,42 @@ export default function CustomerCrmPage() {
           <Tile label="구매 임박" value={(summary.dueSoonCustomers || 0).toLocaleString('ko-KR')} sub="지금 쿠폰 타이밍" tone="emerald" />
           <Tile label="이탈 위험" value={(summary.atRiskCustomers || 0).toLocaleString('ko-KR')} sub="주기 지남" tone="rose" />
           <Tile label="첫구매 전환" value={(summary.newCustomers || 0).toLocaleString('ko-KR')} sub="두번째 유도" tone="amber" />
+        </div>
+      )}
+
+      {/* 실무 업무로 등록 */}
+      {data?.success && (
+        <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50/50 p-4">
+          <div className="mb-2 text-[14px] font-black text-slate-800">실무자에게 업무로 넘기기</div>
+          <p className="mb-3 text-[12px] text-slate-500">
+            아래 액션을 담당자 할 일로 등록합니다. 종합 상황판 · 담당자별 할 일에 바로 떠요. (중복은 자동 제외)
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={assignee}
+              onChange={(e) => setAssignee(e.target.value)}
+              placeholder="담당자 이름 (예: 한은엽)"
+              className="w-48 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+            <button onClick={() => assign(['구매임박'], '구매임박')} disabled={assigning}
+              className="rounded-lg bg-emerald-600 px-3 py-2 text-[13px] font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
+              구매임박 → 업무등록
+            </button>
+            <button onClick={() => assign(['이탈위험'], '이탈위험')} disabled={assigning}
+              className="rounded-lg bg-rose-600 px-3 py-2 text-[13px] font-bold text-white hover:bg-rose-700 disabled:opacity-50">
+              이탈위험 → 업무등록
+            </button>
+            <button onClick={() => assign([], '전체')} disabled={assigning}
+              className="rounded-lg bg-slate-900 px-3 py-2 text-[13px] font-bold text-white hover:bg-slate-700 disabled:opacity-50">
+              전체 → 업무등록
+            </button>
+            {assigning && <span className="text-[12px] text-slate-400">등록 중…</span>}
+          </div>
+          {assignMsg && (
+            <div className={`mt-2 rounded-lg px-3 py-2 text-[13px] font-bold ${assignMsg.ok ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+              {assignMsg.text}
+            </div>
+          )}
         </div>
       )}
 
