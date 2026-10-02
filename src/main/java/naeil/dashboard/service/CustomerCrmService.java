@@ -16,7 +16,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /**
@@ -29,11 +31,20 @@ import org.springframework.stereotype.Service;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class CustomerCrmService {
 
     public static final String DEFAULT_SHEET_ID = "196wCXoInO4cBiLCIwYaptXYI4iDP0mzsoBj_7n5ix4g";
     private static final String SALES_TAB = "[raw]매출관리";
     private static final Pattern DATE = Pattern.compile("(\\d{4})\\.\\s*(\\d{1,2})\\.\\s*(\\d{1,2})");
+
+    /** 업무 보드 등록용 */
+    private final JdbcTemplate jdbcTemplate;
+
+    /** 개인고객이 아닌(지점·도매·입고 등) 주문자명/채널을 걸러내는 키워드 */
+    private static final String[] PSEUDO = {"스토어", "연구소", "로켓", "그로스", "위탁", "직접입력", "유통",
+            "보더스", "한품", "스토어팜", "마켓", "(주)", "주식회사", "센터", "물류", "도매"};
+    private static final String[] B2B_CHANNEL = {"오프라인", "위탁", "직접입력", "도매", "스토어팜"};
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.NORMAL)
@@ -49,7 +60,7 @@ public class CustomerCrmService {
     private static final String[] KW_PRODUCT = {"상품명", "제품명", "상품", "제품", "품목", "상품그룹"};
     private static final String[] KW_CHANNEL = {"채널", "판매처", "쇼핑몰", "마켓", "스토어", "판매채널"};
 
-    public Map<String, Object> analyze(Long companyId, String sheetIdRaw) {
+    public Map<String, Object> analyze(Long companyId, String sheetIdRaw, boolean individualOnly) {
         String sheetId = (sheetIdRaw == null || sheetIdRaw.isBlank()) ? DEFAULT_SHEET_ID : extractSheetId(sheetIdRaw);
         List<List<String>> csv = fetchCsv(sheetId, SALES_TAB);
         if (csv == null || csv.size() < 2) {
@@ -106,6 +117,9 @@ public class CustomerCrmService {
             double amt = money(get(r, idxAmount));
             String channel = idxChannel >= 0 && !blank(get(r, idxChannel)) ? get(r, idxChannel).trim() : "미상";
             String product = idxProduct >= 0 && !blank(get(r, idxProduct)) ? get(r, idxProduct).trim() : "";
+
+            // 개인고객만 보기: 지점·도매·입고 같은 B2B/비개인 행 제외
+            if (individualOnly && !isIndividual(name, channel)) continue;
 
             Cust c = custs.computeIfAbsent(key, k -> new Cust());
             c.key = key;
@@ -215,6 +229,89 @@ public class CustomerCrmService {
         out.put("summary", summary);
         out.put("actions", topActions);
         return out;
+    }
+
+    /**
+     * 액션 리스트를 실무 업무 보드(executive_work_task)에 등록한다. 담당자 지정 + 중복 방지.
+     * segments 가 비어있으면 전체, 지정하면 해당 세그먼트만. 최대 limit 건.
+     */
+    public Map<String, Object> assignToTasks(Long companyId, String sheetId, String assignee,
+                                             List<String> segments, boolean individualOnly, int limit) {
+        if (assignee == null || assignee.isBlank()) {
+            return Map.of("success", false, "message", "담당자를 지정해 주세요.");
+        }
+        Map<String, Object> analysis = analyze(companyId, sheetId, individualOnly);
+        if (!Boolean.TRUE.equals(analysis.get("success"))) {
+            return Map.of("success", false, "message", String.valueOf(analysis.getOrDefault("message", "분석 실패")));
+        }
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> actions = (List<Map<String, Object>>) analysis.getOrDefault("actions", List.of());
+        String who = assignee.trim();
+        int registered = 0, skipped = 0;
+        LocalDate today = LocalDate.now();
+        int cap = limit <= 0 ? 50 : Math.min(limit, 300);
+
+        for (Map<String, Object> a : actions) {
+            if (registered >= cap) break;
+            String segment = String.valueOf(a.get("segment"));
+            if (segments != null && !segments.isEmpty() && !segments.contains(segment)) continue;
+
+            String customer = String.valueOf(a.getOrDefault("customer", "고객"));
+            String benefit = String.valueOf(a.getOrDefault("benefit", ""));
+            String channel = String.valueOf(a.getOrDefault("channel", ""));
+            String howTo = String.valueOf(a.getOrDefault("howTo", ""));
+            String taskName = "[CRM] " + trim(customer, 40) + " · " + segment + " · " + trim(benefit, 40);
+
+            // 마감일: 예상 다음구매일이 있으면 그날, 없으면 오늘+2일
+            LocalDate due = today.plusDays(2);
+            Object pn = a.get("predictedNext");
+            if (pn != null && !String.valueOf(pn).isBlank()) {
+                try {
+                    LocalDate p = LocalDate.parse(String.valueOf(pn));
+                    due = p.isBefore(today) ? today : p; // 지난 날짜면 오늘
+                } catch (Exception ignore) { /* 기본 유지 */ }
+            }
+
+            try {
+                Integer dup = jdbcTemplate.queryForObject("""
+                        SELECT COUNT(*) FROM executive_work_task
+                        WHERE company_id = ? AND LOWER(TRIM(task_name)) = LOWER(?)
+                          AND LOWER(TRIM(COALESCE(assignee_name,''))) = LOWER(?)
+                          AND status <> 'DONE'
+                        """, Integer.class, companyId, taskName, who);
+                if (dup != null && dup > 0) { skipped++; continue; }
+                jdbcTemplate.update("""
+                        INSERT INTO executive_work_task
+                            (company_id, project_name, task_name, assignee_name, status, priority, progress_rate,
+                             start_date, due_date, source_type, created_at, updated_at)
+                        VALUES (?, '고객 마케팅', ?, ?, 'IN_PROGRESS', 'MEDIUM', 0, CURRENT_DATE, ?, 'CRM', NOW(), NOW())
+                        """, companyId, taskName, who,
+                        java.sql.Date.valueOf(due));
+                registered++;
+            } catch (Exception e) {
+                log.warn("[CustomerCrm] 업무 등록 실패({}): {}", customer, e.getMessage());
+                skipped++;
+            }
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("success", true);
+        out.put("assignee", who);
+        out.put("registered", registered);
+        out.put("skipped", skipped);
+        out.put("message", who + " 담당으로 업무 " + registered + "건 등록(중복 " + skipped + "건 제외). 종합 상황판·담당자별 할 일에서 확인하세요.");
+        return out;
+    }
+
+    /** 개인고객 여부: 지점/도매/입고성 주문자명·B2B 채널이면 false */
+    private boolean isIndividual(String name, String channel) {
+        String n = name == null ? "" : name;
+        for (String kw : PSEUDO) if (n.contains(kw)) return false;
+        if (n.endsWith("점")) return false;             // OO지점
+        if (n.matches(".*\\d.*") && n.length() > 5) return false; // "로켓그로스 대구6" 류
+        String ch = channel == null ? "" : channel;
+        for (String kw : B2B_CHANNEL) if (ch.contains(kw)) return false;
+        return !n.isBlank();
     }
 
     private int priorityOf(String segment, Long daysUntilNext, long daysSinceLast) {
@@ -362,6 +459,11 @@ public class CustomerCrmService {
 
     private static String get(List<String> r, int i) { return i >= 0 && i < r.size() ? r.get(i) : ""; }
     private static boolean blank(String s) { return s == null || s.trim().isEmpty(); }
+
+    private static String trim(String text, int max) {
+        if (text == null) return "";
+        return text.length() <= max ? text : text.substring(0, max) + "…";
+    }
 
     private static LocalDate parseDate(String s) {
         if (s == null) return null;
