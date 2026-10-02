@@ -78,8 +78,9 @@ public class CustomerCrmController {
             return ResponseEntity.status(401).body(Map.of("success", false, "message", "로그인이 필요합니다."));
         }
         UserRole role = UserRole.from(user.role());
-        if (role != UserRole.EXECUTIVE && role != UserRole.MANAGER) {
-            return ResponseEntity.status(403).body(Map.of("success", false, "message", "대표/매니저 권한이 필요합니다."));
+        // 실무자(직원)도 자기 실행용으로 조회·업무등록 가능. (HR 전용 계정만 제외)
+        if (role != UserRole.EXECUTIVE && role != UserRole.MANAGER && role != UserRole.EMPLOYEE) {
+            return ResponseEntity.status(403).body(Map.of("success", false, "message", "접근 권한이 없습니다."));
         }
         return null;
     }
