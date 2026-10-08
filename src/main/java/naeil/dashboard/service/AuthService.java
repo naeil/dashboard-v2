@@ -156,7 +156,7 @@ public class AuthService {
     public List<Map<String, Object>> listUsers() {
         return jdbcTemplate.queryForList("""
                 SELECT id, username, display_name, department, position_name, role, account_scope,
-                       account_level, status, email, allowed_menu_sections, last_login_at, created_at
+                       account_level, status, email, base_salary, allowed_menu_sections, last_login_at, created_at
                 FROM dashboard_user
                 ORDER BY created_at DESC
                 """);
