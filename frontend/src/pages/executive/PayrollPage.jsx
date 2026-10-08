@@ -44,8 +44,39 @@ const emptyCalcForm = {
   transportAllowance: 0,
   otherAllowance: 0,
   ...insuranceRatesFor(),
+  dependents: 1,
+  incomeTaxAuto: true,
   incomeTax: 0,
   localIncomeTax: 0,
+}
+
+// 국세청 근로소득 간이세액 "근사" 추정 (정확한 표가 아닌 예상치 — 사용자가 끄고 직접입력 가능)
+function estimateIncomeTax(taxableMonthly, dependents) {
+  const t = Number(taxableMonthly) || 0
+  if (t <= 0) return 0
+  const annual = t * 12
+  let earned
+  if (annual <= 5000000) earned = annual * 0.7
+  else if (annual <= 15000000) earned = 3500000 + (annual - 5000000) * 0.4
+  else if (annual <= 45000000) earned = 7500000 + (annual - 15000000) * 0.15
+  else if (annual <= 100000000) earned = 12000000 + (annual - 45000000) * 0.05
+  else earned = 14750000 + (annual - 100000000) * 0.02
+  earned = Math.min(earned, 20000000)
+  const earnedIncome = annual - earned
+  const personal = 1500000 * Math.max(1, Number(dependents) || 1)
+  const base = Math.max(0, earnedIncome - personal)
+  let tax
+  if (base <= 14000000) tax = base * 0.06
+  else if (base <= 50000000) tax = 840000 + (base - 14000000) * 0.15
+  else if (base <= 88000000) tax = 6240000 + (base - 50000000) * 0.24
+  else if (base <= 150000000) tax = 15360000 + (base - 88000000) * 0.35
+  else if (base <= 300000000) tax = 37060000 + (base - 150000000) * 0.38
+  else if (base <= 500000000) tax = 94060000 + (base - 300000000) * 0.40
+  else tax = 174060000 + (base - 500000000) * 0.42
+  let credit = tax <= 1300000 ? tax * 0.55 : 715000 + (tax - 1300000) * 0.30
+  credit = Math.min(credit, 740000)
+  const annualTax = Math.max(0, tax - credit)
+  return Math.floor((annualTax / 12) / 10) * 10
 }
 
 const fieldClass = 'h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-950 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100'
@@ -85,8 +116,11 @@ function previewCalculation(form) {
   const healthInsurance = Math.round(totalPayment * (toNumber(form.healthInsuranceRate) / 100))
   const longTermCare = Math.round(healthInsurance * (toNumber(form.longTermCareRate) / 100))
   const employmentInsurance = Math.round(totalPayment * (toNumber(form.employmentInsuranceRate) / 100))
-  const incomeTax = toNumber(form.incomeTax)
-  const localIncomeTax = toNumber(form.localIncomeTax)
+  // 식대 월 20만원 비과세
+  const taxable = Math.max(0, totalPayment - Math.min(toNumber(form.mealAllowance), 200000))
+  const estimatedIncomeTax = estimateIncomeTax(taxable, toNumber(form.dependents) || 1)
+  const incomeTax = form.incomeTaxAuto ? estimatedIncomeTax : toNumber(form.incomeTax)
+  const localIncomeTax = form.incomeTaxAuto ? Math.floor((incomeTax * 0.1) / 10) * 10 : toNumber(form.localIncomeTax)
   const totalDeduction = nationalPension + healthInsurance + longTermCare + employmentInsurance + incomeTax + localIncomeTax
   return {
     workHours,
@@ -98,6 +132,7 @@ function previewCalculation(form) {
     healthInsurance,
     longTermCare,
     employmentInsurance,
+    estimatedIncomeTax,
     incomeTax,
     localIncomeTax,
     totalDeduction,
@@ -127,11 +162,14 @@ export default function PayrollPage() {
 
   const load = async () => {
     const [monthRes, userRes] = await Promise.all([getPayrollMonths(), getUsers()])
+    const cm = currentMonth()
     const monthList = monthRes.data || []
-    setMonths(monthList)
+    // 이번달을 항상 조회 가능하도록 목록에 포함 + 기본 선택을 이번달로
+    const withCurrent = monthList.includes(cm) ? monthList : [cm, ...monthList]
+    setMonths(withCurrent)
     setUsers(userRes.data || [])
-    if (monthList.length > 0 && !selectedMonth) {
-      setSelectedMonth(monthList[0])
+    if (!selectedMonth) {
+      setSelectedMonth(cm)
     }
   }
 
@@ -157,14 +195,22 @@ export default function PayrollPage() {
 
   const applyUser = (userId) => {
     const user = users.find((item) => String(item.id) === String(userId))
+    const base = user?.base_salary != null ? Number(user.base_salary) : null
     setCalcForm((prev) => ({
       ...prev,
       userId,
       employeeName: user?.display_name || user?.displayName || user?.username || prev.employeeName,
+      // 명부에 등록된 연봉이 있으면 자동 채움(확인 후 수정 가능)
+      annualSalary: base && base > 0 ? String(base) : prev.annualSalary,
     }))
     // 시급제인 경우 직원 선택 시 출퇴근 데이터 자동 초기화
     setAttendanceSummary(null)
   }
+
+  const selectedUser = useMemo(
+    () => users.find((u) => String(u.id) === String(calcForm.userId)),
+    [users, calcForm.userId]
+  )
 
   // 출퇴근 기록에서 근무 데이터 자동 불러오기 (시급제 전용)
   const handleLoadAttendance = async () => {
@@ -232,6 +278,8 @@ export default function PayrollPage() {
       await calculatePayroll({
         ...calcForm,
         workHours: preview.workHours,
+        incomeTax: preview.incomeTax,
+        localIncomeTax: preview.localIncomeTax,
       })
       notify('급여명세서가 저장되었습니다.', 'success')
       setSelectedMonth(calcForm.payYearMonth)
@@ -339,6 +387,15 @@ export default function PayrollPage() {
                     <option key={user.id} value={user.id}>{user.display_name || user.displayName || user.username}</option>
                   ))}
                 </select>
+                {selectedUser && (
+                  <p className="mt-1 text-[11px] font-bold text-slate-500">
+                    명세서 수신 이메일:{' '}
+                    {selectedUser.email
+                      ? <span className="text-emerald-600">{selectedUser.email}</span>
+                      : <span className="text-rose-500">미등록 ([이메일 관리] 탭에서 등록)</span>}
+                    {selectedUser.base_salary ? ` · 명부 연봉 ${Number(selectedUser.base_salary).toLocaleString('ko-KR')}원 자동적용` : ''}
+                  </p>
+                )}
               </Field>
               <Field label="직원명">
                 <input value={calcForm.employeeName} onChange={(e) => setCalcValue('employeeName', e.target.value)} className={fieldClass} />
@@ -456,13 +513,45 @@ export default function PayrollPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="소득세">
-                  <input type="number" value={calcForm.incomeTax} onChange={(e) => setCalcValue('incomeTax', e.target.value)} className={fieldClass} />
-                </Field>
-                <Field label="지방소득세">
-                  <input type="number" value={calcForm.localIncomeTax} onChange={(e) => setCalcValue('localIncomeTax', e.target.value)} className={fieldClass} />
-                </Field>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-xs font-black text-slate-500">소득세 (간이세액 예상)</p>
+                  <label className="inline-flex items-center gap-2 text-xs font-black text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(calcForm.incomeTaxAuto)}
+                      onChange={(e) => setCalcValue('incomeTaxAuto', e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-sky-600"
+                    />
+                    자동계산
+                  </label>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <Field label="부양가족수(본인포함)">
+                    <input type="number" min="1" value={calcForm.dependents} onChange={(e) => setCalcValue('dependents', e.target.value)} className={fieldClass} />
+                  </Field>
+                  <Field label="소득세">
+                    <input
+                      type="number"
+                      value={calcForm.incomeTaxAuto ? preview.incomeTax : calcForm.incomeTax}
+                      onChange={(e) => setCalcValue('incomeTax', e.target.value)}
+                      readOnly={Boolean(calcForm.incomeTaxAuto)}
+                      className={`${fieldClass} ${calcForm.incomeTaxAuto ? 'bg-slate-100 text-slate-500' : ''}`}
+                    />
+                  </Field>
+                  <Field label="지방소득세">
+                    <input
+                      type="number"
+                      value={calcForm.incomeTaxAuto ? preview.localIncomeTax : calcForm.localIncomeTax}
+                      onChange={(e) => setCalcValue('localIncomeTax', e.target.value)}
+                      readOnly={Boolean(calcForm.incomeTaxAuto)}
+                      className={`${fieldClass} ${calcForm.incomeTaxAuto ? 'bg-slate-100 text-slate-500' : ''}`}
+                    />
+                  </Field>
+                </div>
+                <p className="mt-2 text-[11px] font-bold text-slate-500">
+                  국세청 간이세액 근사 예상치입니다. 부양가족·자녀 수에 따라 실제와 다를 수 있어, 자동계산을 끄면 직접 입력할 수 있습니다. (지방소득세 = 소득세의 10%)
+                </p>
               </div>
 
               <button type="submit" disabled={savingPayroll} className="h-11 w-full rounded-lg bg-slate-950 text-sm font-black text-white hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400">
@@ -494,7 +583,7 @@ export default function PayrollPage() {
       )}
 
       {activeTab === 'upload' && (
-        <section className="mb-6 grid grid-cols-1 gap-6 xl:grid-cols-[380px_1fr]">
+        <section className="mb-6 max-w-xl">
           <Panel title="세무사 엑셀 업로드">
             <form onSubmit={handleUpload} className="space-y-4">
               <Field label="급여 연월">
@@ -506,10 +595,9 @@ export default function PayrollPage() {
               <button type="submit" disabled={uploading} className="h-11 w-full rounded-lg bg-sky-500 px-6 text-sm font-black text-white hover:bg-sky-600 disabled:bg-slate-200 disabled:text-slate-400">
                 {uploading ? '업로드 중...' : '업로드'}
               </button>
+              <p className="text-[11px] font-bold text-slate-500">업로드한 내역은 아래 "급여명세서 발송 · 내역"에서 함께 확인·발송됩니다.</p>
             </form>
           </Panel>
-
-          <PayrollSendPanel selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} months={months} records={records} sending={sending} onSend={handleSend} />
         </section>
       )}
 
@@ -544,27 +632,6 @@ export default function PayrollPage() {
       <section className="mt-6">
         <PayrollSendPanel selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} months={months} records={records} sending={sending} onSend={handleSend} />
       </section>
-
-      {records.length > 0 && (
-        <Panel title={`${selectedMonth} 급여 상세`}>
-          <DataTable
-            rows={records}
-            rowKey={(row) => row.id}
-            searchPlaceholder="직원명, 급여방식 검색"
-            columns={[
-              { key: 'employeeName', label: '직원', render: (row) => <span className="font-black text-slate-950">{row.employeeName}</span> },
-              { key: 'salaryType', label: '방식', render: (row) => <StatusBadge value={row.salaryType === 'HOURLY' ? '시급제' : row.salaryType === 'ANNUAL' ? '연봉제' : 'EXCEL'} /> },
-              { key: 'baseSalary', label: '기본급', render: (row) => fmt(row.baseSalary) },
-              { key: 'weeklyHolidayAllowance', label: '주휴수당', render: (row) => fmt(row.weeklyHolidayAllowance || 0) },
-              { key: 'workHours', label: '근무시간', render: (row) => Number(row.workHours || 0) ? `${Number(row.workHours).toLocaleString('ko-KR')}시간` : '-' },
-              { key: 'totalPayment', label: '지급합계', render: (row) => fmt(row.totalPayment) },
-              { key: 'totalDeduction', label: '공제합계', render: (row) => <span className="font-bold text-rose-600">{fmt(row.totalDeduction)}</span> },
-              { key: 'netPay', label: '실지급액', render: (row) => <span className="font-black text-emerald-600">{fmt(row.netPay)}</span> },
-              { key: 'emailSentAt', label: '발송', render: (row) => row.emailSentAt ? fmtDate(row.emailSentAt) : '미발송' },
-            ]}
-          />
-        </Panel>
-      )}
     </>
   )
 }
@@ -584,9 +651,10 @@ function Preview({ label, value, tone = 'slate', strong = false, large = false }
 }
 
 function PayrollSendPanel({ selectedMonth, setSelectedMonth, months, records, sending, onSend }) {
+  const paid = records.filter((r) => r.emailSentAt).length
   return (
     <Panel
-      title="급여명세서 발송"
+      title="급여명세서 발송 · 내역"
       right={
         <button
           onClick={onSend}
@@ -603,20 +671,24 @@ function PayrollSendPanel({ selectedMonth, setSelectedMonth, months, records, se
         <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className={fieldClass}>
           {months.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
-        <span className="text-xs font-bold text-slate-500">{records.length}명</span>
+        <span className="text-xs font-bold text-slate-500">{records.length}명 · 발송완료 {paid} / 미발송 {records.length - paid}</span>
       </div>
       <DataTable
         rows={records}
         rowKey={(row) => row.id}
+        searchPlaceholder="직원명 검색"
         columns={[
           { key: 'employeeName', label: '직원', render: (row) => <span className="font-black text-slate-950">{row.employeeName}</span> },
-          { key: 'netPay', label: '실지급액', render: (row) => <span className="font-bold text-emerald-600">{fmt(row.netPay)}</span> },
-          { key: 'totalPayment', label: '지급합계', render: (row) => fmt(row.totalPayment) },
+          { key: 'salaryType', label: '방식', render: (row) => <StatusBadge value={row.salaryType === 'HOURLY' ? '시급제' : row.salaryType === 'ANNUAL' ? '연봉제' : 'EXCEL'} /> },
+          { key: 'baseSalary', label: '기본급', render: (row) => fmt(row.baseSalary) },
           { key: 'weeklyHolidayAllowance', label: '주휴수당', render: (row) => fmt(row.weeklyHolidayAllowance || 0) },
-          { key: 'totalDeduction', label: '공제합계', render: (row) => <span className="text-rose-600">{fmt(row.totalDeduction)}</span> },
+          { key: 'workHours', label: '근무시간', render: (row) => Number(row.workHours || 0) ? `${Number(row.workHours).toLocaleString('ko-KR')}시간` : '-' },
+          { key: 'totalPayment', label: '지급합계', render: (row) => fmt(row.totalPayment) },
+          { key: 'totalDeduction', label: '공제합계', render: (row) => <span className="font-bold text-rose-600">{fmt(row.totalDeduction)}</span> },
+          { key: 'netPay', label: '실지급액', render: (row) => <span className="font-black text-emerald-600">{fmt(row.netPay)}</span> },
           { key: 'emailSentAt', label: '발송', render: (row) => row.emailSentAt ? fmtDate(row.emailSentAt) : '미발송' },
         ]}
       />
     </Panel>
   )
-    }
+}
