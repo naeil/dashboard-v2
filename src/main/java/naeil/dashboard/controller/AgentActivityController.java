@@ -1,0 +1,100 @@
+package naeil.dashboard.controller;
+
+import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
+import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import naeil.dashboard.dto.AuthUser;
+import naeil.dashboard.dto.UserRole;
+import naeil.dashboard.service.AgentActivityService;
+import naeil.dashboard.service.AuthService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+/**
+ * AI 에이전트 활동 패널 API.
+ * - /api/agent/ingest/** : 회사 PC 에이전트 전용 (JWT 대신 X-Agent-Key, AuthInterceptor 화이트리스트)
+ * - /api/agent/activities/** : 로그인 사용자용 조회 · 승인/반려
+ */
+@RestController
+@RequestMapping("/api/agent")
+@RequiredArgsConstructor
+public class AgentActivityController {
+
+    private static final Long COMPANY = 1L;
+    private static final String KEY_HEADER = "X-Agent-Key";
+
+    private final AgentActivityService agentActivityService;
+    private final AuthService authService;
+
+    // ===== 에이전트 =====
+
+    @PostMapping("/ingest/activities")
+    public ResponseEntity<Map<String, Object>> create(
+            @RequestHeader(value = KEY_HEADER, required = false) String key,
+            @RequestBody Map<String, Object> body) {
+        agentActivityService.requireAgentKey(key);
+        return ResponseEntity.ok(agentActivityService.create(COMPANY, body));
+    }
+
+    @PatchMapping("/ingest/activities/{id}")
+    public ResponseEntity<Map<String, Object>> update(
+            @RequestHeader(value = KEY_HEADER, required = false) String key,
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> body) {
+        agentActivityService.requireAgentKey(key);
+        return ResponseEntity.ok(agentActivityService.agentUpdate(COMPANY, id, body));
+    }
+
+    @PostMapping("/ingest/heartbeat")
+    public ResponseEntity<Map<String, Object>> heartbeat(
+            @RequestHeader(value = KEY_HEADER, required = false) String key,
+            @RequestBody Map<String, Object> body) {
+        agentActivityService.requireAgentKey(key);
+        agentActivityService.heartbeat(COMPANY, body);
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    @GetMapping("/ingest/decisions")
+    public ResponseEntity<List<Map<String, Object>>> decisions(
+            @RequestHeader(value = KEY_HEADER, required = false) String key,
+            @RequestParam(required = false) String agentName) {
+        agentActivityService.requireAgentKey(key);
+        return ResponseEntity.ok(agentActivityService.pendingDecisions(COMPANY, agentName));
+    }
+
+    // ===== 사용자 =====
+
+    @GetMapping("/activities")
+    public ResponseEntity<Map<String, Object>> overview(@RequestParam(defaultValue = "50") int limit) {
+        return ResponseEntity.ok(agentActivityService.overview(COMPANY, limit));
+    }
+
+    @PostMapping("/activities/{id}/approve")
+    public ResponseEntity<Map<String, Object>> approve(
+            @PathVariable Long id,
+            @RequestBody(required = false) Map<String, Object> body,
+            HttpServletRequest request) {
+        AuthUser actor = requireManager(request);
+        return ResponseEntity.ok(agentActivityService.decide(COMPANY, id, true, comment(body), actor.username()));
+    }
+
+    @PostMapping("/activities/{id}/reject")
+    public ResponseEntity<Map<String, Object>> reject(
+            @PathVariable Long id,
+            @RequestBody(required = false) Map<String, Object> body,
+            HttpServletRequest request) {
+        AuthUser actor = requireManager(request);
+        return ResponseEntity.ok(agentActivityService.decide(COMPANY, id, false, comment(body), actor.username()));
+    }
+
+    private AuthUser requireManager(HttpServletRequest request) {
+        AuthUser actor = (AuthUser) request.getAttribute(AuthService.AUTHENTICATED_USER_ATTR);
+        authService.requireRole(actor, UserRole.MANAGER);
+        return actor;
+    }
+
+    private static String comment(Map<String, Object> body) {
+        return body == null || body.get("comment") == null ? null : String.valueOf(body.get("comment"));
+    }
+}
