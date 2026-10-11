@@ -64,6 +64,9 @@ spring:
 app:
   mail:
     from: ${APP_MAIL_FROM:noreply@naeil.com}
+  agent:
+    # 회사 PC AI 에이전트 전용 키 — 비어 있으면 에이전트 API 비활성화
+    api-key: ${AGENT_API_KEY:}
 
 server:
   port: 8080
