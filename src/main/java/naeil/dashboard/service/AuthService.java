@@ -66,7 +66,7 @@ public class AuthService {
     public AuthUser tenantLogin(String companyCode, String username, String password) {
         String normalizedUsername = required(username, "아이디를 입력하세요.").trim();
         Long companyId = findCompanyIdByCode(companyCode)
-                .orElseThrow(() -> new CustomException(400, "회사 코드를 입력하세요."));
+                .orElseThrow(() -> new CustomException(401, "회사 코드, 아이디 또는 비밀번호가 올바르지 않습니다."));
         AuthUser user = findTenantUser(companyId, normalizedUsername)
                 .orElseThrow(() -> new CustomException(401, "회사 코드, 아이디 또는 비밀번호가 올바르지 않습니다."));
         return verifySeparatedLogin(user, password);
