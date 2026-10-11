@@ -1,12 +1,15 @@
 package naeil.dashboard.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import naeil.dashboard.dto.AuthUser;
 import naeil.dashboard.dto.UserRole;
 import naeil.dashboard.service.AgentActivityService;
+import naeil.dashboard.service.AgentWorkService;
 import naeil.dashboard.service.AuthService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -24,7 +27,10 @@ public class AgentActivityController {
     private static final Long COMPANY = 1L;
     private static final String KEY_HEADER = "X-Agent-Key";
 
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+
     private final AgentActivityService agentActivityService;
+    private final AgentWorkService agentWorkService;
     private final AuthService authService;
 
     // ===== 에이전트 =====
@@ -61,6 +67,23 @@ public class AgentActivityController {
             @RequestParam(required = false) String agentName) {
         agentActivityService.requireAgentKey(key);
         return ResponseEntity.ok(agentActivityService.pendingDecisions(COMPANY, agentName));
+    }
+
+    @GetMapping("/ingest/work-context")
+    public ResponseEntity<Map<String, Object>> workContext(
+            @RequestHeader(value = KEY_HEADER, required = false) String key,
+            @RequestParam(required = false) String date) {
+        agentActivityService.requireAgentKey(key);
+        LocalDate target = date == null || date.isBlank() ? LocalDate.now(SEOUL) : LocalDate.parse(date);
+        return ResponseEntity.ok(agentWorkService.workContext(COMPANY, target));
+    }
+
+    @PostMapping("/ingest/work-directives")
+    public ResponseEntity<Map<String, Object>> createDirective(
+            @RequestHeader(value = KEY_HEADER, required = false) String key,
+            @RequestBody Map<String, Object> body) {
+        agentActivityService.requireAgentKey(key);
+        return ResponseEntity.ok(agentWorkService.createDirective(COMPANY, body));
     }
 
     // ===== 사용자 =====

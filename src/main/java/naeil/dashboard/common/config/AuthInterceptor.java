@@ -92,8 +92,7 @@ public class AuthInterceptor implements HandlerInterceptor {
                 || path.startsWith("/api/executive/product-movements/sync-playauto")
                 || path.startsWith("/api/executive/receivables")
                 || path.startsWith("/api/executive/cash-accounts")
-                || path.startsWith("/api/executive/cash-flows")
-                || path.startsWith("/api/agent/activities");
+                || path.startsWith("/api/executive/cash-flows");
     }
 
     private void writeJson(HttpServletResponse response, int status, String message) {

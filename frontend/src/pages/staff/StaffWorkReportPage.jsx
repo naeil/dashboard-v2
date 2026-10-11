@@ -38,6 +38,7 @@ const FEEDBACK_TYPES = [
   { value: 'DECISION', label: '의사결정', color: 'bg-purple-100 text-purple-700 border-purple-200' },
   { value: 'PRAISE', label: '칭찬', color: 'bg-green-100 text-green-700 border-green-200' },
   { value: 'WARNING', label: '주의', color: 'bg-red-100 text-red-700 border-red-200' },
+  { value: 'AI_DIRECTIVE', label: 'AI 업무 지시', color: 'bg-teal-100 text-teal-700 border-teal-200' },
 ]
 
 const FEEDBACK_STATUSES = [
