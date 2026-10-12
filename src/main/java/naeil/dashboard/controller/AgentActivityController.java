@@ -80,6 +80,13 @@ public class AgentActivityController {
         return ResponseEntity.ok(agentActivityService.overview(COMPANY, limit));
     }
 
+    /** AI 관제실 화면: 운영·관제 현황과 시간대별 그래프 데이터 (매출 포함이라 관리자 이상). */
+    @GetMapping("/control-room")
+    public ResponseEntity<Map<String, Object>> controlRoom(HttpServletRequest request) {
+        requireManager(request);
+        return ResponseEntity.ok(agentMonitorService.controlRoom(COMPANY));
+    }
+
     @PostMapping("/activities/{id}/approve")
     public ResponseEntity<Map<String, Object>> approve(
             @PathVariable Long id,

@@ -47,9 +47,60 @@ public class AgentMonitorService {
         return out;
     }
 
-    private Map<String, Object> orders(Long companyId, ZonedDateTime now, ZonedDateTime dayStart) {
-        String statuses = String.join(",", OrderStatusGroups.REVENUE_INCLUDED_STATUSES.stream()
+    /**
+     * AI 관제실 화면용: 상태 요약 + 시간대별 그래프 데이터.
+     * - ordersHourly: 오늘 시간대별 주문 수 vs 최근 4주 같은 요일 평균
+     * - activityHourly: 최근 24시간 에이전트별 활동 수(시간 단위)
+     * - activityByKind: 오늘 활동 종류별 건수
+     */
+    public Map<String, Object> controlRoom(Long companyId) {
+        ZonedDateTime now = ZonedDateTime.now(SEOUL);
+        ZonedDateTime dayStart = now.toLocalDate().atStartOfDay(SEOUL);
+        Map<String, Object> out = statusSummary(companyId);
+        out.put("ordersHourly", section("ordersHourly", () -> ordersHourly(companyId, dayStart)));
+        out.put("activityHourly", section("activityHourly", () -> jdbcTemplate.queryForList("""
+                SELECT agent_name, DATE_TRUNC('hour', created_at) AS hour, COUNT(*) AS count
+                FROM agent_activity
+                WHERE company_id = ? AND created_at > NOW() - INTERVAL '24 hours'
+                GROUP BY agent_name, DATE_TRUNC('hour', created_at)
+                ORDER BY hour
+                """, companyId)));
+        out.put("activityByKind", section("activityByKind", () -> jdbcTemplate.queryForList("""
+                SELECT kind, status, COUNT(*) AS count
+                FROM agent_activity
+                WHERE company_id = ? AND created_at >= ?
+                GROUP BY kind, status
+                """, companyId, dayStart.toOffsetDateTime())));
+        return out;
+    }
+
+    private Map<String, Object> ordersHourly(Long companyId, ZonedDateTime dayStart) {
+        String statuses = revenueStatuses();
+        String hour = "EXTRACT(HOUR FROM o.ord_time AT TIME ZONE 'Asia/Seoul')::int";
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("today", jdbcTemplate.queryForList(
+                "SELECT " + hour + " AS h, COUNT(*) AS count FROM orders o"
+                        + " WHERE o.company_id = ? AND o.ord_status IN (" + statuses + ")"
+                        + " AND o.ord_time >= ? AND o.ord_time < ? GROUP BY 1 ORDER BY 1",
+                companyId, dayStart.toOffsetDateTime(), dayStart.plusDays(1).toOffsetDateTime()));
+        m.put("sameWeekdayAvg", jdbcTemplate.queryForList(
+                "SELECT " + hour + " AS h, COUNT(*) / 4.0 AS count"
+                        + " FROM generate_series(1, 4) w"
+                        + " JOIN orders o ON o.company_id = ? AND o.ord_status IN (" + statuses + ")"
+                        + "  AND o.ord_time >= (?::timestamptz - (w * INTERVAL '7 days'))"
+                        + "  AND o.ord_time <  (?::timestamptz - (w * INTERVAL '7 days'))"
+                        + " GROUP BY 1 ORDER BY 1",
+                companyId, dayStart.toOffsetDateTime(), dayStart.plusDays(1).toOffsetDateTime()));
+        return m;
+    }
+
+    private static String revenueStatuses() {
+        return String.join(",", OrderStatusGroups.REVENUE_INCLUDED_STATUSES.stream()
                 .map(s -> "'" + s.replace("'", "''") + "'").toList());
+    }
+
+    private Map<String, Object> orders(Long companyId, ZonedDateTime now, ZonedDateTime dayStart) {
+        String statuses = revenueStatuses();
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("lastCollectedAt", jdbcTemplate.queryForObject(
                 "SELECT MAX(created_at) FROM orders WHERE company_id = ?", Object.class, companyId));
