@@ -246,6 +246,7 @@ export default function ControlTowerPage() {
                     <td className="px-2 py-1.5"><DueDateCell task={t} onSaved={load} /></td>
                     <td className="px-2 py-1.5 text-[13px] font-bold text-slate-800">{t.task_name}
                       {t.source_type === 'WEEKLY_BIZ' && <span className="ml-1.5 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-bold text-indigo-600" title="주간 운영보고에서 자동 등록됨">주간보고</span>}
+                      {t.source_type === 'AI_AGENT' && <span className="ml-1.5 rounded bg-teal-50 px-1.5 py-0.5 text-[10px] font-bold text-teal-600" title="AI 에이전트가 일일 업무 보고를 바탕으로 배정함">AI 배정</span>}
                       {t.blocker_text && <span className="ml-1.5 rounded bg-orange-50 px-1.5 py-0.5 text-[10px] font-bold text-orange-600">막힘</span>}
                     </td>
                     <td className="px-2 py-1.5 text-[12px] text-slate-500">{t.project_name}</td>
