@@ -115,6 +115,7 @@ export const defaultMenuSections = [
       { id: 'channel-operations', icon: 'storefront', label: '채널 운영', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'customer-inquiry', icon: 'forum', label: 'CS 문의', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'channel-credentials', icon: 'encrypted', label: '채널 계정 관리', roles: ['EXECUTIVE', 'MANAGER'] },
+      { id: 'playauto-product-edit', icon: 'edit_square', label: '상품 정보 수정', roles: ['EXECUTIVE', 'MANAGER'] },
       { id: 'inventory', icon: 'warehouse', label: '재고 현황', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'product-movement', icon: 'inventory', label: '제품 출입고', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'inventory-flow', icon: 'sync_alt', label: '입출고 관리', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },

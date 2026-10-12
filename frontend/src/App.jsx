@@ -71,6 +71,7 @@ import Settings from './pages/Settings'
 import LoginPage from './pages/LoginPage'
 import ControlTowerPage from './pages/common/ControlTowerPage'
 import AgentActivityPage from './pages/common/AgentActivityPage'
+import PlayAutoProductEditPage from './pages/executive/PlayAutoProductEditPage'
 import WeeklyBizReportPage from './pages/common/WeeklyBizReportPage'
 import TeamManagePage from './pages/common/TeamManagePage'
 import PersonalMemoPage from './pages/common/PersonalMemoPage'
@@ -86,6 +87,7 @@ const pages = {
   platform: PlatformOverviewPage,
   'control-tower': ControlTowerPage,
   'agent-activity': AgentActivityPage,
+  'playauto-product-edit': PlayAutoProductEditPage,
   'weekly-biz-report': WeeklyBizReportPage,
   'team-manage': TeamManagePage,
   'my-memo': PersonalMemoPage,
