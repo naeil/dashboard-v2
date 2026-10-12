@@ -274,6 +274,8 @@ export default function AgentControlRoomPage() {
   const opsRow = boards.find((b) => b.board_key === 'ops')
   const ops = opsRow ? parseJson(opsRow.payload) : null
   const outreach = ops?.outreach
+  const staffRow = boards.find((b) => b.board_key === 'staff-focus')
+  const staff = staffRow ? parseJson(staffRow.payload) : null
   const { issues, ok: healthy } = triage(room, ops, now)
 
   return (
@@ -383,6 +385,53 @@ export default function AgentControlRoomPage() {
             {feed.length === 0 ? <p className="text-[12.5px] text-slate-500">아직 기록이 없습니다.</p> : feed.map((i) => <FeedRow key={i.id} item={i} />)}
           </Panel>
         </div>
+
+        <Panel title="담당자별 놓친 것 · 오늘 마무리"
+          right={<span className="text-[11px] text-slate-500">{staffRow ? `일일 업무 보고 기준 · AI가 ${ago(staffRow.updated_at)} 판단` : '아직 분석 전입니다'}</span>}>
+          {!staff ? <p className="text-[12.5px] text-slate-500">운영 에이전트가 일일 업무 보고와 업무 목록을 분석하면 여기에 표시됩니다.</p> : (
+            <>
+              {staff.summary && <p className="mb-3 text-[13px] font-bold text-slate-200">{staff.summary}</p>}
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {(staff.people || []).map((p) => (
+                  <div key={p.name} className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[14px] font-black text-white">{p.name} <span className="text-[11.5px] font-bold text-slate-500">{p.department}</span></p>
+                      <span className={`rounded-md px-1.5 py-0.5 text-[10.5px] font-black ${p.reportStatus === '제출' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}`}>
+                        보고 {p.reportStatus || '-'}
+                      </span>
+                    </div>
+                    {(p.missed || []).length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-[11px] font-black text-rose-300">놓친 것</p>
+                        {p.missed.map((m, i) => (
+                          <div key={i} className="border-b border-slate-800 py-1.5 last:border-b-0">
+                            <p className="text-[12.5px] font-bold text-slate-100">{m.item}</p>
+                            {m.why && <p className="text-[11px] text-slate-500">{m.why}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {(p.today || []).length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-[11px] font-black text-amber-300">오늘 마무리</p>
+                        {p.today.map((t, i) => (
+                          <div key={i} className="flex gap-2 border-b border-slate-800 py-1.5 last:border-b-0">
+                            <span className="w-12 shrink-0 font-mono text-[12px] font-black text-amber-300">{t.deadline}</span>
+                            <div className="min-w-0">
+                              <p className="text-[12.5px] font-bold text-slate-100">{t.item}</p>
+                              {t.reason && <p className="text-[11px] text-slate-500">{t.reason}</p>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {!(p.missed || []).length && !(p.today || []).length && <p className="mt-3 text-[12px] text-emerald-300">놓친 일이 없습니다.</p>}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </Panel>
 
         <Panel title="운영 에이전트 업무" right={<span className="text-[11px] text-slate-500">{opsRow ? `A가 ${ago(opsRow.updated_at)} 올림` : '아직 올라온 업무 현황이 없습니다'}</span>}>
           {!ops ? <p className="text-[12.5px] text-slate-500">운영 에이전트가 업무 현황을 올리면 여기에 표시됩니다.</p> : (
