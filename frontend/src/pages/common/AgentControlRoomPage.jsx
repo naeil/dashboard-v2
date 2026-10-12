@@ -450,6 +450,33 @@ export default function AgentControlRoomPage() {
                     <p className="mt-1.5 text-[11px] text-slate-500">누적 제안 {num(outreach.totalSent)}곳 · 거래 중(제안 제외) {num(outreach.partners)}곳</p>
                   </div>
                 )}
+                {(outreach?.byIndustry || []).length > 0 && (
+                  <div>
+                    <p className="mb-1 text-[12px] font-bold text-slate-400">업종별 전달 현황</p>
+                    <div className="space-y-1.5">
+                      {outreach.byIndustry.map((r) => {
+                        const total = num(r.sent) + num(r.pending) + num(r.meeting) + num(r.bounced)
+                        const seg = (v, cls) => (num(v) > 0 ? <div className={cls} style={{ width: `${(num(v) / Math.max(1, total)) * 100}%` }} /> : null)
+                        return (
+                          <div key={r.label}>
+                            <div className="flex items-center justify-between text-[11.5px]">
+                              <span className="truncate font-bold text-slate-200">{r.label}</span>
+                              <span className="shrink-0 text-slate-400">
+                                발송 {num(r.sent)}{num(r.meeting) ? ` · 미팅 ${num(r.meeting)}` : ''}{num(r.pending) ? ` · 대기 ${num(r.pending)}` : ''}{num(r.bounced) ? ` · 반송 ${num(r.bounced)}` : ''}
+                              </span>
+                            </div>
+                            <div className="mt-0.5 flex h-1.5 overflow-hidden rounded-full bg-slate-800">
+                              {seg(r.meeting, 'bg-emerald-400')}{seg(r.sent, 'bg-sky-400')}{seg(r.pending, 'bg-slate-500')}{seg(r.bounced, 'bg-rose-400')}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <p className="mt-1.5 text-[10.5px] text-slate-500">
+                      <span className="text-emerald-400">■</span> 미팅 <span className="ml-1 text-sky-400">■</span> 발송 <span className="ml-1 text-slate-400">■</span> 대기 <span className="ml-1 text-rose-400">■</span> 반송
+                    </p>
+                  </div>
+                )}
                 <div>
                   <p className="mb-1 text-[12px] font-bold text-slate-400">다가오는 마감</p>
                   {(ops.deadlines || []).map((d) => {
