@@ -92,6 +92,86 @@ function FeedRow({ item }) {
   )
 }
 
+const parseJson = (text) => { try { return JSON.parse(text) } catch { return null } }
+const dday = (date) => Math.ceil((new Date(`${date}T00:00:00+09:00`) - new Date(new Date().toDateString())) / 86400000)
+const SEVERITY = {
+  3: { label: '긴급', cls: 'border-rose-500/60 bg-rose-500/10', badge: 'bg-rose-500 text-white' },
+  2: { label: '주의', cls: 'border-amber-500/50 bg-amber-500/10', badge: 'bg-amber-500 text-slate-950' },
+  1: { label: '확인', cls: 'border-sky-500/40 bg-sky-500/5', badge: 'bg-sky-500 text-slate-950' },
+}
+
+// 지금 확인할 것(무엇·왜·할 일)과 정상 항목을 데이터에서 판정한다
+function triage(room, ops, now) {
+  const issues = []
+  const ok = []
+  const agents = Array.isArray(room?.agents) ? room.agents : []
+  const down = agents.filter((a) => !a.last_seen_at || num(a.minutes_since) > 15)
+  down.forEach((a) => issues.push({ sev: 3, what: `${a.agent_name} 응답 없음`, why: `${num(a.minutes_since)}분째 신호가 없습니다.`, todo: '해당 컴퓨터의 전원·네트워크를 확인하세요(Chrome 원격 데스크톱).' }))
+  if (agents.length && !down.length) ok.push('에이전트 정상')
+
+  const orders = room?.orders
+  if (orders && !orders.error) {
+    const hour = now.getHours()
+    const collectedMin = orders.lastCollectedAt ? (now - new Date(orders.lastCollectedAt)) / 60000 : null
+    if (hour >= 9 && hour < 22 && collectedMin !== null && collectedMin > 120) {
+      issues.push({ sev: 3, what: '주문 수집 멈춤', why: `마지막 수집이 ${Math.round(collectedMin / 60)}시간 전입니다.`, todo: '플레이오토 연동과 회사 PC의 수집 서비스를 확인하세요.' })
+    } else ok.push('주문 수집')
+    const t = num(orders.today?.orders); const avg = num(orders.sameWeekdayAvg?.orders)
+    if (hour >= 14 && avg >= 5 && t < avg * 0.5) {
+      issues.push({ sev: 3, what: '오늘 주문 급감', why: `같은 시각 평균 ${Math.round(avg)}건 대비 ${t}건(${Math.round((t / avg) * 100)}%)입니다.`, todo: '품절·노출·가격 오류가 없는지 주요 판매처를 확인하세요.' })
+    } else if (avg >= 5) ok.push('주문 흐름')
+  }
+
+  const stock = room?.stock
+  if (stock && !stock.error) {
+    const low = stock.belowSafeStock || []
+    if (low.length) issues.push({ sev: 2, what: `안전재고 미만 ${low.length}개`, why: low.slice(0, 3).map((p) => `${p.product_name} ${num(p.real_stock)}개`).join(', '), todo: '생산·발주 일정을 확인하세요.' })
+    else ok.push('재고')
+  }
+
+  const cs = room?.cs
+  if (cs && !cs.error) {
+    const unanswered = num(cs.unansweredInquiries?.count) + num(cs.newCsInquiries?.count)
+    const oldestH = cs.unansweredInquiries?.oldest ? (now - new Date(cs.unansweredInquiries.oldest)) / 3600000 : 0
+    if (oldestH > 24) issues.push({ sev: 2, what: `미답변 문의 ${unanswered}건`, why: `가장 오래된 문의가 ${Math.round(oldestH)}시간째 대기 중입니다.`, todo: 'CS 담당이 오늘 안에 답변하세요.' })
+    else if (unanswered) issues.push({ sev: 1, what: `새 문의 ${unanswered}건`, why: '답변 대기 중입니다.', todo: 'CS 화면에서 확인하세요.' })
+    else ok.push('고객 문의')
+    const bad = num(cs.lowRatingReviews24h)
+    if (bad) issues.push({ sev: 2, what: `저평점 리뷰 ${bad}건`, why: '최근 24시간 별점 2점 이하 리뷰가 달렸습니다.', todo: '내용 확인 후 사과·보상 답글을 남기세요.' })
+    else ok.push('리뷰')
+  }
+
+  const ap = room?.approvals
+  if (ap && !ap.error) {
+    if (num(ap.failed_24h)) issues.push({ sev: 2, what: `AI 작업 실패 ${num(ap.failed_24h)}건`, why: '최근 24시간 안에 실패한 작업이 있습니다.', todo: 'AI 에이전트 활동에서 실패 사유를 확인하세요.' })
+    if (num(ap.pending)) issues.push({ sev: 1, what: `승인 대기 ${num(ap.pending)}건`, why: 'AI가 대표 승인을 기다리고 있습니다.', todo: 'AI 에이전트 활동에서 승인 또는 반려하세요.' })
+    if (!num(ap.failed_24h) && !num(ap.pending)) ok.push('AI 작업')
+  }
+
+  ;(ops?.deadlines || []).forEach((d) => {
+    const left = dday(d.date)
+    if (left >= 0 && left <= 3) issues.push({ sev: left <= 1 ? 3 : 2, what: `마감 D-${left}: ${d.name}`, why: `${d.date} 마감입니다.`, todo: '제출 여부를 오늘 결정하세요.' })
+  })
+  if (ops?.disk && num(ops.disk.freeGb) < 3) {
+    issues.push({ sev: num(ops.disk.freeGb) < 1.5 ? 3 : 2, what: `회사 PC 저장 공간 ${ops.disk.freeGb}GB`, why: '공간이 부족하면 수집·발송이 멈출 수 있습니다.', todo: '불필요한 파일을 정리하세요.' })
+  }
+  return { issues: issues.sort((a, b) => b.sev - a.sev), ok }
+}
+
+function IssueCard({ issue }) {
+  const s = SEVERITY[issue.sev]
+  return (
+    <div className={`rounded-2xl border p-4 ${s.cls}`}>
+      <div className="flex items-center gap-2">
+        <span className={`rounded-md px-1.5 py-0.5 text-[10.5px] font-black ${s.badge}`}>{s.label}</span>
+        <p className="text-[14px] font-black text-white">{issue.what}</p>
+      </div>
+      <p className="mt-2 text-[12.5px] text-slate-300"><span className="font-bold text-slate-400">왜 · </span>{issue.why}</p>
+      <p className="mt-1 text-[12.5px] text-slate-100"><span className="font-bold text-slate-400">할 일 · </span>{issue.todo}</p>
+    </div>
+  )
+}
+
 function ordersChart(hourly, nowHour) {
   const labels = Array.from({ length: 24 }, (_, h) => `${h}시`)
   const today = Array(24).fill(0)
@@ -190,6 +270,11 @@ export default function AgentControlRoomPage() {
   const unanswered = num(cs.unansweredInquiries?.count) + num(cs.newCsInquiries?.count)
   const lowReviews = num(cs.lowRatingReviews24h)
   const downAgents = agents.filter((a) => !a.last_seen_at || num(a.minutes_since) > 15)
+  const boards = Array.isArray(room?.boards) ? room.boards : []
+  const opsRow = boards.find((b) => b.board_key === 'ops')
+  const ops = opsRow ? parseJson(opsRow.payload) : null
+  const outreach = ops?.outreach
+  const { issues, ok: healthy } = triage(room, ops, now)
 
   return (
     <div ref={rootRef} className="min-h-full overflow-y-auto bg-slate-950 p-4 text-slate-100 md:p-6">
@@ -216,6 +301,15 @@ export default function AgentControlRoomPage() {
             응답 없는 에이전트: {downAgents.map((a) => a.agent_name).join(', ')} — 컴퓨터 전원·네트워크를 확인하세요.
           </p>
         )}
+
+        <Panel title={issues.length ? `지금 확인할 것 (${issues.length})` : '지금 확인할 것'}
+          right={<div className="flex flex-wrap justify-end gap-1.5">{healthy.map((h) => (
+            <span key={h} className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-300">✓ {h}</span>
+          ))}</div>}>
+          {issues.length === 0
+            ? <p className="text-[13px] font-bold text-emerald-300">지금 처리할 문제가 없습니다.</p>
+            : <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{issues.map((i, idx) => <IssueCard key={idx} issue={i} />)}</div>}
+        </Panel>
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {agents.length === 0
@@ -289,6 +383,84 @@ export default function AgentControlRoomPage() {
             {feed.length === 0 ? <p className="text-[12.5px] text-slate-500">아직 기록이 없습니다.</p> : feed.map((i) => <FeedRow key={i.id} item={i} />)}
           </Panel>
         </div>
+
+        <Panel title="운영 에이전트 업무" right={<span className="text-[11px] text-slate-500">{opsRow ? `A가 ${ago(opsRow.updated_at)} 올림` : '아직 올라온 업무 현황이 없습니다'}</span>}>
+          {!ops ? <p className="text-[12.5px] text-slate-500">운영 에이전트가 업무 현황을 올리면 여기에 표시됩니다.</p> : (
+            <div className="grid gap-4 xl:grid-cols-3">
+              <div className="space-y-3">
+                {outreach && (
+                  <div>
+                    <div className="flex items-end justify-between">
+                      <p className="text-[12px] font-bold text-slate-400">오늘 제안 메일</p>
+                      <p className="text-[11px] text-slate-500">실패 {num(outreach.failed)} · 대기 {num(outreach.pending)}</p>
+                    </div>
+                    <p className="text-[26px] font-black text-white">{num(outreach.sentToday)}<span className="text-[14px] text-slate-400"> / {num(outreach.planned)}통</span></p>
+                    <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-800">
+                      <div className="h-full rounded-full bg-sky-400" style={{ width: `${num(outreach.planned) ? Math.round((num(outreach.sentToday) / num(outreach.planned)) * 100) : 0}%` }} />
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-slate-500">누적 제안 {num(outreach.totalSent)}곳 · 거래 중(제안 제외) {num(outreach.partners)}곳</p>
+                  </div>
+                )}
+                <div>
+                  <p className="mb-1 text-[12px] font-bold text-slate-400">다가오는 마감</p>
+                  {(ops.deadlines || []).map((d) => {
+                    const left = dday(d.date)
+                    return (
+                      <p key={d.name} className="flex items-center gap-2 border-b border-slate-800 py-1.5 text-[12.5px] last:border-b-0">
+                        <span className={`w-11 font-black ${left <= 3 ? 'text-rose-400' : left <= 10 ? 'text-amber-400' : 'text-slate-300'}`}>{left >= 0 ? `D-${left}` : '지남'}</span>
+                        <span className="truncate text-slate-200">{d.name}</span>
+                      </p>
+                    )
+                  })}
+                </div>
+                {(ops.prs || []).length > 0 && (
+                  <div>
+                    <p className="mb-1 text-[12px] font-bold text-slate-400">병합 대기 PR</p>
+                    {ops.prs.map((p) => (
+                      <a key={p.number} href={p.url} target="_blank" rel="noreferrer" className="block truncate py-1 text-[12.5px] text-sky-300 hover:underline">#{p.number} {p.title}</a>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <p className="mb-1 text-[12px] font-bold text-slate-400">시간대별 제안 메일 발송 (오늘)</p>
+                <div className="h-48">
+                  <Bar data={{ labels: Array.from({ length: 24 }, (_, h) => `${h}시`),
+                    datasets: [{ label: '발송', data: outreach?.hourly || [], backgroundColor: '#38bdf8', borderRadius: 3 }] }}
+                    options={{ ...axisOptions(), plugins: { legend: { display: false } } }} />
+                </div>
+                {outreach?.segments && (
+                  <div className="mt-3 h-40">
+                    <Doughnut data={{ labels: Object.keys(outreach.segments),
+                      datasets: [{ data: Object.values(outreach.segments), backgroundColor: ['#38bdf8', '#a78bfa', '#34d399', '#f59e0b', '#64748b'], borderWidth: 0 }] }}
+                      options={{ responsive: true, maintainAspectRatio: false, animation: false, cutout: '60%',
+                        plugins: { legend: { position: 'right', labels: { color: '#cbd5e1', boxWidth: 10, font: { size: 11 } } } } }} />
+                  </div>
+                )}
+              </div>
+              <div>
+                <p className="mb-1 text-[12px] font-bold text-slate-400">최근 발송</p>
+                {(outreach?.recent || []).slice(0, 12).map((r, idx) => (
+                  <p key={idx} className="flex items-center gap-2 border-b border-slate-800 py-1.5 text-[12.5px] last:border-b-0">
+                    <span className="w-11 font-mono text-slate-500">{r.time}</span>
+                    <span className="flex-1 truncate text-slate-200">{r.brand}</span>
+                    <span className={r.ok ? 'text-emerald-400' : 'text-rose-400'}>{r.ok ? '발송' : '실패'}</span>
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+        </Panel>
+
+        {!failed(stock) && (stock.outOfStock || []).length > 0 && (
+          <Panel title={`품절 상품 (${stock.outOfStock.length}${stock.outOfStock.length >= 20 ? '+' : ''})`}>
+            <div className="flex flex-wrap gap-1.5">
+              {stock.outOfStock.map((p) => (
+                <span key={p.sku_cd} className="max-w-[320px] truncate rounded-lg bg-slate-800/70 px-2 py-1 text-[11.5px] text-slate-300">{p.product_name}</span>
+              ))}
+            </div>
+          </Panel>
+        )}
 
         {!failed(stock) && (stock.belowSafeStock || []).length > 0 && (
           <Panel title="안전재고 미만 상품">

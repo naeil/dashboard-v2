@@ -71,6 +71,10 @@ public class AgentMonitorService {
                 WHERE company_id = ? AND created_at >= ?
                 GROUP BY kind, status
                 """, companyId, dayStart.toOffsetDateTime())));
+        out.put("boards", section("boards", () -> jdbcTemplate.queryForList("""
+                SELECT agent_name, board_key, payload::text AS payload, updated_at
+                FROM agent_board WHERE company_id = ? ORDER BY agent_name, board_key
+                """, companyId)));
         return out;
     }
 
