@@ -230,6 +230,50 @@ public class PlayAutoApiClient {
         return merged;
     }
 
+    // ===== 온라인상품 조회·수정 (상품 정보 수정 화면용) =====
+
+    /** POST /api/product/online/list/v1.2 — 결과는 판매자관리코드(c_sale_cd)별로 묶여 온다. */
+    public JsonNode listOnlineProducts(String token, String apiKey, Map<String, Object> body) {
+        return callJson("listOnlineProducts", HttpMethod.POST,
+                "https://openapi.playauto.io/api/product/online/list/v1.2", token, apiKey, body);
+    }
+
+    /** GET /api/products/{ol_shop_no}/v1.2 */
+    public JsonNode getOnlineProduct(String token, String apiKey, String olShopNo) {
+        return callJson("getOnlineProduct", HttpMethod.GET,
+                "https://openapi.playauto.io/api/products/" + olShopNo + "/v1.2", token, apiKey, null);
+    }
+
+    /** PUT /api/products/edit/v1.2 — 필수: c_sale_cd, shop_cd, shop_id (마스터 수정은 둘 다 'master'). */
+    public JsonNode editOnlineProduct(String token, String apiKey, Map<String, Object> body) {
+        return callJson("editOnlineProduct", HttpMethod.PUT,
+                "https://openapi.playauto.io/api/products/edit/v1.2", token, apiKey, body);
+    }
+
+    private JsonNode callJson(String method, HttpMethod httpMethod, String url, String token, String apiKey, Object body) {
+        HttpEntity<Object> request = new HttpEntity<>(body, createHeaders(token, apiKey));
+        for (int attempt = 0; attempt < ORDER_LIST_MAX_RETRIES; attempt++) {
+            try {
+                ResponseEntity<JsonNode> response = restTemplate.exchange(url, httpMethod, request, JsonNode.class);
+                JsonNode root = response.getBody();
+                if (root == null) {
+                    throw new CustomException(502, "Empty PlayAuto response");
+                }
+                handleError(root);
+                return root;
+            } catch (RestClientException e) {
+                if (isTooManyRequests(e) && attempt < ORDER_LIST_MAX_RETRIES - 1) {
+                    sleepForRateLimit(attempt + 1);
+                    continue;
+                }
+                handleException(method, e);
+            } catch (Exception e) {
+                handleException(method, e);
+            }
+        }
+        throw new CustomException(502, "PlayAuto " + method + " failed after retries");
+    }
+
     private HttpHeaders createHeaders(String token, String apiKey) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
