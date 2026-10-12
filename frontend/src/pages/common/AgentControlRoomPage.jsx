@@ -109,17 +109,14 @@ function triage(room, ops, now) {
   down.forEach((a) => issues.push({ sev: 3, what: `${a.agent_name} 응답 없음`, why: `${num(a.minutes_since)}분째 신호가 없습니다.`, todo: '해당 컴퓨터의 전원·네트워크를 확인하세요(Chrome 원격 데스크톱).' }))
   if (agents.length && !down.length) ok.push('에이전트 정상')
 
+  // 주문은 실시간 수집이 아니라 구글시트 '[raw]매출관리'를 매시 다시 읽어 일 단위로 적재한다(오늘 분은 보통 다음 날 입력).
+  // 그래서 낮 시간 '오늘 주문 0건'·수집 시각은 이상 신호가 아니며, 주문 판정은 하지 않는다.
   const orders = room?.orders
   if (orders && !orders.error) {
-    const hour = now.getHours()
-    const collectedMin = orders.lastCollectedAt ? (now - new Date(orders.lastCollectedAt)) / 60000 : null
-    if (hour >= 9 && hour < 22 && collectedMin !== null && collectedMin > 120) {
-      issues.push({ sev: 3, what: '주문 수집 멈춤', why: `마지막 수집이 ${Math.round(collectedMin / 60)}시간 전입니다.`, todo: '플레이오토 연동과 회사 PC의 수집 서비스를 확인하세요.' })
-    } else ok.push('주문 수집')
-    const t = num(orders.today?.orders); const avg = num(orders.sameWeekdayAvg?.orders)
-    if (hour >= 14 && avg >= 5 && t < avg * 0.5) {
-      issues.push({ sev: 3, what: '오늘 주문 급감', why: `같은 시각 평균 ${Math.round(avg)}건 대비 ${t}건(${Math.round((t / avg) * 100)}%)입니다.`, todo: '품절·노출·가격 오류가 없는지 주요 판매처를 확인하세요.' })
-    } else if (avg >= 5) ok.push('주문 흐름')
+    const pulledMin = orders.lastCollectedAt ? (now - new Date(orders.lastCollectedAt)) / 60000 : null
+    if (pulledMin !== null && pulledMin > 180) {
+      issues.push({ sev: 2, what: '매출 시트 반영 멈춤', why: `시트를 마지막으로 읽은 지 ${Math.round(pulledMin / 60)}시간 지났습니다(평소 매시 정각).`, todo: '시트 공유 설정(링크 보기 권한)과 서버 상태를 확인하세요.' })
+    } else ok.push('매출 시트 반영')
   }
 
   const stock = room?.stock
@@ -320,11 +317,10 @@ export default function AgentControlRoomPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          <Kpi label="오늘 주문" value={failed(orders) ? '-' : todayOrders.toLocaleString('ko-KR')}
-            sub={orderRatio === null ? '같은 요일 평균 없음' : `같은 시각 평균 대비 ${orderRatio}%`}
-            tone={orderRatio !== null && orderRatio < 50 ? 'text-rose-400' : 'text-white'} />
-          <Kpi label="오늘 매출" value={failed(orders) ? '-' : won(orders.today?.sales)}
-            sub={`평균 ${won(orders.sameWeekdayAvg?.sales)} · 수집 ${ago(orders.lastCollectedAt)}`} />
+          <Kpi label="오늘 주문 (시트 입력분)" value={failed(orders) ? '-' : todayOrders.toLocaleString('ko-KR')}
+            sub={orderRatio === null ? '같은 요일 평균 없음' : `같은 요일 하루 평균 ${Math.round(avgOrders)}건 · 오늘 분은 보통 다음 날 입력`} />
+          <Kpi label="오늘 매출 (시트 입력분)" value={failed(orders) ? '-' : won(orders.today?.sales)}
+            sub={`같은 요일 평균 ${won(orders.sameWeekdayAvg?.sales)} · 시트 반영 ${ago(orders.lastCollectedAt)}`} />
           <Kpi label="품절 · 안전재고 미만" value={outOfStock === null ? '-' : `${outOfStock} · ${lowStock}`}
             tone={lowStock ? 'text-amber-400' : 'text-white'} sub="품절 목록은 최대 20건" />
           <Kpi label="미답변 문의" value={unanswered} tone={unanswered ? 'text-amber-400' : 'text-white'}
@@ -335,7 +331,7 @@ export default function AgentControlRoomPage() {
         </div>
 
         <div className="grid gap-3 xl:grid-cols-3">
-          <Panel title="시간대별 주문 흐름 (누적)" className="xl:col-span-2">
+          <Panel title="주문 누적 (매출 시트 기준 · 일 단위 입력이라 시간대 구분 없음)" className="xl:col-span-2">
             <div className="h-64">
               {failed(room?.ordersHourly)
                 ? <p className="text-[12px] text-slate-500">주문 데이터를 불러오지 못했습니다.</p>
