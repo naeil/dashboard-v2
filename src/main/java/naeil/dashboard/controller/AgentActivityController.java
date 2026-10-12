@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import naeil.dashboard.dto.AuthUser;
 import naeil.dashboard.dto.UserRole;
 import naeil.dashboard.service.AgentActivityService;
+import naeil.dashboard.service.AgentMonitorService;
 import naeil.dashboard.service.AuthService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -26,6 +27,7 @@ public class AgentActivityController {
 
     private final AgentActivityService agentActivityService;
     private final AuthService authService;
+    private final AgentMonitorService agentMonitorService;
 
     // ===== 에이전트 =====
 
@@ -33,8 +35,8 @@ public class AgentActivityController {
     public ResponseEntity<Map<String, Object>> create(
             @RequestHeader(value = KEY_HEADER, required = false) String key,
             @RequestBody Map<String, Object> body) {
-        agentActivityService.requireAgentKey(key);
-        return ResponseEntity.ok(agentActivityService.create(COMPANY, body));
+        AgentActivityService.KeyRole role = agentActivityService.resolveKey(key);
+        return ResponseEntity.ok(agentActivityService.create(COMPANY, body, role));
     }
 
     @PatchMapping("/ingest/activities/{id}")
@@ -50,9 +52,17 @@ public class AgentActivityController {
     public ResponseEntity<Map<String, Object>> heartbeat(
             @RequestHeader(value = KEY_HEADER, required = false) String key,
             @RequestBody Map<String, Object> body) {
-        agentActivityService.requireAgentKey(key);
+        agentActivityService.resolveKey(key);
         agentActivityService.heartbeat(COMPANY, body);
         return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    /** 관제용 상태 요약(읽기 전용) — 운영·관제 키 모두 허용. */
+    @GetMapping("/ingest/status-summary")
+    public ResponseEntity<Map<String, Object>> statusSummary(
+            @RequestHeader(value = KEY_HEADER, required = false) String key) {
+        agentActivityService.resolveKey(key);
+        return ResponseEntity.ok(agentMonitorService.statusSummary(COMPANY));
     }
 
     @GetMapping("/ingest/decisions")
