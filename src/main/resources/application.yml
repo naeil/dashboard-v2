@@ -67,6 +67,8 @@ app:
   agent:
     # 회사 PC AI 에이전트 전용 키 — 비어 있으면 에이전트 API 비활성화
     api-key: ${AGENT_API_KEY:}
+    # 관제 에이전트(B) 전용 키 — 상태 조회·생존 신호·알림 기록만 가능
+    monitor-key: ${AGENT_MONITOR_KEY:}
 
 server:
   port: 8080
