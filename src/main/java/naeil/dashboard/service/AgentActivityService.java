@@ -1,5 +1,6 @@
 package naeil.dashboard.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.LinkedHashMap;
@@ -25,6 +26,7 @@ public class AgentActivityService {
     private static final Set<String> AGENT_STATUSES = Set.of("RUNNING", "DONE", "FAILED", "PENDING_APPROVAL");
 
     private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
 
     /** 관제 에이전트(B)가 남길 수 있는 활동 종류 — 승인 요청·작업 지시는 불가. */
     private static final Set<String> MONITOR_KINDS = Set.of("ALERT", "REPORT");
@@ -108,6 +110,29 @@ public class AgentActivityService {
                 ON CONFLICT (company_id, agent_name)
                 DO UPDATE SET status_text = EXCLUDED.status_text, host = EXCLUDED.host, last_seen_at = NOW()
                 """, companyId, agentName, cut(text(body.get("statusText")), 200), cut(text(body.get("host")), 100));
+    }
+
+    /** AI 관제실 보드: 에이전트가 올리는 업무 현황 스냅샷(키별로 최신 1건만 유지). */
+    public void board(Long companyId, Map<String, Object> body) {
+        String agentName = required(body, "agentName", 60);
+        String boardKey = required(body, "boardKey", 60);
+        Object payload = body.get("payload");
+        if (!(payload instanceof Map) && !(payload instanceof List)) {
+            throw new CustomException(400, "payload는 JSON 객체여야 합니다.");
+        }
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(payload);
+        } catch (Exception e) {
+            throw new CustomException(400, "payload를 읽을 수 없습니다.");
+        }
+        if (json.length() > 65_536) throw new CustomException(413, "payload가 너무 큽니다(64KB 이하).");
+        jdbcTemplate.update("""
+                INSERT INTO agent_board (company_id, agent_name, board_key, payload, updated_at)
+                VALUES (?, ?, ?, ?::jsonb, NOW())
+                ON CONFLICT (company_id, agent_name, board_key)
+                DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
+                """, companyId, agentName, boardKey, json);
     }
 
     /** 사람이 승인/반려했지만 에이전트가 아직 처리하지 않은 항목. */

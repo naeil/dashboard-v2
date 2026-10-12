@@ -63,6 +63,16 @@ public class AgentActivityController {
         return ResponseEntity.ok(Map.of("success", true));
     }
 
+    /** AI 관제실 보드에 업무 현황 스냅샷을 올린다 — 운영·관제 키 모두 허용. */
+    @PostMapping("/ingest/board")
+    public ResponseEntity<Map<String, Object>> board(
+            @RequestHeader(value = KEY_HEADER, required = false) String key,
+            @RequestBody Map<String, Object> body) {
+        agentActivityService.resolveKey(key);
+        agentActivityService.board(COMPANY, body);
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
     /** 관제용 상태 요약(읽기 전용) — 운영·관제 키 모두 허용. */
     @GetMapping("/ingest/status-summary")
     public ResponseEntity<Map<String, Object>> statusSummary(
