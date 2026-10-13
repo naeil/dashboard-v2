@@ -194,6 +194,19 @@ public class AgentActivityService {
         return Map.of("success", true);
     }
 
+    /**
+     * 직접 처리: 사람이 맡아서 처리하므로 에이전트는 이 건을 실행하지 않는다(HANDLED는 종료 상태라 decisions 목록에도 나오지 않음).
+     */
+    public Map<String, Object> handleDirectly(Long companyId, Long id, String comment, String username) {
+        int updated = jdbcTemplate.update("""
+                UPDATE agent_activity
+                SET status = 'HANDLED', decided_by = ?, decided_at = NOW(), decision_comment = ?, updated_at = NOW()
+                WHERE id = ? AND company_id = ? AND status = 'PENDING_APPROVAL'
+                """, username, cut(comment, 300), id, companyId);
+        if (updated == 0) throw new CustomException(409, "승인 대기 상태가 아니거나 이미 처리된 항목입니다.");
+        return Map.of("success", true);
+    }
+
     // ===== helpers =====
 
     private static String required(Map<String, Object> body, String key, int max) {

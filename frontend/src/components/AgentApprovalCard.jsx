@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { approveAgentActivity, rejectAgentActivity } from '../api/agentActivityApi'
+import { approveAgentActivity, handleAgentActivity, rejectAgentActivity } from '../api/agentActivityApi'
 
 // 에이전트가 올린 승인 요청 카드. detail은 '## 제목' 줄로 구역을 나눠 쓰면
 // (무엇을 결정하나요 / 받은 메일 / 보낼 답장 / 승인하면 / 반려하면) 구역별로 보여 준다.
@@ -44,12 +44,19 @@ export default function AgentApprovalCard({ item, onDecided, dark = false }) {
   const [confirming, setConfirming] = useState(null)
   const sections = parseSections(item.detail)
 
-  const decide = async (approve) => {
+  // approve: AI가 그대로 실행 / reject: 실행하지 않음 / handle: 담당자가 직접 처리(AI는 손 뗌)
+  const ACTIONS = {
+    approve: { fn: approveAgentActivity, ask: '승인하면 AI가 그대로 실행합니다. 진행할까요?', cls: 'bg-emerald-600 hover:bg-emerald-500' },
+    reject: { fn: rejectAgentActivity, ask: '반려하면 실행하지 않습니다. 진행할까요?', cls: 'bg-rose-600 hover:bg-rose-500' },
+    handle: { fn: handleAgentActivity, ask: '직접 처리로 넘기면 AI는 이 건을 실행하지 않습니다. 진행할까요?', cls: 'bg-sky-600 hover:bg-sky-500' },
+  }
+
+  const decide = async (action) => {
     if (busy) return
     setBusy(true)
     setError('')
     try {
-      await (approve ? approveAgentActivity : rejectAgentActivity)(item.id, comment.trim() || undefined)
+      await ACTIONS[action].fn(item.id, comment.trim() || undefined)
       onDecided?.()
     } catch (e) {
       setError(e?.response?.data?.message || '처리하지 못했습니다.')
@@ -82,15 +89,13 @@ export default function AgentApprovalCard({ item, onDecided, dark = false }) {
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="메모 (선택) — 반려 이유나 수정 요청"
+        <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="메모 (선택) — 반려 이유·수정 요청 또는 직접 처리 담당자"
           className={`h-9 min-w-0 flex-1 rounded-lg border px-3 text-[12.5px] outline-none ${dark ? 'border-slate-700 bg-slate-900 text-slate-100' : 'border-slate-200 bg-white'}`} />
         {confirming ? (
           <>
-            <span className={`text-[12px] font-bold ${confirming === 'approve' ? 'text-emerald-500' : 'text-rose-500'}`}>
-              {confirming === 'approve' ? '정말 승인할까요?' : '정말 반려할까요?'}
-            </span>
-            <button type="button" disabled={busy} onClick={() => decide(confirming === 'approve')}
-              className={`h-9 rounded-lg px-4 text-[12.5px] font-black text-white ${confirming === 'approve' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-rose-600 hover:bg-rose-500'}`}>
+            <span className="text-[12px] font-bold text-amber-500">{ACTIONS[confirming].ask}</span>
+            <button type="button" disabled={busy} onClick={() => decide(confirming)}
+              className={`h-9 rounded-lg px-4 text-[12.5px] font-black text-white ${ACTIONS[confirming].cls}`}>
               예
             </button>
             <button type="button" disabled={busy} onClick={() => setConfirming(null)}
@@ -104,6 +109,10 @@ export default function AgentApprovalCard({ item, onDecided, dark = false }) {
               className={`h-9 rounded-lg border px-3 text-[12.5px] font-black ${dark ? 'border-slate-700 text-slate-300 hover:text-rose-400' : 'border-slate-200 bg-white text-slate-600 hover:text-rose-600'}`}>
               반려
             </button>
+            <button type="button" disabled={busy} onClick={() => setConfirming('handle')}
+              className={`h-9 rounded-lg border px-3 text-[12.5px] font-black ${dark ? 'border-sky-500/50 text-sky-300 hover:bg-sky-500/10' : 'border-sky-200 bg-white text-sky-700 hover:bg-sky-50'}`}>
+              직접 처리
+            </button>
             <button type="button" disabled={busy} onClick={() => setConfirming('approve')}
               className="h-9 rounded-lg bg-emerald-600 px-4 text-[12.5px] font-black text-white hover:bg-emerald-500">
               승인
@@ -111,7 +120,7 @@ export default function AgentApprovalCard({ item, onDecided, dark = false }) {
           </>
         )}
       </div>
-      <p className={`mt-2 text-[11px] ${muted}`}>누가 언제 결정했는지 기록이 남습니다.</p>
+      <p className={`mt-2 text-[11px] ${muted}`}>승인 = AI가 그대로 실행 · 반려 = 실행 안 함(메모로 수정 요청) · 직접 처리 = 담당자가 맡고 AI는 손 뗌(메모에 담당자 이름). 누가 언제 결정했는지 기록이 남습니다.</p>
       {error && <p className="mt-2 text-[12px] font-bold text-rose-500">{error}</p>}
     </div>
   )

@@ -12,6 +12,7 @@ const STATUS_STYLE = {
   PENDING_APPROVAL: { label: '승인 대기', cls: 'bg-amber-50 text-amber-700' },
   APPROVED: { label: '승인됨', cls: 'bg-emerald-50 text-emerald-700' },
   REJECTED: { label: '반려됨', cls: 'bg-slate-100 text-slate-600' },
+  HANDLED: { label: '직접 처리', cls: 'bg-sky-50 text-sky-700' },
 }
 
 const ago = (value) => {
