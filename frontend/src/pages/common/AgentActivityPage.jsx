@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { approveAgentActivity, getAgentOverview, rejectAgentActivity } from '../../api/agentActivityApi'
+import { getAgentOverview } from '../../api/agentActivityApi'
+import AgentApprovalCard from '../../components/AgentApprovalCard'
 
 const REFRESH_MS = 10000
 
@@ -62,69 +63,11 @@ function ActivityRow({ item }) {
   )
 }
 
-function PendingCard({ item, canDecide, onDecided }) {
-  const [comment, setComment] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-
-  const decide = async (approve) => {
-    if (busy) return
-    setBusy(true)
-    setError('')
-    try {
-      await (approve ? approveAgentActivity : rejectAgentActivity)(item.id, comment.trim() || undefined)
-      onDecided()
-    } catch (e) {
-      setError(e?.response?.data?.message || '처리하지 못했습니다.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[11px] font-black text-amber-700">{KIND_LABEL[item.kind] || item.kind} · {item.agent_name} · {ago(item.created_at)}</p>
-          <p className="mt-1 break-words text-[14px] font-black text-slate-900">{item.title}</p>
-        </div>
-        {item.link_url && (
-          <a href={item.link_url} target="_blank" rel="noreferrer"
-            className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-black text-slate-600 hover:text-sky-600">
-            자세히
-          </a>
-        )}
-      </div>
-      {item.detail && (
-        <p className="mt-2 max-h-60 overflow-y-auto whitespace-pre-wrap rounded-lg bg-white px-3 py-2 text-[12.5px] leading-5 text-slate-700">{item.detail}</p>
-      )}
-      {canDecide ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="메모 (선택)"
-            className="h-9 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-[12.5px] outline-none focus:border-sky-400" />
-          <button type="button" disabled={busy} onClick={() => decide(false)}
-            className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-[12.5px] font-black text-slate-600 hover:text-rose-600">
-            반려
-          </button>
-          <button type="button" disabled={busy} onClick={() => decide(true)}
-            className="h-9 rounded-lg bg-slate-900 px-4 text-[12.5px] font-black text-white hover:bg-slate-700">
-            승인
-          </button>
-        </div>
-      ) : (
-        <p className="mt-3 text-[12px] text-slate-500">승인은 매니저 이상만 할 수 있습니다.</p>
-      )}
-      {error && <p className="mt-2 text-[12px] font-bold text-rose-600">{error}</p>}
-    </div>
-  )
-}
-
 export default function AgentActivityPage({ role }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [lastLoaded, setLastLoaded] = useState(null)
   const [, setTick] = useState(0)
-  const canDecide = role === 'EXECUTIVE' || role === 'MANAGER'
 
   const load = useCallback(async () => {
     try {
@@ -190,7 +133,7 @@ export default function AgentActivityPage({ role }) {
       {pending.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-[14px] font-black text-slate-800">승인이 필요한 일 ({pending.length})</h2>
-          {pending.map((item) => <PendingCard key={item.id} item={item} canDecide={canDecide} onDecided={load} />)}
+          {pending.map((item) => <AgentApprovalCard key={item.id} item={item} onDecided={load} />)}
         </section>
       )}
 
