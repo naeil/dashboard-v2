@@ -113,10 +113,9 @@ public class AgentActivityController {
         return ResponseEntity.ok(agentActivityService.overview(COMPANY, limit));
     }
 
-    /** AI 관제실 화면: 운영·관제 현황과 시간대별 그래프 데이터 (매출 포함이라 관리자 이상). */
+    /** AI 관제실 화면: 운영·관제 현황과 그래프 데이터. 직원도 실시간으로 봐야 해서 로그인 사용자 전체에 연다(승인·반려는 여전히 매니저 이상). */
     @GetMapping("/control-room")
-    public ResponseEntity<Map<String, Object>> controlRoom(HttpServletRequest request) {
-        requireManager(request);
+    public ResponseEntity<Map<String, Object>> controlRoom() {
         return ResponseEntity.ok(agentMonitorService.controlRoom(COMPANY));
     }
 
