@@ -6,6 +6,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import naeil.dashboard.common.exception.CustomException;
 import naeil.dashboard.dto.AuthUser;
 import naeil.dashboard.dto.UserRole;
 import naeil.dashboard.service.AgentActivityService;
@@ -124,7 +125,7 @@ public class AgentActivityController {
             @PathVariable Long id,
             @RequestBody(required = false) Map<String, Object> body,
             HttpServletRequest request) {
-        AuthUser actor = requireManager(request);
+        AuthUser actor = requireUser(request);
         return ResponseEntity.ok(agentActivityService.decide(COMPANY, id, true, comment(body), actor.username()));
     }
 
@@ -133,13 +134,24 @@ public class AgentActivityController {
             @PathVariable Long id,
             @RequestBody(required = false) Map<String, Object> body,
             HttpServletRequest request) {
-        AuthUser actor = requireManager(request);
+        AuthUser actor = requireUser(request);
         return ResponseEntity.ok(agentActivityService.decide(COMPANY, id, false, comment(body), actor.username()));
     }
 
-    private AuthUser requireManager(HttpServletRequest request) {
+    /** 직접 처리: 담당자가 맡아 처리하고 에이전트는 실행하지 않는다. */
+    @PostMapping("/activities/{id}/handle")
+    public ResponseEntity<Map<String, Object>> handle(
+            @PathVariable Long id,
+            @RequestBody(required = false) Map<String, Object> body,
+            HttpServletRequest request) {
+        AuthUser actor = requireUser(request);
+        return ResponseEntity.ok(agentActivityService.handleDirectly(COMPANY, id, comment(body), actor.username()));
+    }
+
+    /** 승인·반려·직접 처리는 로그인한 직원 누구나 할 수 있다(대표 지시: 실무진도 판단해서 처리). 누가 결정했는지는 decided_by로 남는다. */
+    private AuthUser requireUser(HttpServletRequest request) {
         AuthUser actor = (AuthUser) request.getAttribute(AuthService.AUTHENTICATED_USER_ATTR);
-        authService.requireRole(actor, UserRole.MANAGER);
+        if (actor == null) throw new CustomException(401, "로그인이 필요합니다.");
         return actor;
     }
 

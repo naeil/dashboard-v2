@@ -9,5 +9,8 @@ export const getAgentControlRoom = () =>
 export const approveAgentActivity = (id, comment) =>
   api.post(`/agent/activities/${id}/approve`, { comment }).then((r) => r.data)
 
+export const handleAgentActivity = (id, comment) =>
+  api.post(`/agent/activities/${id}/handle`, { comment }).then((r) => r.data)
+
 export const rejectAgentActivity = (id, comment) =>
   api.post(`/agent/activities/${id}/reject`, { comment }).then((r) => r.data)

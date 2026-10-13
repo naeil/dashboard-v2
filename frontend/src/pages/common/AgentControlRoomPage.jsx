@@ -4,6 +4,7 @@ import {
 } from 'chart.js'
 import { Bar, Doughnut, Line } from 'react-chartjs-2'
 import { getAgentControlRoom, getAgentOverview } from '../../api/agentActivityApi'
+import AgentApprovalCard from '../../components/AgentApprovalCard'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend, Filler)
 
@@ -256,6 +257,7 @@ export default function AgentControlRoomPage() {
   const cs = room?.cs || {}
   const approvals = room?.approvals || {}
   const running = overview?.running || []
+  const pending = overview?.pending || []
   const recent = overview?.recent || []
   const alerts = recent.filter((i) => i.kind === 'ALERT').slice(0, 8)
   const feed = recent.filter((i) => i.kind !== 'ALERT').slice(0, 12)
@@ -301,6 +303,14 @@ export default function AgentControlRoomPage() {
           </p>
         )}
 
+        {pending.length > 0 && (
+          <Panel title={`결정이 필요한 일 (${pending.length})`}
+            right={<span className="text-[11px] text-slate-400">내용을 읽고 누구나 승인·반려할 수 있습니다. 결정한 사람이 기록됩니다.</span>}>
+            <div className="grid gap-3 xl:grid-cols-2">
+              {pending.map((item) => <AgentApprovalCard key={item.id} item={item} onDecided={load} dark />)}
+            </div>
+          </Panel>
+        )}
         <Panel title={issues.length ? `지금 확인할 것 (${issues.length})` : '지금 확인할 것'}
           right={<div className="flex flex-wrap justify-end gap-1.5">{healthy.map((h) => (
             <span key={h} className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-300">✓ {h}</span>
