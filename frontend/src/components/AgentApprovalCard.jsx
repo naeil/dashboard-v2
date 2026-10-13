@@ -3,11 +3,18 @@ import { approveAgentActivity, handleAgentActivity, rejectAgentActivity } from '
 
 // 에이전트가 올린 승인 요청 카드. detail은 '## 제목' 줄로 구역을 나눠 쓰면
 // (무엇을 결정하나요 / 받은 메일 / 보낼 답장 / 승인하면 / 반려하면) 구역별로 보여 준다.
-const SECTION_STYLE = {
-  '무엇을 결정하나요': 'font-bold',
-  '보낼 답장': 'font-mono text-[12px]',
-  '승인하면': 'text-emerald-600',
-  '반려하면': 'text-rose-600',
+const SECTION_TONE = {
+  '무엇을 결정하나요': { bg: '#FEF3C7', fg: '#92400E' },
+  '육하원칙 요약': { bg: '#E0E7FF', fg: '#3730A3' },
+  '받은 메일': { bg: '#E0E7FF', fg: '#3730A3' },
+  '우리 입장': { bg: '#DBEAFE', fg: '#1E40AF' },
+  '상대 입장': { bg: '#F3E8FF', fg: '#6B21A8' },
+  'AI 판단': { bg: '#CCFBF1', fg: '#115E59' },
+  'AI 추천': { bg: '#CCFBF1', fg: '#115E59' },
+  '보낼 답장': { bg: '#F3F4F6', fg: '#111827' },
+  '승인하면': { bg: '#D1FAE5', fg: '#065F46' },
+  '반려하면': { bg: '#FEE2E2', fg: '#991B1B' },
+  '직접 처리하면': { bg: '#E0F2FE', fg: '#075985' },
 }
 
 export function parseSections(detail = '') {
@@ -37,7 +44,7 @@ const ago = (value) => {
   return `${Math.floor(sec / 86400)}일 전`
 }
 
-export default function AgentApprovalCard({ item, onDecided, dark = false }) {
+export default function AgentApprovalCard({ item, onDecided }) {
   const [comment, setComment] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -66,23 +73,42 @@ export default function AgentApprovalCard({ item, onDecided, dark = false }) {
     }
   }
 
-  const box = dark ? 'border-amber-500/40 bg-amber-500/5 text-slate-100' : 'border-amber-200 bg-amber-50/40 text-slate-900'
-  const panel = dark ? 'bg-slate-950/60 text-slate-200' : 'bg-white text-slate-700'
-  const muted = dark ? 'text-slate-400' : 'text-slate-500'
+  // 앱의 라이트/다크 테마 덮어쓰기(.app-light .text-slate-* !important)에 영향받지 않도록 색은 인라인 스타일로 고정한다
+  const C = {
+    card: { background: '#FFFBEB', border: '1px solid #FCD34D', color: '#111827' },
+    meta: { color: '#B45309' },
+    section: { background: '#FFFFFF', border: '1px solid #E5E7EB', color: '#1F2937' },
+    muted: { color: '#4B5563' },
+    input: { background: '#FFFFFF', border: '1px solid #D1D5DB', color: '#111827' },
+  }
+  const pill = (title) => {
+    const tone = SECTION_TONE[title] || { bg: '#F3F4F6', fg: '#374151' }
+    return { background: tone.bg, color: tone.fg }
+  }
+  const btn = {
+    reject: { background: '#FFFFFF', border: '1px solid #FCA5A5', color: '#B91C1C' },
+    handle: { background: '#FFFFFF', border: '1px solid #7DD3FC', color: '#0369A1' },
+    approve: { background: '#059669', border: '1px solid #059669', color: '#FFFFFF' },
+    yes: { approve: '#059669', reject: '#DC2626', handle: '#0284C7' },
+    cancel: { background: '#FFFFFF', border: '1px solid #D1D5DB', color: '#374151' },
+  }
 
   return (
-    <div className={`rounded-2xl border p-4 ${box}`}>
-      <p className={`text-[11px] font-black ${dark ? 'text-amber-300' : 'text-amber-700'}`}>결정 필요 · {item.agent_name} · {ago(item.created_at)}</p>
-      <p className="mt-1 break-words text-[14px] font-black">{item.title}</p>
+    <div className="rounded-2xl p-4" style={C.card}>
+      <p className="text-[11px] font-black" style={C.meta}>결정 필요 · {item.agent_name} · {ago(item.created_at)}</p>
+      <p className="mt-1 break-words text-[15px] font-black" style={{ color: '#111827' }}>{item.title}</p>
 
       {sections.length === 0 ? (
-        <p className={`mt-2 text-[12.5px] ${muted}`}>상세 내용이 없습니다. 에이전트에게 내용을 다시 올려 달라고 요청하세요.</p>
+        <p className="mt-2 text-[13px]" style={C.muted}>상세 내용이 없습니다. 에이전트에게 내용을 다시 올려 달라고 요청하세요.</p>
       ) : (
-        <div className="mt-2 space-y-2">
+        <div className="mt-3 space-y-2">
           {sections.map((s, i) => (
-            <div key={i} className={`rounded-lg px-3 py-2 ${panel}`}>
-              {s.title && <p className={`mb-1 text-[11px] font-black ${muted}`}>{s.title}</p>}
-              <p className={`max-h-64 overflow-y-auto whitespace-pre-wrap text-[12.5px] leading-5 ${SECTION_STYLE[s.title] || ''}`}>{s.body}</p>
+            <div key={i} className="rounded-xl px-3 py-2.5" style={C.section}>
+              {s.title && (
+                <span className="mb-1.5 inline-block rounded-md px-2 py-0.5 text-[12px] font-black" style={pill(s.title)}>{s.title}</span>
+              )}
+              <p className="max-h-72 overflow-y-auto whitespace-pre-wrap text-[13.5px] leading-6"
+                style={{ color: '#1F2937', fontWeight: s.title === '무엇을 결정하나요' ? 700 : 400 }}>{s.body}</p>
             </div>
           ))}
         </div>
@@ -90,38 +116,37 @@ export default function AgentApprovalCard({ item, onDecided, dark = false }) {
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="메모 (선택) — 반려 이유·수정 요청 또는 직접 처리 담당자"
-          className={`h-9 min-w-0 flex-1 rounded-lg border px-3 text-[12.5px] outline-none ${dark ? 'border-slate-700 bg-slate-900 text-slate-100' : 'border-slate-200 bg-white'}`} />
+          className="h-10 min-w-0 flex-1 rounded-lg px-3 text-[13px] outline-none" style={C.input} />
         {confirming ? (
           <>
-            <span className="text-[12px] font-bold text-amber-500">{ACTIONS[confirming].ask}</span>
+            <span className="text-[13px] font-bold" style={{ color: '#92400E' }}>{ACTIONS[confirming].ask}</span>
             <button type="button" disabled={busy} onClick={() => decide(confirming)}
-              className={`h-9 rounded-lg px-4 text-[12.5px] font-black text-white ${ACTIONS[confirming].cls}`}>
+              className="h-10 rounded-lg px-4 text-[13px] font-black" style={{ background: btn.yes[confirming], color: '#FFFFFF' }}>
               예
             </button>
             <button type="button" disabled={busy} onClick={() => setConfirming(null)}
-              className={`h-9 rounded-lg border px-3 text-[12.5px] font-black ${dark ? 'border-slate-700 text-slate-300' : 'border-slate-200 text-slate-600'}`}>
+              className="h-10 rounded-lg px-3 text-[13px] font-black" style={btn.cancel}>
               취소
             </button>
           </>
         ) : (
           <>
             <button type="button" disabled={busy} onClick={() => setConfirming('reject')}
-              className={`h-9 rounded-lg border px-3 text-[12.5px] font-black ${dark ? 'border-slate-700 text-slate-300 hover:text-rose-400' : 'border-slate-200 bg-white text-slate-600 hover:text-rose-600'}`}>
-              반려
-            </button>
+              className="h-10 rounded-lg px-4 text-[13px] font-black" style={btn.reject}>반려</button>
             <button type="button" disabled={busy} onClick={() => setConfirming('handle')}
-              className={`h-9 rounded-lg border px-3 text-[12.5px] font-black ${dark ? 'border-sky-500/50 text-sky-300 hover:bg-sky-500/10' : 'border-sky-200 bg-white text-sky-700 hover:bg-sky-50'}`}>
-              직접 처리
-            </button>
+              className="h-10 rounded-lg px-4 text-[13px] font-black" style={btn.handle}>직접 처리</button>
             <button type="button" disabled={busy} onClick={() => setConfirming('approve')}
-              className="h-9 rounded-lg bg-emerald-600 px-4 text-[12.5px] font-black text-white hover:bg-emerald-500">
-              승인
-            </button>
+              className="h-10 rounded-lg px-5 text-[13px] font-black" style={btn.approve}>승인</button>
           </>
         )}
       </div>
-      <p className={`mt-2 text-[11px] ${muted}`}>승인 = AI가 그대로 실행 · 반려 = 실행 안 함(메모로 수정 요청) · 직접 처리 = 담당자가 맡고 AI는 손 뗌(메모에 담당자 이름). 누가 언제 결정했는지 기록이 남습니다.</p>
-      {error && <p className="mt-2 text-[12px] font-bold text-rose-500">{error}</p>}
+      <div className="mt-2 grid gap-1 text-[12px] sm:grid-cols-3" style={C.muted}>
+        <p><b style={{ color: '#047857' }}>승인</b> · AI가 카드 내용대로 실행</p>
+        <p><b style={{ color: '#B91C1C' }}>반려</b> · 실행 안 함(메모로 수정 요청)</p>
+        <p><b style={{ color: '#0369A1' }}>직접 처리</b> · 담당자가 맡고 AI는 손 뗌</p>
+      </div>
+      <p className="mt-1 text-[11.5px]" style={C.muted}>누가 언제 어떤 버튼을 눌렀는지 기록이 남습니다.</p>
+      {error && <p className="mt-2 text-[12.5px] font-bold" style={{ color: '#DC2626' }}>{error}</p>}
     </div>
   )
 }
