@@ -142,7 +142,7 @@ export function DecisionForm({ deal, onSaved, compact = false }) {
           </select>
         </Field>
       )}
-      <Field label="메모 (판단 이유·셀러에게 안내할 내용)">
+      <Field label={approve ? '메모 (판단 이유·셀러에게 안내할 내용)' : `${f.decision === 'HOLD' ? '보류' : '거절'} 사유 (필수) — 상담·미팅 기록에 남습니다`}>
         <input value={f.memo} onChange={set('memo')} className={inputCls} style={C.input}
           placeholder={approve ? '예: 샘플 먼저 발송, 게시물 검수 후 오픈' : '예: 유료 포스팅만 가능해 보류'} />
       </Field>

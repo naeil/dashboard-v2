@@ -43,6 +43,7 @@ public class GroupBuyService {
             """;
 
     private final JdbcTemplate jdbcTemplate;
+    private final ContactLogService contactLogService;
 
     // ===== 조회 =====
 
@@ -172,11 +173,14 @@ public class GroupBuyService {
         String owner = limit(firstNonBlank(text(body.get("ownerName")), (String) deal.get("owner_name")), 100);
         String memo = text(body.get("memo"));
         if (!"APPROVE".equals(decision)) {
+            if (memo == null) throw new CustomException(400, ("HOLD".equals(decision) ? "보류" : "거절") + " 사유를 메모에 적어 주세요.");
             jdbcTemplate.update("""
                     UPDATE group_buy_deal SET status = ?, owner_name = ?, memo = COALESCE(?, memo),
                            decided_by = ?, decided_at = NOW(), updated_at = NOW()
                     WHERE company_id = ? AND id = ?
                     """, "HOLD".equals(decision) ? "HOLD" : "REJECTED", owner, memo, actor, companyId, id);
+            logDecision(companyId, deal, "HOLD".equals(decision) ? "보류" : "거절", owner, "사유: " + memo, null, null,
+                    "REJECT".equals(decision), actor);
             return get(companyId, id);
         }
         String type = dealType(body.get("dealType"));
@@ -195,16 +199,63 @@ public class GroupBuyService {
                 """, type, rate, integer(body.get("salePrice")), text(body.get("products")), start, end, owner, memo,
                 actor, companyId, id);
         rebuildSchedule(id, start.toLocalDate(), end.toLocalDate(), owner);
+        Integer price = integer(body.get("salePrice"));
+        String terms = "거래 방식: " + typeLabel(type)
+                + (rate != null ? " / 수수료율 " + rate.stripTrailingZeros().toPlainString() + "%" : "")
+                + (price != null ? " / 공구 판매가 " + String.format("%,d", price) + "원" : "")
+                + " / 기간 " + start + " ~ " + end;
+        String steps = "샘플 발송(" + start.toLocalDate().minusDays(14) + ")\n게시물 검수(" + start.toLocalDate().minusDays(3)
+                + ")\n판매 링크·재고 준비(" + start.toLocalDate().minusDays(2) + ")\n공구 오픈(" + start + ") ~ 마감(" + end
+                + ")\n판매수량 확인(" + end.toLocalDate().plusDays(1) + ")\n정산(" + end.toLocalDate().plusDays(7) + ")";
+        logDecision(companyId, deal, "승인", owner, memo == null ? null : "메모: " + memo, terms, steps, false, actor);
         return get(companyId, id);
+    }
+
+    /** 진행 상태 변경(진행 중·종료·취소)도 상담·미팅 기록에 남긴다. */
+    private void logStatus(Long companyId, Map<String, Object> deal, String label, String actor) {
+        logDecision(companyId, deal, label, (String) deal.get("owner_name"), null, null, null,
+                "종료".equals(label) || "취소".equals(label), actor);
+    }
+
+    /** 공동구매 판단을 상담·미팅 기록(contact_log)에 자동 기재(같은 트랜잭션 — 기록이 실패하면 판단도 저장되지 않는다). */
+    private void logDecision(Long companyId, Map<String, Object> deal, String label, String owner, String note,
+                             String terms, String steps, boolean closed, String actor) {
+        String email = (String) deal.get("contact_email");
+        StringBuilder summary = new StringBuilder("[공동구매 판단] ").append(label);
+        if (email != null && !email.isBlank()) summary.append(" (").append(email).append(")");
+        if (note != null) summary.append("\n").append(note);
+        Map<String, Object> log = new LinkedHashMap<>();
+        log.put("partnerName", deal.get("seller_name"));
+        log.put("contactType", "OTHER");
+        log.put("staffName", owner);
+        log.put("summary", summary.toString());
+        if (terms != null) log.put("agreements", terms);
+        if (steps != null) log.put("nextAction", steps);
+        log.put("status", closed ? "DONE" : "OPEN");
+        contactLogService.create(companyId, log, "MANUAL", actor);
+    }
+
+    private static String typeLabel(String type) {
+        return switch (type) {
+            case "COMMISSION" -> "수수료형";
+            case "CONSIGN" -> "위탁";
+            case "BUY" -> "사입";
+            default -> type;
+        };
     }
 
     /** 진행 상태만 바꾸기(진행중·종료·취소 등). */
     @Transactional
-    public Map<String, Object> setStatus(Long companyId, Long id, String status) {
+    public Map<String, Object> setStatus(Long companyId, Long id, String status, String actor) {
         get(companyId, id);
         if (status == null || !STATUSES.contains(status.trim().toUpperCase())) throw new CustomException(400, "상태 값이 올바르지 않습니다.");
+        String st = status.trim().toUpperCase();
+        Map<String, Object> deal = get(companyId, id);
         jdbcTemplate.update("UPDATE group_buy_deal SET status = ?, updated_at = NOW() WHERE company_id = ? AND id = ?",
-                status.trim().toUpperCase(), companyId, id);
+                st, companyId, id);
+        Map<String, String> label = Map.of("RUNNING", "진행 중", "DONE", "종료", "CANCELLED", "취소", "HOLD", "보류",
+                "APPROVED", "승인", "PENDING", "판단 대기", "REJECTED", "거절");
+        logStatus(companyId, deal, label.getOrDefault(st, st), actor);
         return get(companyId, id);
     }
 
