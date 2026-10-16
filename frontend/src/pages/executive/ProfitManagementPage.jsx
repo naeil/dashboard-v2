@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getProfitManagement, importPlayAutoChannelSales, saveProfitPlan } from '../../api/executiveApi'
+import { getExecutiveChannelSalesAnalytics, getProfitManagement, saveProfitPlan } from '../../api/executiveApi'
 import { KpiCard, PageHeader, Panel } from './ExecutiveComponents'
 
 /* ─── 포맷 헬퍼 ─────────────────────────────────────────────────────── */
@@ -27,6 +27,35 @@ const monthEndText = (value) => {
   d.setMonth(d.getMonth() + 1)
   d.setDate(0)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/* ─── 실시간 매출 연동 ─────────────────────────────────────────────────
+ * 채널·판매 관리 > 실시간 매출 화면과 동일하게 DB 집계 API(/executive/channel-sales/analytics)를 사용한다.
+ * PlayAuto API를 직접 재수집하지 않으므로 PlayAuto 부가서비스 상태(e1020 등)와 무관하게 동작한다.
+ * 국내 온라인/오프라인 실적은 실시간 매출 summary 값으로 덮어쓰고, 수출·컨설팅은 기존 손익 API 값을 유지한다. */
+async function fetchProfitWithRealtimeSales(planMonth) {
+  const [profitRes, analyticsRes] = await Promise.all([
+    getProfitManagement({ planMonth }),
+    getExecutiveChannelSalesAnalytics({ startDate: planMonth, endDate: monthEndText(planMonth) }).catch(() => null),
+  ])
+  const summary = analyticsRes?.data?.summary
+  if (!summary) return profitRes
+  const prev = profitRes.data?.actualSales || {}
+  const online = num(summary.onlineSales)
+  const offline = num(summary.offlineSales)
+  return {
+    ...profitRes,
+    data: {
+      ...profitRes.data,
+      actualSales: {
+        ...prev,
+        online,
+        offline,
+        total: online + offline + num(prev.export) + num(prev.consulting),
+      },
+      actualSalesSource: 'channel-sales/analytics',
+    },
+  }
 }
 
 function parseNum(raw) {
@@ -726,7 +755,7 @@ export default function ProfitManagementPage() {
 
   useEffect(() => {
     setLoading(true)
-    getProfitManagement({ planMonth: selectedMonth })
+    fetchProfitWithRealtimeSales(selectedMonth)
       .then(async (res) => {
         const d = res.data
         setData(d)
@@ -827,7 +856,7 @@ export default function ProfitManagementPage() {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      getProfitManagement({ planMonth: selectedMonth })
+      fetchProfitWithRealtimeSales(selectedMonth)
         .then((res) => {
           const d = res.data
           setData(d)
@@ -911,20 +940,15 @@ export default function ProfitManagementPage() {
   async function handleRefreshRealtimeSales() {
     if (refreshingSales) return
     setRefreshingSales(true)
-    setSalesRefreshMessage('PlayAuto 주문 원장과 채널 매출 데이터를 다시 수집하는 중입니다.')
+    setSalesRefreshMessage('실시간 매출(채널·판매 관리)과 같은 DB 집계 기준으로 다시 불러오는 중입니다.')
     try {
-      await importPlayAutoChannelSales({
-        startDate: selectedMonth,
-        endDate: monthEndText(selectedMonth),
-        refreshOrders: true,
-      })
-      const response = await getProfitManagement({ planMonth: selectedMonth })
+      const response = await fetchProfitWithRealtimeSales(selectedMonth)
       applyRealtimeSales(response.data)
       const now = new Date()
       setSalesUpdatedAt(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`)
-      setSalesRefreshMessage('실시간 총매출이 최신 주문 데이터 기준으로 업데이트되었습니다.')
+      setSalesRefreshMessage('실시간 매출 화면과 같은 기준으로 총매출이 업데이트되었습니다.')
     } catch (error) {
-      setSalesRefreshMessage(error?.response?.data?.message || '실시간 총매출 업데이트에 실패했습니다. PlayAuto 연동 설정을 확인해주세요.')
+      setSalesRefreshMessage(error?.response?.data?.message || '실시간 총매출 업데이트에 실패했습니다. 잠시 후 다시 시도해주세요.')
     } finally {
       setRefreshingSales(false)
     }
@@ -1127,7 +1151,7 @@ export default function ProfitManagementPage() {
               <p className="text-xs font-black uppercase tracking-[0.18em] text-sky-700">Realtime Sales API</p>
               <h2 className="mt-1 text-xl font-black text-slate-950">BEP/손익 시뮬레이션 실시간 총매출 업데이트</h2>
               <p className="mt-1 text-sm font-bold text-slate-600">
-                선택한 월의 PlayAuto 주문 원장을 다시 수집해서 실제 총매출, 제품별 실제 판매 수량, BEP 달성률을 갱신합니다.
+                채널·판매 관리 &gt; 실시간 매출과 같은 DB 집계 기준으로 선택한 월의 실제 총매출과 BEP 달성률을 갱신합니다.
               </p>
               <div className="mt-3 flex flex-wrap gap-2 text-xs font-black">
                 <span className="rounded-full bg-white px-3 py-1 text-slate-700">대상 월 {monthInputText(selectedMonth)}</span>
