@@ -173,6 +173,100 @@ function WorkStatusPanel({ row, data }) {
   )
 }
 
+// 실시간 활동: 운영 에이전트가 1분마다 올리는 live-ops 보드(지금 어느 업체에 무슨 제안을 보내는지, 대기열, 최근 발송·회신·배정)
+const LIVE_TYPE = {
+  SENT: { label: '발송', cls: 'bg-sky-500/15 text-sky-300' },
+  REPLY: { label: '회신', cls: 'bg-emerald-500/15 text-emerald-300' },
+  ASSIGN: { label: '배정', cls: 'bg-violet-500/15 text-violet-300' },
+  FAIL: { label: '실패', cls: 'bg-rose-500/15 text-rose-300' },
+}
+const hhmm = (v) => (v ? new Date(v).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '')
+
+function LivePanel({ row, data }) {
+  const [filter, setFilter] = useState('ALL')
+  if (!data) {
+    return (
+      <Panel title="실시간 활동">
+        <p className="text-[12.5px] text-slate-500">운영 에이전트가 실시간 활동을 올리면 여기에 표시됩니다.</p>
+      </Panel>
+    )
+  }
+  const now = data.now || {}
+  const today = data.today || {}
+  const queue = Array.isArray(data.queue) ? data.queue : []
+  const recent = Array.isArray(data.recent) ? data.recent : []
+  const shown = filter === 'ALL' ? recent : recent.filter((e) => e.type === filter)
+  const sending = /발송 중/.test(now.title || '')
+  return (
+    <Panel title="실시간 활동"
+      right={<span className="text-[11px] text-slate-500">{`AI가 ${ago(row?.updated_at)} 갱신 · 1분마다`}</span>}>
+      <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2.5">
+        <span className={`h-2.5 w-2.5 rounded-full ${sending ? 'animate-pulse bg-sky-400' : 'bg-slate-500'}`} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-black text-white">
+            지금: {now.title || '-'}{now.company ? <span className="text-sky-300"> → {now.company}</span> : null}
+          </p>
+          {now.note && <p className="text-[11.5px] text-slate-400">{now.note}{now.at ? ` · 마지막 ${hhmm(now.at)}` : ''}</p>}
+        </div>
+        <div className="flex gap-3 text-center">
+          <div><p className="text-[18px] font-black tabular-nums text-sky-300">{num(today.sent)}</p><p className="text-[10.5px] font-bold text-slate-400">오늘 발송</p></div>
+          <div><p className="text-[18px] font-black tabular-nums text-emerald-300">{num(today.replies)}</p><p className="text-[10.5px] font-bold text-slate-400">오늘 회신</p></div>
+          <div><p className="text-[18px] font-black tabular-nums text-violet-300">{num(today.assigned)}</p><p className="text-[10.5px] font-bold text-slate-400">오늘 배정</p></div>
+        </div>
+      </div>
+      <div className="grid gap-3 lg:grid-cols-[280px_1fr]">
+        <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+          <p className="mb-2 text-[12px] font-black text-slate-300">발송 대기열</p>
+          {queue.length === 0 && <p className="text-[12px] text-slate-600">대기 중인 메일 없음</p>}
+          <ul className="space-y-2">
+            {queue.map((q) => (
+              <li key={q.label}>
+                <div className="flex items-center justify-between text-[12.5px]">
+                  <span className="font-bold text-slate-200">{q.label}</span>
+                  <span className="font-black tabular-nums text-amber-300">{num(q.pending)}곳</span>
+                </div>
+                {Array.isArray(q.next) && q.next.length > 0 && (
+                  <p className="mt-0.5 truncate text-[11px] text-slate-500">다음: {q.next.join(', ')}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            {['ALL', 'SENT', 'REPLY', 'ASSIGN', 'FAIL'].map((k) => (
+              <button key={k} type="button" onClick={() => setFilter(k)}
+                className={`rounded-full px-2.5 py-0.5 text-[11px] font-black ${filter === k ? 'bg-slate-200 text-slate-900' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>
+                {k === 'ALL' ? '전체' : LIVE_TYPE[k].label}
+              </button>
+            ))}
+          </div>
+          <ul className="max-h-[300px] divide-y divide-slate-800/70 overflow-y-auto pr-1">
+            {shown.length === 0 && <li className="py-2 text-[12px] text-slate-600">기록 없음</li>}
+            {shown.map((e, idx) => {
+              const t = LIVE_TYPE[e.type] || LIVE_TYPE.SENT
+              return (
+                <li key={idx} className="flex items-start gap-2 py-1.5">
+                  <span className="w-11 shrink-0 pt-0.5 font-mono text-[11px] tabular-nums text-slate-500">{hhmm(e.at)}</span>
+                  <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10.5px] font-black ${t.cls}`}>{t.label}</span>
+                  <div className="min-w-0">
+                    <p className="text-[12.5px] leading-snug text-slate-100">
+                      <span className="font-bold">{e.company}</span>
+                      <span className="text-slate-500"> → </span>
+                      <span className="text-slate-300">{e.what}</span>
+                    </p>
+                    {e.detail && <p className="truncate text-[11px] text-slate-500">{e.detail}</p>}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      </div>
+    </Panel>
+  )
+}
+
 function Mini({ label, value, tone = 'text-white' }) {
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2">
@@ -427,6 +521,8 @@ export default function AgentControlRoomPage() {
   const reorder = reorderRow ? parseJson(reorderRow.payload) : null
   const workRow = boards.find((b) => b.board_key === 'work-status')
   const work = workRow ? parseJson(workRow.payload) : null
+  const liveRow = boards.find((b) => b.board_key === 'live-ops')
+  const live = liveRow ? parseJson(liveRow.payload) : null
   const { issues, ok: healthy } = triage(room, ops, now)
 
   return (
@@ -449,6 +545,7 @@ export default function AgentControlRoomPage() {
         </header>
 
         <WorkStatusPanel row={workRow} data={work} />
+        <LivePanel row={liveRow} data={live} />
 
         {error && <p className="rounded-lg bg-rose-500/15 px-3 py-2 text-[12.5px] font-bold text-rose-300">{error}</p>}
         {downAgents.length > 0 && (
