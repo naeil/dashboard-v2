@@ -152,7 +152,7 @@ function WorkStatusPanel({ row, data }) {
                 {g.list.map((i, idx) => {
                   const pct = typeof i.progress === 'number' ? Math.max(0, Math.min(100, i.progress)) : null
                   return (
-                    <li key={idx} className="rounded-lg bg-slate-900/80 px-2.5 py-2">
+                    <li key={idx} className="rounded-lg bg-slate-900/70 px-2.5 py-2">
                       <p className="text-[12.5px] font-bold leading-snug text-slate-100">{i.title}</p>
                       {i.detail && <p className="mt-0.5 text-[11.5px] leading-snug text-slate-400">{i.detail}</p>}
                       {pct !== null && (
@@ -178,6 +178,7 @@ const LIVE_TYPE = {
   SENT: { label: '발송', cls: 'bg-sky-500/15 text-sky-300' },
   REPLY: { label: '회신', cls: 'bg-emerald-500/15 text-emerald-300' },
   ASSIGN: { label: '배정', cls: 'bg-violet-500/15 text-violet-300' },
+  BOUNCE: { label: '반송', cls: 'bg-amber-500/15 text-amber-300' },
   FAIL: { label: '실패', cls: 'bg-rose-500/15 text-rose-300' },
 }
 const hhmm = (v) => (v ? new Date(v).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '')
@@ -196,6 +197,7 @@ function LivePanel({ row, data }) {
   const queue = Array.isArray(data.queue) ? data.queue : []
   const recent = Array.isArray(data.recent) ? data.recent : []
   const shown = filter === 'ALL' ? recent : recent.filter((e) => e.type === filter)
+  const decisions = Array.isArray(data.decisions) ? data.decisions : []
   const sending = /발송 중/.test(now.title || '')
   return (
     <Panel title="실시간 활동"
@@ -211,8 +213,30 @@ function LivePanel({ row, data }) {
         <div className="flex gap-3 text-center">
           <div><p className="text-[18px] font-black tabular-nums text-sky-300">{num(today.sent)}</p><p className="text-[10.5px] font-bold text-slate-400">오늘 발송</p></div>
           <div><p className="text-[18px] font-black tabular-nums text-emerald-300">{num(today.replies)}</p><p className="text-[10.5px] font-bold text-slate-400">오늘 회신</p></div>
+          <div><p className="text-[18px] font-black tabular-nums text-amber-300">{num(today.bounces)}</p><p className="text-[10.5px] font-bold text-slate-400">오늘 반송</p></div>
           <div><p className="text-[18px] font-black tabular-nums text-violet-300">{num(today.assigned)}</p><p className="text-[10.5px] font-bold text-slate-400">오늘 배정</p></div>
         </div>
+      </div>
+      <div className="mb-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
+        <p className="mb-2 text-[12.5px] font-black text-amber-300">실무진 판단 필요 ({decisions.length})
+          <span className="ml-2 text-[11px] font-bold text-slate-400">AI가 대신 답하지 않는 건 — 담당자가 확인하고 처리</span>
+        </p>
+        {decisions.length === 0
+          ? <p className="text-[12px] text-slate-500">지금 판단할 건이 없습니다.</p>
+          : (
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {decisions.map((d, idx) => (
+                <div key={idx} className={`rounded-lg border px-3 py-2 ${d.overdue ? 'border-rose-500/50 bg-rose-500/10' : 'border-slate-800 bg-slate-950/40'}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10.5px] font-black text-amber-300">{d.kind}</span>
+                    <span className={`text-[11px] font-bold ${d.overdue ? 'text-rose-300' : 'text-slate-400'}`}>{d.due ? `${d.due}까지${d.overdue ? ' · 지남' : ''}` : '기한 없음'}</span>
+                  </div>
+                  <p className="mt-1 text-[12.5px] font-bold text-slate-100">{d.company}<span className="font-normal text-slate-500"> · {d.owner}</span></p>
+                  <p className="text-[11.5px] leading-snug text-slate-300">{d.todo}</p>
+                </div>
+              ))}
+            </div>
+          )}
       </div>
       <div className="grid gap-3 lg:grid-cols-[280px_1fr]">
         <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
@@ -234,14 +258,14 @@ function LivePanel({ row, data }) {
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
           <div className="mb-2 flex flex-wrap items-center gap-1.5">
-            {['ALL', 'SENT', 'REPLY', 'ASSIGN', 'FAIL'].map((k) => (
+            {['ALL', 'SENT', 'REPLY', 'ASSIGN', 'BOUNCE', 'FAIL'].map((k) => (
               <button key={k} type="button" onClick={() => setFilter(k)}
                 className={`rounded-full px-2.5 py-0.5 text-[11px] font-black ${filter === k ? 'bg-slate-200 text-slate-900' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>
                 {k === 'ALL' ? '전체' : LIVE_TYPE[k].label}
               </button>
             ))}
           </div>
-          <ul className="max-h-[300px] divide-y divide-slate-800/70 overflow-y-auto pr-1">
+          <ul className="max-h-[300px] divide-y divide-white/10 overflow-y-auto pr-1">
             {shown.length === 0 && <li className="py-2 text-[12px] text-slate-600">기록 없음</li>}
             {shown.map((e, idx) => {
               const t = LIVE_TYPE[e.type] || LIVE_TYPE.SENT
@@ -256,6 +280,11 @@ function LivePanel({ row, data }) {
                       <span className="text-slate-300">{e.what}</span>
                     </p>
                     {e.detail && <p className="truncate text-[11px] text-slate-500">{e.detail}</p>}
+                    {e.plan && (
+                      <p className="mt-0.5 text-[11.5px] font-bold text-emerald-300">
+                        <span className="mr-1 rounded bg-emerald-500/15 px-1 py-px text-[10px]">처리</span>{e.plan}
+                      </p>
+                    )}
                   </div>
                 </li>
               )
@@ -263,6 +292,97 @@ function LivePanel({ row, data }) {
           </ul>
         </div>
       </div>
+    </Panel>
+  )
+}
+
+// Meta 광고 자동 운영: 운영 에이전트가 15분마다 올리는 meta-ads 보드(오늘·7일 성과, 소재별 판정, 자동 조치)
+const AD_STAGES = ['학습(1~3일)', '판정', '실행', '다음 3일', '사람 승인']
+const VERDICT_CLS = {
+  '학습 중': 'bg-sky-500/15 text-sky-300',
+  유지: 'bg-slate-500/15 text-slate-300',
+  '예산 늘리기': 'bg-emerald-500/15 text-emerald-300',
+  끄기: 'bg-rose-500/15 text-rose-300',
+  '꺼짐(자동)': 'bg-rose-500/15 text-rose-300',
+}
+
+function MetaAdsPanel({ row, data }) {
+  if (!data) {
+    return (
+      <Panel title="Meta 광고 자동 운영">
+        <p className="text-[12.5px] text-slate-500">운영 에이전트가 광고 데이터를 올리면 여기에 표시됩니다.</p>
+      </Panel>
+    )
+  }
+  if (!data.connected) {
+    return (
+      <Panel title="Meta 광고 자동 운영" right={<span className="text-[11px] text-slate-500">{`AI가 ${ago(row?.updated_at)} 확인`}</span>}>
+        <p className="text-[12.5px] font-bold text-amber-300">{data.note || 'Meta 연결 대기 중'}</p>
+      </Panel>
+    )
+  }
+  const t = data.today || {}
+  const w = data.week || {}
+  const ads = Array.isArray(data.ads) ? data.ads : []
+  const fmt = (v, unit = '') => (v === null || v === undefined ? '-' : `${Number(v).toLocaleString('ko-KR')}${unit}`)
+  return (
+    <Panel title="Meta 광고 자동 운영"
+      right={<span className="text-[11px] text-slate-500">{`${data.account || ''} · 목표 CPA ${data.targetCpa ? won(data.targetCpa) : '미정'} · 자동 끄기 ${data.autoPause ? '켜짐' : '꺼짐'} · AI가 ${ago(row?.updated_at)} 갱신`}</span>}>
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {AD_STAGES.map((s, i) => (
+          <span key={s} className={`rounded-full px-2.5 py-1 text-[11px] font-black ${num(data.stage) === i + 1 ? 'bg-sky-500/20 text-sky-300' : 'bg-slate-800 text-slate-400'}`}>{i + 1}. {s}</span>
+        ))}
+        {num(data.stage) === 0 && <span className="text-[11.5px] font-bold text-amber-300">켜진 캠페인 없음</span>}
+      </div>
+      <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
+        <Mini label="오늘 지출" value={num(t.spend)} />
+        <Mini label="오늘 구매" value={num(t.purchases)} tone="text-emerald-300" />
+        <Mini label="오늘 CPA" value={num(t.cpa)} />
+        <Mini label="오늘 링크 클릭" value={num(t.clicks)} />
+        <Mini label="7일 지출" value={num(w.spend)} />
+        <Mini label="7일 구매" value={num(w.purchases)} tone="text-emerald-300" />
+        <Mini label="7일 CPA" value={num(w.cpa)} />
+        <Mini label="7일 매출" value={num(w.revenue)} tone="text-sky-300" />
+      </div>
+      {ads.length === 0
+        ? <p className="text-[12.5px] text-slate-500">켜진 캠페인의 소재가 없습니다.</p>
+        : (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {ads.map((a) => (
+              <div key={a.id} className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                <div className="flex gap-2">
+                  {a.thumb && <img src={a.thumb} alt="" className="h-14 w-14 shrink-0 rounded-lg object-cover" />}
+                  <div className="min-w-0">
+                    <p className="truncate text-[12.5px] font-bold text-slate-100">{a.name}</p>
+                    <p className="truncate text-[11px] text-slate-500">{a.campaign} · {a.days}일차</p>
+                    <span className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[10.5px] font-black ${VERDICT_CLS[a.verdict] || 'bg-slate-500/15 text-slate-300'}`}>{a.verdict}</span>
+                  </div>
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-1 text-center text-[11px]">
+                  <div><p className="font-black text-slate-100">{fmt(a.total?.spend)}</p><p className="text-slate-500">누적 지출</p></div>
+                  <div><p className="font-black text-emerald-300">{fmt(a.total?.purchases)}</p><p className="text-slate-500">구매</p></div>
+                  <div><p className="font-black text-slate-100">{fmt(a.total?.cpa)}</p><p className="text-slate-500">CPA</p></div>
+                  <div><p className="font-black text-slate-100">{fmt(a.total?.ctr, '%')}</p><p className="text-slate-500">CTR</p></div>
+                  <div><p className="font-black text-slate-100">{fmt(a.total?.roas)}</p><p className="text-slate-500">ROAS</p></div>
+                  <div><p className="font-black text-sky-300">{fmt(a.today?.spend)}</p><p className="text-slate-500">오늘 지출</p></div>
+                </div>
+                {a.why && <p className="mt-2 text-[11px] text-slate-400">{a.why}</p>}
+              </div>
+            ))}
+          </div>
+        )}
+      {(Array.isArray(data.actions) && data.actions.length > 0) && (
+        <div className="mt-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+          <p className="mb-1 text-[12px] font-black text-rose-300">AI가 자동으로 한 조치</p>
+          {data.actions.map((x) => <p key={x} className="text-[12px] text-slate-300">· {x}</p>)}
+        </div>
+      )}
+      {(Array.isArray(data.proposals) && data.proposals.length > 0) && (
+        <div className="mt-3 rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+          <p className="mb-1 text-[12px] font-black text-amber-300">승인이 필요한 제안 (예산 늘리기·새 소재는 사람이 결정)</p>
+          {data.proposals.map((x) => <p key={x} className="text-[12px] text-slate-300">· {x}</p>)}
+        </div>
+      )}
     </Panel>
   )
 }
@@ -523,6 +643,8 @@ export default function AgentControlRoomPage() {
   const work = workRow ? parseJson(workRow.payload) : null
   const liveRow = boards.find((b) => b.board_key === 'live-ops')
   const live = liveRow ? parseJson(liveRow.payload) : null
+  const metaRow = boards.find((b) => b.board_key === 'meta-ads')
+  const meta = metaRow ? parseJson(metaRow.payload) : null
   const { issues, ok: healthy } = triage(room, ops, now)
 
   return (
@@ -546,6 +668,7 @@ export default function AgentControlRoomPage() {
 
         <WorkStatusPanel row={workRow} data={work} />
         <LivePanel row={liveRow} data={live} />
+        <MetaAdsPanel row={metaRow} data={meta} />
 
         {error && <p className="rounded-lg bg-rose-500/15 px-3 py-2 text-[12.5px] font-bold text-rose-300">{error}</p>}
         {downAgents.length > 0 && (
