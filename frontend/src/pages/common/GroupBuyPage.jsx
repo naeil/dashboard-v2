@@ -274,6 +274,91 @@ function DealDetail({ deal, onChanged }) {
   )
 }
 
+// 페이지 상단 운영 매뉴얼 — 접고 펼친 상태는 이 브라우저에만 기억
+const MANUAL_FLOW = [
+  ['AI', '후보 발굴', '댓글 참여가 높은 셀러를 찾음'],
+  ['AI', '제안 메일', '수수료형 공동구매 제안'],
+  ['AI', '회신 접수', '판단 대기로 등록 · 이수현 배정'],
+  ['실무진', '조건 판단', '승인 / 보류 / 거절 입력'],
+  ['자동', '일정 생성', '승인 시 담당자 이름으로'],
+  ['실무진', 'D-14 샘플', '3종 1세트 발송 · 송장 전달'],
+  ['실무진', 'D-3 검수', '광고 표기 · 효능 표현 확인'],
+  ['실무진', 'D-2 준비', '판매 링크 · 할인코드 · 재고'],
+  ['실무진', '오픈 → 마감', '문의 응대 · 품절 공유'],
+  ['실무진', '+1 판매수량', '셀러에게 최종 수량 받기'],
+  ['실무진', '+7 정산', '정산서 발송 · 지급 · 결과 리뷰'],
+]
+
+function Manual() {
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem('gb-manual') !== 'closed' } catch { return true } })
+  const toggle = () => setOpen((v) => { try { localStorage.setItem('gb-manual', v ? 'closed' : 'open') } catch { /* 무시 */ } return !v })
+  const box = 'rounded-xl p-3'
+  const h = 'mb-1.5 text-[13px] font-black'
+  const li = 'text-[12.5px] leading-relaxed'
+  return (
+    <section className="rounded-2xl p-4" style={{ background: '#FFFFFF', border: '1px solid #BAE6FD' }}>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-[15px] font-black" style={{ color: '#075985' }}>AI 공동구매 운영 매뉴얼</h2>
+        <button type="button" onClick={toggle} className="rounded-lg px-3 py-1 text-[12px] font-black" style={C.ghost}>{open ? '접기' : '펼치기'}</button>
+      </div>
+      {open && (
+        <div className="mt-3 space-y-3">
+          <div className="flex flex-wrap items-stretch gap-1.5">
+            {MANUAL_FLOW.map(([who, title, desc], i) => (
+              <div key={title} className="flex items-center gap-1.5">
+                <div className="min-w-[118px] rounded-lg px-2.5 py-1.5" style={{ background: who === 'AI' ? '#EEF2FF' : who === '자동' ? '#ECFDF5' : '#FFF7ED', border: '1px solid #E2E8F0' }}>
+                  <p className="text-[10.5px] font-black" style={{ color: who === 'AI' ? '#4338CA' : who === '자동' ? '#047857' : '#C2410C' }}>{who}</p>
+                  <p className="text-[12.5px] font-black" style={C.text}>{title}</p>
+                  <p className="text-[11px]" style={C.muted}>{desc}</p>
+                </div>
+                {i < MANUAL_FLOW.length - 1 && <span style={C.muted}>›</span>}
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-3 lg:grid-cols-3">
+            <div className={box} style={C.soft}>
+              <p className={h} style={C.text}>누가 무엇을</p>
+              <p className={li} style={C.text}><b>AI 에이전트</b> — 셀러 발굴, 제안 메일, 회신 접수·배정, 일정 알림</p>
+              <p className={li} style={C.text}><b>이수현 매니저 (공구 전담)</b> — 회신 응대, 조건 판단 입력, 일정 실행·완료 체크</p>
+              <p className={li} style={C.text}><b>대표</b> — 수수료율·판매가·정산 조건 확정, 비용이 드는 제안 결정</p>
+              <p className={li} style={C.text}><b>CS</b> — 출고·배송·구매자 문의 (셀러에게 배송·CS 부담 없음)</p>
+            </div>
+            <div className={box} style={C.soft}>
+              <p className={h} style={C.text}>셀러 고르는 기준 (팔로워 수 아님)</p>
+              <p className={li} style={C.text}>① 본인이 댓글에 <b>답글을 자주</b> 다는지</p>
+              <p className={li} style={C.text}>② 게시물마다 <b>댓글이 많이</b> 달리는지</p>
+              <p className={li} style={C.text}>③ 지난 공구 글에 <b>구매 문의 댓글</b>("어디서 사요", "링크")이 있는지</p>
+              <p className={li} style={C.muted}>제외: 경쟁 단백질 스낵 공구 진행 중, 자체 다이어트 스낵 판매, 원고료·제작비만 받는 곳</p>
+            </div>
+            <div className={box} style={C.soft}>
+              <p className={h} style={C.text}>판단 기준 (모두 상담·미팅 기록에 자동 기재)</p>
+              <p className={li} style={C.text}><b style={{ color: '#047857' }}>승인</b> — 수수료형(선금 없음) 동의 + 일정 협의 가능. 수수료율·기간 입력 → 일정 자동 생성</p>
+              <p className={li} style={C.text}><b style={{ color: '#B45309' }}>보류</b> — 조건 추가 확인, 장기·수익배분 등 별도 협의 필요. <b>사유 필수</b></p>
+              <p className={li} style={C.text}><b style={{ color: '#BE123C' }}>거절</b> — 유료 광고·원고료만 가능, 경쟁 공구 중, 표현 가이드 거부. <b>사유 필수</b></p>
+            </div>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className={box} style={C.soft}>
+              <p className={h} style={C.text}>표준 조건</p>
+              <p className={li} style={C.text}>· 수수료형 공동구매 — 선금·고정 광고비 없음</p>
+              <p className={li} style={C.text}>· 수수료율·공구 판매가: <b style={{ color: '#B45309' }}>대표 확정 후 안내</b> (확정 전에는 "내부 확인 후 안내")</p>
+              <p className={li} style={C.text}>· 구성: 단백깡 3종 혼합 · 샘플 3종 1세트 무상 · 기간 3~5일 권장</p>
+              <p className={li} style={C.text}>· 배송·CS 하이프리 담당 · 정산은 마감 후 반품 반영해 진행</p>
+              <p className={li} style={C.text}>· 게시물 첫머리에 <b>#광고 또는 #공동구매</b> 표기 필수</p>
+            </div>
+            <div className={box} style={C.soft}>
+              <p className={h} style={C.text}>게시물 표현 (식품이라 효능 표현 금지)</p>
+              <p className={li} style={C.text}><b style={{ color: '#047857' }}>가능</b> — 밀가루 없이 · 설탕 무첨가 · 튀기지 않은 · 한 봉지 단백질 OOg · 식단 관리 중 간식</p>
+              <p className={li} style={C.text}><b style={{ color: '#BE123C' }}>금지</b> — 살 빠지는 · 혈당 안 올리는 · 당뇨에 좋은 · 근손실 막는 · 최고/1위(근거 없는 최상급)</p>
+              <p className={li} style={C.muted}>안내문구 T1~T7·견적 계산·정산 계산: 공동구매 운영 시트(바탕화면 AI에이전트_자료 · 하이프리_단백깡_공동구매_운영시트.xlsx)</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
 export default function GroupBuyPage() {
   const [tab, setTab] = useState('pending')
   const [deals, setDeals] = useState([])
@@ -318,6 +403,8 @@ export default function GroupBuyPage() {
           </div>
           <button type="button" onClick={() => setCreating(true)} className="rounded-lg px-4 py-2 text-[13px] font-black" style={C.primary}>+ 직접 등록</button>
         </header>
+
+        <Manual />
 
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
           {[['판단 대기', pending.length, '#B45309'], ['진행 중', running.length, '#1D4ED8'], ['오늘까지 할 일', todayOpen, '#BE123C'], ['전체', deals.length, '#0F172A']].map(([l, v, c]) => (
