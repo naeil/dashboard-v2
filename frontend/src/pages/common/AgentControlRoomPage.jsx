@@ -101,6 +101,78 @@ function ReorderPanel({ row, data }) {
   )
 }
 
+// 대표 지시 업무 현황: 운영 에이전트가 올리는 work-status 보드(진행 중 / 확인 필요 / 완료)
+const WORK_STATUS = [
+  { key: 'RUNNING', label: '진행 중', color: '#38bdf8', tone: 'text-sky-300' },
+  { key: 'CHECK', label: '확인 필요', color: '#f59e0b', tone: 'text-amber-300' },
+  { key: 'DONE', label: '완료', color: '#34d399', tone: 'text-emerald-300' },
+]
+
+function WorkStatusPanel({ row, data }) {
+  const items = Array.isArray(data?.items) ? data.items : []
+  if (!items.length) {
+    return (
+      <Panel title="업무 현황">
+        <p className="text-[12.5px] text-slate-500">운영 에이전트가 업무 현황을 올리면 여기에 표시됩니다.</p>
+      </Panel>
+    )
+  }
+  const groups = WORK_STATUS.map((s) => ({ ...s, list: items.filter((i) => i.status === s.key) }))
+  const total = items.length
+  const done = groups.find((g) => g.key === 'DONE').list.length
+  return (
+    <Panel title={`업무 현황 (${total})`}
+      right={<span className="text-[11px] text-slate-500">{`AI가 ${ago(row?.updated_at)} 갱신`}</span>}>
+      <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
+        <div className="flex flex-col items-center justify-center gap-3">
+          <div className="relative h-[160px] w-[160px]">
+            <Doughnut
+              data={{ labels: groups.map((g) => g.label), datasets: [{ data: groups.map((g) => g.list.length), backgroundColor: groups.map((g) => g.color), borderWidth: 0 }] }}
+              options={{ cutout: '68%', maintainAspectRatio: false, plugins: { legend: { display: false } } }} />
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+              <p className="text-[26px] font-black text-white">{Math.round((done / total) * 100)}%</p>
+              <p className="text-[11px] font-bold text-slate-400">완료율</p>
+            </div>
+          </div>
+          <div className="grid w-full grid-cols-3 gap-1.5 text-center">
+            {groups.map((g) => (
+              <div key={g.key}>
+                <p className={`text-[20px] font-black tabular-nums ${g.tone}`}>{g.list.length}</p>
+                <p className="text-[11px] font-bold text-slate-400">{g.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          {groups.map((g) => (
+            <div key={g.key} className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+              <p className={`mb-2 text-[12px] font-black ${g.tone}`}>{g.label} {g.list.length}</p>
+              <ul className="max-h-[260px] space-y-2 overflow-y-auto pr-1">
+                {g.list.length === 0 && <li className="text-[12px] text-slate-600">없음</li>}
+                {g.list.map((i, idx) => {
+                  const pct = typeof i.progress === 'number' ? Math.max(0, Math.min(100, i.progress)) : null
+                  return (
+                    <li key={idx} className="rounded-lg bg-slate-900/80 px-2.5 py-2">
+                      <p className="text-[12.5px] font-bold leading-snug text-slate-100">{i.title}</p>
+                      {i.detail && <p className="mt-0.5 text-[11.5px] leading-snug text-slate-400">{i.detail}</p>}
+                      {pct !== null && (
+                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-800">
+                          <div className="h-full" style={{ width: `${pct}%`, background: g.color }} />
+                        </div>
+                      )}
+                      {i.owner && <p className="mt-1 text-[10.5px] font-bold text-slate-500">{i.owner}</p>}
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Panel>
+  )
+}
+
 function Mini({ label, value, tone = 'text-white' }) {
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2">
@@ -353,6 +425,8 @@ export default function AgentControlRoomPage() {
   const staff = staffRow ? parseJson(staffRow.payload) : null
   const reorderRow = boards.find((b) => b.board_key === 'reorder-watch')
   const reorder = reorderRow ? parseJson(reorderRow.payload) : null
+  const workRow = boards.find((b) => b.board_key === 'work-status')
+  const work = workRow ? parseJson(workRow.payload) : null
   const { issues, ok: healthy } = triage(room, ops, now)
 
   return (
@@ -373,6 +447,8 @@ export default function AgentControlRoomPage() {
             </button>
           </div>
         </header>
+
+        <WorkStatusPanel row={workRow} data={work} />
 
         {error && <p className="rounded-lg bg-rose-500/15 px-3 py-2 text-[12.5px] font-bold text-rose-300">{error}</p>}
         {downAgents.length > 0 && (
