@@ -95,14 +95,8 @@ public class AgentWorkService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("created", true);
         if (createTask) {
-            Long taskId = jdbcTemplate.queryForObject("""
-                    INSERT INTO executive_work_task
-                        (company_id, project_name, task_name, assignee_name, priority, status, progress_rate,
-                         start_date, due_date, next_action, source_type, source_key, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, 'WAITING', 0, CURRENT_DATE, ?, ?, ?, ?, NOW(), NOW())
-                    RETURNING id
-                    """, Long.class, companyId, projectName, taskName, assignee, priority,
-                    dueDate == null ? null : java.sql.Date.valueOf(dueDate), content, SOURCE_TYPE, sourceKey);
+            Long taskId = insertTask(companyId, SOURCE_TYPE, sourceKey, projectName, taskName, assignee,
+                    priority, dueDate, content);
             result.put("taskId", taskId);
         }
         if (reportId != null && content != null && !content.isBlank()) {
@@ -121,6 +115,22 @@ public class AgentWorkService {
             result.put("feedbackId", feedbackId);
         }
         return result;
+    }
+
+    /**
+     * 담당자 업무(executive_work_task) 1건 생성 — AI 업무 지시와 상담·미팅 기록 후속 업무가 함께 쓴다.
+     * 길이 제한(project 160 / task 220 / assignee 80)은 호출하는 쪽에서 맞춘다.
+     */
+    public Long insertTask(Long companyId, String sourceType, String sourceKey, String projectName, String taskName,
+                           String assignee, String priority, LocalDate dueDate, String nextAction) {
+        return jdbcTemplate.queryForObject("""
+                INSERT INTO executive_work_task
+                    (company_id, project_name, task_name, assignee_name, priority, status, progress_rate,
+                     start_date, due_date, next_action, source_type, source_key, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'WAITING', 0, CURRENT_DATE, ?, ?, ?, ?, NOW(), NOW())
+                RETURNING id
+                """, Long.class, companyId, projectName, taskName, assignee, priority,
+                dueDate == null ? null : java.sql.Date.valueOf(dueDate), nextAction, sourceType, sourceKey);
     }
 
     private static String required(Map<String, Object> body, String key, int max) {
