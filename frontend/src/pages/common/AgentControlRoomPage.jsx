@@ -197,6 +197,7 @@ function LivePanel({ row, data }) {
   const queue = Array.isArray(data.queue) ? data.queue : []
   const recent = Array.isArray(data.recent) ? data.recent : []
   const shown = filter === 'ALL' ? recent : recent.filter((e) => e.type === filter)
+  const decisions = Array.isArray(data.decisions) ? data.decisions : []
   const sending = /발송 중/.test(now.title || '')
   return (
     <Panel title="실시간 활동"
@@ -215,6 +216,27 @@ function LivePanel({ row, data }) {
           <div><p className="text-[18px] font-black tabular-nums text-amber-300">{num(today.bounces)}</p><p className="text-[10.5px] font-bold text-slate-400">오늘 반송</p></div>
           <div><p className="text-[18px] font-black tabular-nums text-violet-300">{num(today.assigned)}</p><p className="text-[10.5px] font-bold text-slate-400">오늘 배정</p></div>
         </div>
+      </div>
+      <div className="mb-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
+        <p className="mb-2 text-[12.5px] font-black text-amber-300">실무진 판단 필요 ({decisions.length})
+          <span className="ml-2 text-[11px] font-bold text-slate-400">AI가 대신 답하지 않는 건 — 담당자가 확인하고 처리</span>
+        </p>
+        {decisions.length === 0
+          ? <p className="text-[12px] text-slate-500">지금 판단할 건이 없습니다.</p>
+          : (
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {decisions.map((d, idx) => (
+                <div key={idx} className={`rounded-lg border px-3 py-2 ${d.overdue ? 'border-rose-500/50 bg-rose-500/10' : 'border-slate-800 bg-slate-950/40'}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10.5px] font-black text-amber-300">{d.kind}</span>
+                    <span className={`text-[11px] font-bold ${d.overdue ? 'text-rose-300' : 'text-slate-400'}`}>{d.due ? `${d.due}까지${d.overdue ? ' · 지남' : ''}` : '기한 없음'}</span>
+                  </div>
+                  <p className="mt-1 text-[12.5px] font-bold text-slate-100">{d.company}<span className="font-normal text-slate-500"> · {d.owner}</span></p>
+                  <p className="text-[11.5px] leading-snug text-slate-300">{d.todo}</p>
+                </div>
+              ))}
+            </div>
+          )}
       </div>
       <div className="grid gap-3 lg:grid-cols-[280px_1fr]">
         <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
