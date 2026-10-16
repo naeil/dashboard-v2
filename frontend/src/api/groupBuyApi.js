@@ -7,6 +7,13 @@ export const getGroupBuys = (params = {}) =>
 export const getGroupBuySchedule = (params = {}) =>
   api.get('/group-buys/schedule', { params }).then((r) => r.data)
 
+// 공용 설정(공급가표·업무 절차·확정 필요 항목) — value 는 JSON 문자열로 저장
+export const getGroupBuySettings = () =>
+  api.get('/group-buys/settings').then((r) => r.data)
+
+export const saveGroupBuySetting = (key, value) =>
+  api.put(`/group-buys/settings/${key}`, { value: JSON.stringify(value) }).then((r) => r.data)
+
 export const createGroupBuy = (body) =>
   api.post('/group-buys', body).then((r) => r.data)
 

@@ -6,6 +6,8 @@ import {
   deleteGroupBuyEvent,
   getGroupBuys,
   getGroupBuySchedule,
+  getGroupBuySettings,
+  saveGroupBuySetting,
   setGroupBuyEventDone,
   setGroupBuyStatus,
 } from '../../api/groupBuyApi'
@@ -274,6 +276,360 @@ function DealDetail({ deal, onChanged }) {
   )
 }
 
+// ===== 공동구매 운영 시트(엑셀)와 같은 도구: 견적 계산기 · 업무 절차 · 확정 필요 항목 =====
+// 기본값은 데이터 Raw '오프라인 공급가' 탭(국내 오프라인 파트너 위탁 / 대량) 기준. 공급가 수정은 모든 직원 화면에 같이 반영된다.
+const DEFAULT_PRICES = [
+  { name: '단백깡 새우갈릭', retail: 3500, consignRate: 20, buyRate: 30 },
+  { name: '단백깡 알싸고추', retail: 2500, consignRate: 23, buyRate: 35 },
+  { name: '단백깡 야채포테이토', retail: 2500, consignRate: 23, buyRate: 35 },
+]
+const CARTON = 32
+const DEFAULT_PROCEDURE = {
+  consign: [
+    { task: '셀러가 제품, 희망 일정, 예상 수량을 전달합니다.', owner: '', done: false },
+    { task: '공급가 기준표와 소비자가 준수 사항을 안내하고 동의를 받습니다.', owner: '', done: false },
+    { task: '카톤(32봉) 단위로 출고합니다.', owner: '', done: false },
+    { task: '셀러가 공구를 진행합니다. 공구 진행 관리에 판매수량을 기록합니다.', owner: '', done: false },
+    { task: '판매수량 × 공급가로 정산합니다. (정산 시점, 미판매 재고 반품 여부는 확정 필요)', owner: '', done: false },
+  ],
+  buy: [
+    { task: '판매 실적을 확인하고 사입형 전환 조건을 안내합니다.', owner: '', done: false },
+    { task: '수량과 단가를 확정하고 발주서를 받습니다.', owner: '', done: false },
+    { task: '결제를 확인합니다. (선결제 또는 출고 후 결제는 확정 필요)', owner: '', done: false },
+    { task: '확정 수량을 출고합니다.', owner: '', done: false },
+    { task: '사후 관리를 합니다. (사입 물량 반품 가능 여부는 확정 필요)', owner: '', done: false },
+  ],
+}
+const DEFAULT_CONFIRM = [
+  '사입형 전환 기준 수량', '사입형 최소 주문 단위 (파레트 1,536봉은 공구에 비현실적일 수 있음)', '정산 시점과 방식',
+  '위탁 미판매 재고의 반품 가능 여부', '사입 결제 조건', '공구 최저 판매가 기준', '당근효소, 프리하닭 공급가 적용 여부',
+  '대량 새우갈릭 단가 재검토 (영업이익률 5% 미만 경고)', '알싸고추, 야채포테이토 원가 통일 (810원 vs 820원)',
+  '수수료형(인플루언서) 공구 수수료율 기준',
+].map((item) => ({ item, content: '', status: '미확정' }))
+
+const parse = (s, fallback) => { try { const v = JSON.parse(s); return v ?? fallback } catch { return fallback } }
+const supply = (p, type) => Math.round(p.retail * (1 - (type === '위탁' ? p.consignRate : p.buyRate) / 100))
+const n0 = (v) => Number(v || 0).toLocaleString('ko-KR')
+const cell = 'px-2 py-1.5 text-[12.5px]'
+
+function useSettings() {
+  const [s, setS] = useState({})
+  const [err, setErr] = useState('')
+  const load = useCallback(async () => { try { setS(await getGroupBuySettings()); setErr('') } catch (e) { setErr(errMsg(e)) } }, [])
+  useEffect(() => { load() }, [load])
+  const save = async (key, value) => { try { setS(await saveGroupBuySetting(key, value)); setErr('') } catch (e) { setErr(errMsg(e)) } }
+  return { s, save, err }
+}
+
+function QuoteCalculator({ prices, onEditPrices }) {
+  const [seller, setSeller] = useState('')
+  const [type, setType] = useState('위탁')
+  const [qty, setQty] = useState({})
+  const [copied, setCopied] = useState(false)
+  const rows = prices.map((p) => {
+    const q = Number(qty[p.name] || 0)
+    const unit = supply(p, type)
+    const other = supply(p, type === '위탁' ? '사입' : '위탁')
+    return { p, q, unit, amount: unit * q, cartons: q ? Math.ceil(q / CARTON) : 0, ok: !q || q % CARTON === 0,
+      margin: (p.retail - unit) * q, saving: type === '위탁' ? (unit - other) * q : 0 }
+  })
+  const used = rows.filter((r) => r.q > 0)
+  const sum = (k) => used.reduce((a, r) => a + r[k], 0)
+  const msg = used.length === 0 ? '' : [
+    `안녕하세요 ${seller || '셀러'}님, 하이프리 단백깡 공동구매 공급 조건 안내드립니다.`, '',
+    `[거래 방식] ${type === '위탁' ? '위탁 — 판매된 수량만큼만 정산합니다.' : '사입 — 주문 수량 기준으로 결제 후 출고합니다.'}`,
+    '[주문 내역]', ...used.map((r) => `- ${r.p.name} ${n0(r.q)}봉(${r.cartons}카톤) × ${n0(r.unit)}원 = ${n0(r.amount)}원`),
+    `합계 ${n0(sum('q'))}봉 / ${n0(sum('amount'))}원`, '',
+    `[출고] ${CARTON}봉 1카톤 단위로 출고합니다.`,
+    `[판매가] 소비자가(${prices.map((p) => `${p.name.replace('단백깡 ', '')} ${n0(p.retail)}원`).join(', ')}) 기준으로 판매해 주세요.`,
+    '[게시물] #광고 또는 #공동구매 표기를 부탁드리며, 효능 표현(체중 감량·혈당 등)은 쓰지 않습니다.', '',
+    '가능하신 공구 일정과 수량을 알려 주시면 바로 준비하겠습니다. 감사합니다.',
+  ].join('\n')
+  const copy = async () => { try { await navigator.clipboard.writeText(msg); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch { /* 무시 */ } }
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="셀러명"><input value={seller} onChange={(e) => setSeller(e.target.value)} className={inputCls} style={{ ...C.input, background: '#FFFBEB' }} placeholder="예: 지구쀼" /></Field>
+        <Field label="거래 유형">
+          <select value={type} onChange={(e) => setType(e.target.value)} className={inputCls} style={{ ...C.input, background: '#FFFBEB' }}>
+            <option>위탁</option><option>사입</option>
+          </select>
+        </Field>
+        <button type="button" onClick={onEditPrices} className="rounded-lg px-3 py-1.5 text-[12px] font-black" style={C.ghost}>공급가 기준 수정</button>
+      </div>
+      <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid #E2E8F0' }}>
+        <table className="w-full min-w-[820px] text-right">
+          <thead>
+            <tr>{['제품', '주문수량(봉)', '적용 공급가(원)', '공급금액(원)', '카톤수', '수량 점검', '셀러 예상마진(원)\n소비자가 판매 시', '사입 전환 시 절감액(원)\n위탁일 때 참고'].map((h, i) => (
+              <th key={h} className={`${cell} whitespace-pre-line font-black ${i === 0 ? 'text-left' : 'text-center'}`} style={{ background: '#1E3A5F', color: '#FFFFFF' }}>{h}</th>
+            ))}</tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.p.name}>
+                <td className={`${cell} text-left font-bold`} style={C.td}>{r.p.name}</td>
+                <td className={cell} style={{ ...C.td, background: '#FFFBEB' }}>
+                  <input type="number" min="0" step={CARTON} value={qty[r.p.name] ?? ''} onChange={(e) => setQty((p) => ({ ...p, [r.p.name]: e.target.value }))}
+                    className="w-24 rounded px-2 py-1 text-right text-[12.5px]" style={{ ...C.input, color: '#1D4ED8' }} placeholder="0" />
+                </td>
+                <td className={cell} style={{ ...C.td, background: '#F8FAFC' }}>{n0(r.unit)}</td>
+                <td className={cell} style={{ ...C.td, background: '#F8FAFC' }}>{r.q ? n0(r.amount) : ''}</td>
+                <td className={`${cell} text-center`} style={{ ...C.td, background: '#F8FAFC' }}>{r.q ? r.cartons : ''}</td>
+                <td className={`${cell} text-center font-bold`} style={{ ...C.td, background: '#F8FAFC', color: r.ok ? '#047857' : '#DC2626' }}>{r.q ? (r.ok ? 'OK' : `${CARTON}봉 단위로`) : ''}</td>
+                <td className={cell} style={{ ...C.td, background: '#F8FAFC' }}>{r.q ? n0(r.margin) : ''}</td>
+                <td className={cell} style={{ ...C.td, background: '#F8FAFC' }}>{r.q && type === '위탁' ? n0(r.saving) : ''}</td>
+              </tr>
+            ))}
+            <tr className="font-black">
+              <td className={`${cell} text-left`} style={C.td}>합계</td>
+              <td className={cell} style={C.td}>{n0(sum('q'))}</td>
+              <td className={cell} style={C.td} />
+              <td className={cell} style={C.td}>{n0(sum('amount'))}</td>
+              <td className={`${cell} text-center`} style={C.td}>{n0(sum('cartons'))}</td>
+              <td className={cell} style={C.td} />
+              <td className={cell} style={C.td}>{n0(sum('margin'))}</td>
+              <td className={cell} style={C.td}>{type === '위탁' ? n0(sum('saving')) : ''}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11.5px]" style={C.muted}>위탁은 판매 수량 기준으로 최종 정산하므로 공급금액은 주문 기준 예상치입니다. 노란 칸만 입력하세요.</p>
+      {msg && (
+        <div className="rounded-xl p-3" style={{ background: '#ECFDF5', border: '1px solid #A7F3D0' }}>
+          <div className="mb-1 flex items-center justify-between">
+            <p className="text-[12.5px] font-black" style={{ color: '#065F46' }}>셀러 안내 문구</p>
+            <button type="button" onClick={copy} className="rounded-lg px-3 py-1 text-[12px] font-black" style={C.primary}>{copied ? '복사됨' : '복사'}</button>
+          </div>
+          <pre className="whitespace-pre-wrap text-[12.5px] leading-relaxed" style={{ color: '#064E3B', fontFamily: 'inherit' }}>{msg}</pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PriceEditor({ prices, meta, onSave, onClose }) {
+  const [rows, setRows] = useState(prices.map((p) => ({ ...p })))
+  const set = (i, k, v) => setRows((p) => p.map((r, j) => (j === i ? { ...r, [k]: k === 'name' ? v : Number(v) } : r)))
+  return (
+    <div className="space-y-3">
+      <p className="text-[12px]" style={C.muted}>여기서 바꾸면 모든 직원의 견적 계산기에 바로 반영됩니다. 원가·이익률은 이 화면에 두지 않습니다(데이터 Raw '오프라인 공급가' 탭 참고).{meta?.updated_by ? ` 마지막 수정: ${meta.updated_by} ${meta.updated_at}` : ''}</p>
+      <table className="w-full text-[12.5px]">
+        <thead><tr>{['제품명', '소비자가(원)', '위탁 할인율(%)', '사입 할인율(%)', '위탁 공급가', '사입 공급가', ''].map((h) => <th key={h} className={`${cell} font-black`} style={C.th}>{h}</th>)}</tr></thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              <td className={cell} style={C.td}><input value={r.name} onChange={(e) => set(i, 'name', e.target.value)} className="w-full rounded px-2 py-1" style={C.input} /></td>
+              {['retail', 'consignRate', 'buyRate'].map((k) => (
+                <td key={k} className={cell} style={C.td}><input type="number" value={r[k]} onChange={(e) => set(i, k, e.target.value)} className="w-24 rounded px-2 py-1 text-right" style={C.input} /></td>
+              ))}
+              <td className={`${cell} text-right`} style={C.td}>{n0(supply(r, '위탁'))}</td>
+              <td className={`${cell} text-right`} style={C.td}>{n0(supply(r, '사입'))}</td>
+              <td className={cell} style={C.td}><button type="button" onClick={() => setRows((p) => p.filter((_, j) => j !== i))} className="text-[11.5px]" style={{ color: '#BE123C' }}>삭제</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="flex justify-between">
+        <button type="button" onClick={() => setRows((p) => [...p, { name: '', retail: 0, consignRate: 0, buyRate: 0 }])} className="rounded-lg px-3 py-1.5 text-[12.5px] font-black" style={C.ghost}>+ 제품 추가</button>
+        <div className="flex gap-2">
+          <button type="button" onClick={onClose} className="rounded-lg px-4 py-1.5 text-[12.5px] font-black" style={C.ghost}>취소</button>
+          <button type="button" onClick={async () => { await onSave(rows.filter((r) => r.name)); onClose() }} className="rounded-lg px-4 py-1.5 text-[12.5px] font-black" style={C.primary}>저장</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Procedure({ value, meta, onSave }) {
+  const [v, setV] = useState(value)
+  useEffect(() => setV(value), [value])
+  const update = (group, i, patch) => {
+    const next = { ...v, [group]: v[group].map((r, j) => (j === i ? { ...r, ...patch } : r)) }
+    setV(next); onSave(next)
+  }
+  const Block = ({ title, group }) => (
+    <div className="overflow-hidden rounded-xl" style={{ border: '1px solid #E2E8F0' }}>
+      <p className="px-3 py-2 text-[13px] font-black" style={{ background: '#1E3A5F', color: '#FFFFFF' }}>{title}</p>
+      <table className="w-full text-[12.5px]">
+        <thead><tr>{['순서', '할 일', '담당자', '완료'].map((h) => <th key={h} className={`${cell} font-black`} style={C.th}>{h}</th>)}</tr></thead>
+        <tbody>
+          {v[group].map((r, i) => (
+            <tr key={i}>
+              <td className={`${cell} text-center`} style={C.td}>{i + 1}</td>
+              <td className={cell} style={{ ...C.td, textDecoration: r.done ? 'line-through' : 'none', color: r.done ? '#94A3B8' : '#0F172A' }}>{r.task}</td>
+              <td className={cell} style={{ ...C.td, background: '#FFFBEB', width: 120 }}>
+                <select value={r.owner} onChange={(e) => update(group, i, { owner: e.target.value })} className="w-full rounded px-1.5 py-1" style={C.input}>
+                  <option value="">선택</option>{OWNERS.map((o) => <option key={o}>{o}</option>)}
+                </select>
+              </td>
+              <td className={`${cell} text-center`} style={{ ...C.td, background: '#FFFBEB', width: 60 }}>
+                <input type="checkbox" checked={!!r.done} onChange={() => update(group, i, { done: !r.done })} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 xl:grid-cols-2">
+        <Block title="위탁형 진행 (일반 셀러)" group="consign" />
+        <Block title="사입형 진행 (판매 수량이 높은 셀러)" group="buy" />
+      </div>
+      {meta?.updated_by && <p className="text-[11.5px]" style={C.muted}>마지막 수정: {meta.updated_by} {meta.updated_at}</p>}
+    </div>
+  )
+}
+
+function ConfirmItems({ value, meta, onSave }) {
+  const [v, setV] = useState(value)
+  useEffect(() => setV(value), [value])
+  const edit = (i, patch, persist) => { const next = v.map((r, j) => (j === i ? { ...r, ...patch } : r)); setV(next); if (persist) onSave(next) }
+  const open = v.filter((r) => r.status !== '확정').length
+  return (
+    <div className="space-y-2">
+      <p className="text-[12px]" style={C.muted}>대표 확정이 필요한 항목입니다. 확정되면 내용을 적고 상태를 '확정'으로 바꾸세요. 미확정 {open}건.</p>
+      <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid #E2E8F0' }}>
+        <table className="w-full min-w-[760px] text-[12.5px]">
+          <thead><tr>{['번호', '항목', '확정 내용', '상태'].map((h) => <th key={h} className={`${cell} font-black`} style={{ background: '#1E3A5F', color: '#FFFFFF' }}>{h}</th>)}</tr></thead>
+          <tbody>
+            {v.map((r, i) => (
+              <tr key={i}>
+                <td className={`${cell} text-center`} style={C.td}>{i + 1}</td>
+                <td className={cell} style={C.td}>{r.item}</td>
+                <td className={cell} style={{ ...C.td, background: '#FFFBEB' }}>
+                  <input value={r.content} onChange={(e) => edit(i, { content: e.target.value }, false)} onBlur={() => onSave(v)}
+                    className="w-full rounded px-2 py-1" style={C.input} placeholder="확정 내용 입력" />
+                </td>
+                <td className={`${cell} text-center`} style={{ ...C.td, background: '#FFFBEB', width: 110 }}>
+                  <select value={r.status} onChange={(e) => edit(i, { status: e.target.value }, true)} className="rounded px-1.5 py-1 font-bold"
+                    style={{ ...C.input, color: r.status === '확정' ? '#047857' : '#1D4ED8' }}>
+                    <option>미확정</option><option>확정</option>
+                  </select>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {meta?.updated_by && <p className="text-[11.5px]" style={C.muted}>마지막 수정: {meta.updated_by} {meta.updated_at}</p>}
+    </div>
+  )
+}
+
+function GroupBuyTools() {
+  const [tab, setTab] = useState(() => { try { return localStorage.getItem('gb-tool') || 'quote' } catch { return 'quote' } })
+  const [editPrices, setEditPrices] = useState(false)
+  const { s, save, err } = useSettings()
+  const prices = parse(s.prices?.value, DEFAULT_PRICES)
+  const procedure = parse(s.procedure?.value, DEFAULT_PROCEDURE)
+  const confirm = parse(s.confirm?.value, DEFAULT_CONFIRM)
+  const pick = (k) => { setTab(k); try { localStorage.setItem('gb-tool', k) } catch { /* 무시 */ } }
+  const tabs = [['quote', '견적 계산기'], ['procedure', '업무 절차'], ['confirm', `확정 필요 항목 (${confirm.filter((r) => r.status !== '확정').length})`], ['manual', '운영 매뉴얼'], ['', '접기']]
+  return (
+    <section className="rounded-2xl p-4" style={{ background: '#FFFFFF', border: '1px solid #BAE6FD' }}>
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {tabs.map(([k, l]) => (
+          <button key={l} type="button" onClick={() => pick(k)} className="rounded-full px-3.5 py-1.5 text-[12.5px] font-black"
+            style={tab === k ? C.primary : C.ghost}>{l}</button>
+        ))}
+      </div>
+      {err && <p className="mb-2 rounded-lg px-3 py-2 text-[12.5px] font-bold" style={C.error}>{err}</p>}
+      {tab === 'quote' && <QuoteCalculator prices={prices} onEditPrices={() => setEditPrices(true)} />}
+      {tab === 'procedure' && <Procedure value={procedure} meta={s.procedure} onSave={(v) => save('procedure', v)} />}
+      {tab === 'confirm' && <ConfirmItems value={confirm} meta={s.confirm} onSave={(v) => save('confirm', v)} />}
+      {tab === 'manual' && <Manual />}
+      {editPrices && <Modal title="공급가 기준 수정" onClose={() => setEditPrices(false)}><PriceEditor prices={prices} meta={s.prices} onSave={(v) => save('prices', v)} onClose={() => setEditPrices(false)} /></Modal>}
+    </section>
+  )
+}
+
+// 페이지 상단 운영 매뉴얼 — 접고 펼친 상태는 이 브라우저에만 기억
+const MANUAL_FLOW = [
+  ['AI', '후보 발굴', '댓글 참여가 높은 셀러를 찾음'],
+  ['AI', '제안 메일', '수수료형 공동구매 제안'],
+  ['AI', '회신 접수', '판단 대기로 등록 · 이수현 배정'],
+  ['실무진', '조건 판단', '승인 / 보류 / 거절 입력'],
+  ['자동', '일정 생성', '승인 시 담당자 이름으로'],
+  ['실무진', 'D-14 샘플', '3종 1세트 발송 · 송장 전달'],
+  ['실무진', 'D-3 검수', '광고 표기 · 효능 표현 확인'],
+  ['실무진', 'D-2 준비', '판매 링크 · 할인코드 · 재고'],
+  ['실무진', '오픈 → 마감', '문의 응대 · 품절 공유'],
+  ['실무진', '+1 판매수량', '셀러에게 최종 수량 받기'],
+  ['실무진', '+7 정산', '정산서 발송 · 지급 · 결과 리뷰'],
+]
+
+function Manual() {
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem('gb-manual') !== 'closed' } catch { return true } })
+  const toggle = () => setOpen((v) => { try { localStorage.setItem('gb-manual', v ? 'closed' : 'open') } catch { /* 무시 */ } return !v })
+  const box = 'rounded-xl p-3'
+  const h = 'mb-1.5 text-[13px] font-black'
+  const li = 'text-[12.5px] leading-relaxed'
+  return (
+    <section className="rounded-2xl p-4" style={{ background: '#FFFFFF', border: '1px solid #BAE6FD' }}>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-[15px] font-black" style={{ color: '#075985' }}>AI 공동구매 운영 매뉴얼</h2>
+        <button type="button" onClick={toggle} className="rounded-lg px-3 py-1 text-[12px] font-black" style={C.ghost}>{open ? '접기' : '펼치기'}</button>
+      </div>
+      {open && (
+        <div className="mt-3 space-y-3">
+          <div className="flex flex-wrap items-stretch gap-1.5">
+            {MANUAL_FLOW.map(([who, title, desc], i) => (
+              <div key={title} className="flex items-center gap-1.5">
+                <div className="min-w-[118px] rounded-lg px-2.5 py-1.5" style={{ background: who === 'AI' ? '#EEF2FF' : who === '자동' ? '#ECFDF5' : '#FFF7ED', border: '1px solid #E2E8F0' }}>
+                  <p className="text-[10.5px] font-black" style={{ color: who === 'AI' ? '#4338CA' : who === '자동' ? '#047857' : '#C2410C' }}>{who}</p>
+                  <p className="text-[12.5px] font-black" style={C.text}>{title}</p>
+                  <p className="text-[11px]" style={C.muted}>{desc}</p>
+                </div>
+                {i < MANUAL_FLOW.length - 1 && <span style={C.muted}>›</span>}
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-3 lg:grid-cols-3">
+            <div className={box} style={C.soft}>
+              <p className={h} style={C.text}>누가 무엇을</p>
+              <p className={li} style={C.text}><b>AI 에이전트</b> — 셀러 발굴, 제안 메일, 회신 접수·배정, 일정 알림</p>
+              <p className={li} style={C.text}><b>이수현 매니저 (공구 전담)</b> — 회신 응대, 조건 판단 입력, 일정 실행·완료 체크</p>
+              <p className={li} style={C.text}><b>대표</b> — 수수료율·판매가·정산 조건 확정, 비용이 드는 제안 결정</p>
+              <p className={li} style={C.text}><b>CS</b> — 출고·배송·구매자 문의 (셀러에게 배송·CS 부담 없음)</p>
+            </div>
+            <div className={box} style={C.soft}>
+              <p className={h} style={C.text}>셀러 고르는 기준 (팔로워 수 아님)</p>
+              <p className={li} style={C.text}>① 본인이 댓글에 <b>답글을 자주</b> 다는지</p>
+              <p className={li} style={C.text}>② 게시물마다 <b>댓글이 많이</b> 달리는지</p>
+              <p className={li} style={C.text}>③ 지난 공구 글에 <b>구매 문의 댓글</b>("어디서 사요", "링크")이 있는지</p>
+              <p className={li} style={C.muted}>제외: 경쟁 단백질 스낵 공구 진행 중, 자체 다이어트 스낵 판매, 원고료·제작비만 받는 곳</p>
+            </div>
+            <div className={box} style={C.soft}>
+              <p className={h} style={C.text}>판단 기준 (모두 상담·미팅 기록에 자동 기재)</p>
+              <p className={li} style={C.text}><b style={{ color: '#047857' }}>승인</b> — 수수료형(선금 없음) 동의 + 일정 협의 가능. 수수료율·기간 입력 → 일정 자동 생성</p>
+              <p className={li} style={C.text}><b style={{ color: '#B45309' }}>보류</b> — 조건 추가 확인, 장기·수익배분 등 별도 협의 필요. <b>사유 필수</b></p>
+              <p className={li} style={C.text}><b style={{ color: '#BE123C' }}>거절</b> — 유료 광고·원고료만 가능, 경쟁 공구 중, 표현 가이드 거부. <b>사유 필수</b></p>
+            </div>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className={box} style={C.soft}>
+              <p className={h} style={C.text}>표준 조건</p>
+              <p className={li} style={C.text}>· 수수료형 공동구매 — 선금·고정 광고비 없음</p>
+              <p className={li} style={C.text}>· 수수료율·공구 판매가: <b style={{ color: '#B45309' }}>대표 확정 후 안내</b> (확정 전에는 "내부 확인 후 안내")</p>
+              <p className={li} style={C.text}>· 구성: 단백깡 3종 혼합 · 샘플 3종 1세트 무상 · 기간 3~5일 권장</p>
+              <p className={li} style={C.text}>· 배송·CS 하이프리 담당 · 정산은 마감 후 반품 반영해 진행</p>
+              <p className={li} style={C.text}>· 게시물 첫머리에 <b>#광고 또는 #공동구매</b> 표기 필수</p>
+            </div>
+            <div className={box} style={C.soft}>
+              <p className={h} style={C.text}>게시물 표현 (식품이라 효능 표현 금지)</p>
+              <p className={li} style={C.text}><b style={{ color: '#047857' }}>가능</b> — 밀가루 없이 · 설탕 무첨가 · 튀기지 않은 · 한 봉지 단백질 OOg · 식단 관리 중 간식</p>
+              <p className={li} style={C.text}><b style={{ color: '#BE123C' }}>금지</b> — 살 빠지는 · 혈당 안 올리는 · 당뇨에 좋은 · 근손실 막는 · 최고/1위(근거 없는 최상급)</p>
+              <p className={li} style={C.muted}>안내문구 T1~T7·견적 계산·정산 계산: 공동구매 운영 시트(바탕화면 AI에이전트_자료 · 하이프리_단백깡_공동구매_운영시트.xlsx)</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
 export default function GroupBuyPage() {
   const [tab, setTab] = useState('pending')
   const [deals, setDeals] = useState([])
@@ -318,6 +674,8 @@ export default function GroupBuyPage() {
           </div>
           <button type="button" onClick={() => setCreating(true)} className="rounded-lg px-4 py-2 text-[13px] font-black" style={C.primary}>+ 직접 등록</button>
         </header>
+
+        <GroupBuyTools />
 
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
           {[['판단 대기', pending.length, '#B45309'], ['진행 중', running.length, '#1D4ED8'], ['오늘까지 할 일', todayOpen, '#BE123C'], ['전체', deals.length, '#0F172A']].map(([l, v, c]) => (

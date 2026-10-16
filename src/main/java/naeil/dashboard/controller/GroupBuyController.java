@@ -41,6 +41,19 @@ public class GroupBuyController {
         return ResponseEntity.ok(groupBuyService.schedule(COMPANY, from, to));
     }
 
+    /** 공용 설정: prices(공급가표) · procedure(업무 절차 담당·완료) · confirm(확정 필요 항목). 값은 JSON 문자열. */
+    @GetMapping("/group-buys/settings")
+    public ResponseEntity<Map<String, Object>> settings() {
+        return ResponseEntity.ok(groupBuyService.settings(COMPANY));
+    }
+
+    @PutMapping("/group-buys/settings/{key}")
+    public ResponseEntity<Map<String, Object>> saveSetting(
+            @PathVariable String key, @RequestBody Map<String, Object> body, HttpServletRequest request) {
+        AuthUser actor = requireUser(request);
+        return ResponseEntity.ok(groupBuyService.saveSetting(COMPANY, key, body == null ? null : body.get("value"), nameOf(actor)));
+    }
+
     @GetMapping("/group-buys/{id}")
     public ResponseEntity<Map<String, Object>> get(@PathVariable Long id) {
         return ResponseEntity.ok(groupBuyService.get(COMPANY, id));
