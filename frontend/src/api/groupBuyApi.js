@@ -25,5 +25,12 @@ export const addGroupBuyEvent = (id, body) =>
 export const setGroupBuyEventDone = (eventId, done) =>
   api.patch(`/group-buys/events/${eventId}`, { done }).then((r) => r.data)
 
+// 관제실 '실무진 판단 필요' 카드 판단(승인·진행 중·보류·거절) — 상담·미팅 기록에 자동 기재
+export const getStaffDecisions = () =>
+  api.get('/staff-decisions').then((r) => r.data)
+
+export const saveStaffDecision = (body) =>
+  api.post('/staff-decisions', body).then((r) => r.data)
+
 export const deleteGroupBuyEvent = (eventId) =>
   api.delete(`/group-buys/events/${eventId}`).then((r) => r.data)

@@ -5,7 +5,7 @@ import {
 import { Bar, Doughnut, Line } from 'react-chartjs-2'
 import { getAgentControlRoom, getAgentOverview } from '../../api/agentActivityApi'
 import AgentApprovalCard from '../../components/AgentApprovalCard'
-import { getGroupBuys, getGroupBuySchedule } from '../../api/groupBuyApi'
+import { decideGroupBuy, getGroupBuys, getGroupBuySchedule, getStaffDecisions, saveStaffDecision } from '../../api/groupBuyApi'
 import { C as GB, DealHead, DecisionForm } from './GroupBuyPage'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend, Filler)
@@ -185,8 +185,140 @@ const LIVE_TYPE = {
 }
 const hhmm = (v) => (v ? new Date(v).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '')
 
+// 판단 카드: 종류별 다음 단계 (승인 / 진행 중)
+const NEXT_STEPS = {
+  '회신 답장': {
+    APPROVED: ['회신 메일에 감사 답장 + 다음 단계 안내', '샘플 3종 발송 또는 미팅 일정 2~3개 제시', '공급 조건은 미팅·통화에서 안내(대표 확인)', '결과를 상담·미팅 기록에 남기기'],
+    RUNNING: ['샘플 발송 후 송장번호 전달', '미팅 진행 → 합의 사항 기록', '견적·공급 조건 안내(대표 확인 후)', '입점·발주 확정 → 출고 일정 잡기'],
+  },
+  '공구 조건 판단': {
+    APPROVED: ['수수료율·판매가·기간 확정(아래 입력)', '조건 안내 메일 발송(공구 운영 시트 T1~T3)', '샘플 3종 발송(오픈 14일 전)', '게시물 검수(광고 표기·효능 표현, 오픈 3일 전)'],
+    RUNNING: ['판매 링크·할인코드 전달', '오픈 확인·문의 응대', '마감 다음 날 판매수량 받기', '정산서 발송·지급(마감 7일 후)'],
+  },
+  '2차 공장': {
+    APPROVED: ['감사 회신 + NDA 제안', '시험 생산 절차·비용·일정 확인', '대표 보고(MOQ·인증·설비 차이)'],
+    RUNNING: ['NDA 체결', '시험 생산 진행', '샘플 품질 비교(현 제품 대비)', '단가 협상(대표)'],
+  },
+}
+NEXT_STEPS['2차 공장 회신'] = NEXT_STEPS['2차 공장']
+const DECIDE = [
+  ['APPROVED', '승인', 'bg-emerald-600'],
+  ['RUNNING', '진행 중', 'bg-sky-600'],
+  ['HOLD', '보류', 'bg-amber-600'],
+  ['REJECTED', '거절', 'bg-rose-600'],
+]
+const DECIDE_LABEL = Object.fromEntries(DECIDE.map(([k, l]) => [k, l]))
+const itemKey = (d) => d.key || `${d.kind}|${d.company}`
+
+function DecisionCard({ d, saved, deal, onSaved }) {
+  const [mode, setMode] = useState(null)
+  const [reason, setReason] = useState('')
+  const [gb, setGb] = useState({ commissionRate: '', salePrice: '', startDate: '', endDate: '' })
+  const [checked, setChecked] = useState({})
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const owner = String(d.owner || '').replace(' 매니저', '').replace(' + 대표', '').replace('담당 배정 대기', '')
+  const steps = mode ? (NEXT_STEPS[d.kind] || NEXT_STEPS['회신 답장'])[mode] || [] : []
+  const needReason = mode === 'HOLD' || mode === 'REJECTED'
+  const isGb = d.kind === '공구 조건 판단' && mode === 'APPROVED'
+
+  const save = async () => {
+    if (needReason && !reason.trim()) { setError(`${DECIDE_LABEL[mode]} 사유를 적어 주세요.`); return }
+    setBusy(true); setError('')
+    try {
+      const details = isGb
+        ? [gb.commissionRate && `수수료율 ${gb.commissionRate}%`, gb.salePrice && `공구 판매가 ${Number(gb.salePrice).toLocaleString('ko-KR')}원`, gb.startDate && `기간 ${gb.startDate} ~ ${gb.endDate || '?'}`].filter(Boolean).join(' / ')
+        : ''
+      // 공구 승인: 'AI 공동구매'에도 반영(같은 메일의 판단 대기 건이 있으면 승인 + 일정 자동 생성)
+      if (isGb && deal && gb.commissionRate && gb.startDate && gb.endDate) {
+        await decideGroupBuy(deal.id, { decision: 'APPROVE', dealType: 'COMMISSION', commissionRate: gb.commissionRate, salePrice: gb.salePrice, startDate: gb.startDate, endDate: gb.endDate, ownerName: owner || deal.owner_name, memo: reason })
+      }
+      const r = await saveStaffDecision({
+        itemKey: itemKey(d), kind: d.kind, partnerName: d.company, partnerEmail: d.email, ownerName: owner || null,
+        status: mode, reason: reason.trim() || null, nextSteps: steps.join('\n') || null, details: details || null,
+      })
+      onSaved(r); setMode(null); setReason('')
+    } catch (e) {
+      setError(e?.response?.data?.message || '저장하지 못했습니다.')
+    } finally { setBusy(false) }
+  }
+
+  const cur = saved?.status
+  const curSteps = saved?.next_steps ? saved.next_steps.split('\n') : []
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${d.overdue && !cur ? 'border-rose-500/50 bg-rose-500/10' : 'border-slate-800 bg-slate-950/40'}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10.5px] font-black text-amber-300">{d.kind}</span>
+        <span className={`text-[11px] font-bold ${d.overdue && !cur ? 'text-rose-300' : 'text-slate-400'}`}>{d.due ? `${d.due}까지${d.overdue && !cur ? ' · 지남' : ''}` : '기한 없음'}</span>
+      </div>
+      <p className="mt-1 text-[12.5px] font-bold text-slate-100">{d.company}<span className="font-normal text-slate-500"> · {d.owner}</span></p>
+      <p className="text-[11.5px] leading-snug text-slate-300">{d.todo}</p>
+      {cur && (
+        <div className="mt-1.5 rounded-md bg-slate-900/70 px-2 py-1.5 text-[11.5px] text-slate-300">
+          <b className="text-sky-300">{DECIDE_LABEL[cur]}</b> · {saved.decided_by} · {String(saved.decided_at || '').slice(5, 16).replace('T', ' ')}
+          {saved.reason && <p className="text-slate-400">{saved.reason}</p>}
+          {curSteps.length > 0 && (
+            <ul className="mt-1 space-y-0.5">
+              {curSteps.map((s, i) => (
+                <li key={i}><label className="flex cursor-pointer items-start gap-1.5">
+                  <input type="checkbox" className="mt-0.5" checked={!!checked[i]} onChange={() => setChecked((p) => ({ ...p, [i]: !p[i] }))} />
+                  <span className={checked[i] ? 'line-through text-slate-500' : ''}>{s}</span>
+                </label></li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      <div className="mt-2 flex flex-wrap gap-1">
+        {DECIDE.map(([k, l, bg]) => (
+          <button key={k} type="button" onClick={() => { setMode(mode === k ? null : k); setError('') }}
+            className={`rounded px-2 py-0.5 text-[11px] font-black text-white ${bg} ${mode === k ? 'ring-2 ring-white/60' : 'opacity-80 hover:opacity-100'}`}>{l}</button>
+        ))}
+      </div>
+      {mode && (
+        <div className="mt-2 space-y-1.5">
+          {steps.length > 0 && (
+            <div className="rounded-md bg-slate-900/70 px-2 py-1.5">
+              <p className="text-[11px] font-black text-slate-300">다음 단계 ({owner || '담당자'})</p>
+              {steps.map((s, i) => <p key={i} className="text-[11.5px] text-slate-300">{i + 1}. {s}</p>)}
+            </div>
+          )}
+          {isGb && (
+            <div className="grid grid-cols-2 gap-1.5">
+              <input type="number" placeholder="수수료율(%)" value={gb.commissionRate} onChange={(e) => setGb((p) => ({ ...p, commissionRate: e.target.value }))} className="rounded px-2 py-1 text-[12px]" style={GB.input} />
+              <input type="number" placeholder="공구 판매가(원)" value={gb.salePrice} onChange={(e) => setGb((p) => ({ ...p, salePrice: e.target.value }))} className="rounded px-2 py-1 text-[12px]" style={GB.input} />
+              <input type="date" title="공구 시작일" value={gb.startDate} onChange={(e) => setGb((p) => ({ ...p, startDate: e.target.value }))} className="rounded px-2 py-1 text-[12px]" style={GB.input} />
+              <input type="date" title="공구 마감일" value={gb.endDate} onChange={(e) => setGb((p) => ({ ...p, endDate: e.target.value }))} className="rounded px-2 py-1 text-[12px]" style={GB.input} />
+              <p className="col-span-2 text-[10.5px] text-slate-400">{deal ? '입력하면 AI 공동구매 일정(샘플·검수·오픈·마감·정산)이 자동으로 만들어집니다.' : 'AI 공동구매에 아직 없는 셀러 — 판단은 상담·미팅 기록에만 남습니다.'}</p>
+            </div>
+          )}
+          <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)}
+            placeholder={needReason ? `${DECIDE_LABEL[mode]} 사유 (필수) — 상담·미팅 기록에 남습니다` : '메모 (선택) — 상담·미팅 기록에 남습니다'}
+            className="w-full rounded px-2 py-1 text-[12px]" style={GB.input} />
+          {error && <p className="text-[11.5px] font-bold text-rose-300">{error}</p>}
+          <div className="flex justify-end gap-1">
+            <button type="button" onClick={() => setMode(null)} className="rounded px-2.5 py-1 text-[11.5px] font-black" style={GB.ghost}>취소</button>
+            <button type="button" disabled={busy} onClick={save} className="rounded px-2.5 py-1 text-[11.5px] font-black" style={GB.primary}>{busy ? '저장 중…' : `${DECIDE_LABEL[mode]} 저장`}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function LivePanel({ row, data }) {
   const [filter, setFilter] = useState('ALL')
+  const [savedMap, setSavedMap] = useState({})
+  const [gbDeals, setGbDeals] = useState([])
+  const [showClosed, setShowClosed] = useState(false)
+  const loadDecisions = useCallback(async () => {
+    try {
+      const [s, g] = await Promise.all([getStaffDecisions(), getGroupBuys()])
+      setSavedMap(Object.fromEntries((Array.isArray(s) ? s : []).map((x) => [x.item_key, x])))
+      setGbDeals(Array.isArray(g) ? g : [])
+    } catch { /* 판단 기록을 못 불러와도 카드는 보이게 */ }
+  }, [])
+  useEffect(() => { loadDecisions(); const t = setInterval(loadDecisions, 30000); return () => clearInterval(t) }, [loadDecisions])
   if (!data) {
     return (
       <Panel title="실시간 활동">
@@ -200,6 +332,9 @@ function LivePanel({ row, data }) {
   const recent = Array.isArray(data.recent) ? data.recent : []
   const shown = filter === 'ALL' ? recent : recent.filter((e) => e.type === filter)
   const decisions = Array.isArray(data.decisions) ? data.decisions : []
+  const isClosed = (d) => ['HOLD', 'REJECTED'].includes(savedMap[itemKey(d)]?.status)
+  const openDecisions = decisions.filter((d) => !isClosed(d))
+  const closedDecisions = decisions.filter(isClosed)
   const sending = /발송 중/.test(now.title || '')
   return (
     <Panel title="실시간 활동"
@@ -220,25 +355,32 @@ function LivePanel({ row, data }) {
         </div>
       </div>
       <div className="mb-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
-        <p className="mb-2 text-[12.5px] font-black text-amber-300">실무진 판단 필요 ({decisions.length})
+        <p className="mb-2 text-[12.5px] font-black text-amber-300">실무진 판단 필요 ({openDecisions.length})
           <span className="ml-2 text-[11px] font-bold text-slate-400">AI가 대신 답하지 않는 건 — 담당자가 확인하고 처리</span>
         </p>
-        {decisions.length === 0
+        {openDecisions.length === 0
           ? <p className="text-[12px] text-slate-500">지금 판단할 건이 없습니다.</p>
           : (
             <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-              {decisions.map((d, idx) => (
-                <div key={idx} className={`rounded-lg border px-3 py-2 ${d.overdue ? 'border-rose-500/50 bg-rose-500/10' : 'border-slate-800 bg-slate-950/40'}`}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10.5px] font-black text-amber-300">{d.kind}</span>
-                    <span className={`text-[11px] font-bold ${d.overdue ? 'text-rose-300' : 'text-slate-400'}`}>{d.due ? `${d.due}까지${d.overdue ? ' · 지남' : ''}` : '기한 없음'}</span>
-                  </div>
-                  <p className="mt-1 text-[12.5px] font-bold text-slate-100">{d.company}<span className="font-normal text-slate-500"> · {d.owner}</span></p>
-                  <p className="text-[11.5px] leading-snug text-slate-300">{d.todo}</p>
-                </div>
+              {openDecisions.map((d) => (
+                <DecisionCard key={itemKey(d)} d={d} saved={savedMap[itemKey(d)]}
+                  deal={d.email ? gbDeals.find((g) => (g.contact_email || '').toLowerCase() === d.email.toLowerCase() && ['PENDING', 'HOLD'].includes(g.status)) : null}
+                  onSaved={loadDecisions} />
               ))}
             </div>
           )}
+        {closedDecisions.length > 0 && (
+          <div className="mt-2">
+            <button type="button" onClick={() => setShowClosed((v) => !v)} className="text-[11.5px] font-bold text-slate-400 underline">
+              보류·거절 {closedDecisions.length}건 {showClosed ? '접기' : '보기'}
+            </button>
+            {showClosed && (
+              <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {closedDecisions.map((d) => <DecisionCard key={itemKey(d)} d={d} saved={savedMap[itemKey(d)]} deal={null} onSaved={loadDecisions} />)}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <div className="grid gap-3 lg:grid-cols-[280px_1fr]">
         <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
