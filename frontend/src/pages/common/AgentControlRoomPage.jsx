@@ -178,6 +178,7 @@ const LIVE_TYPE = {
   SENT: { label: '발송', cls: 'bg-sky-500/15 text-sky-300' },
   REPLY: { label: '회신', cls: 'bg-emerald-500/15 text-emerald-300' },
   ASSIGN: { label: '배정', cls: 'bg-violet-500/15 text-violet-300' },
+  BOUNCE: { label: '반송', cls: 'bg-amber-500/15 text-amber-300' },
   FAIL: { label: '실패', cls: 'bg-rose-500/15 text-rose-300' },
 }
 const hhmm = (v) => (v ? new Date(v).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '')
@@ -211,6 +212,7 @@ function LivePanel({ row, data }) {
         <div className="flex gap-3 text-center">
           <div><p className="text-[18px] font-black tabular-nums text-sky-300">{num(today.sent)}</p><p className="text-[10.5px] font-bold text-slate-400">오늘 발송</p></div>
           <div><p className="text-[18px] font-black tabular-nums text-emerald-300">{num(today.replies)}</p><p className="text-[10.5px] font-bold text-slate-400">오늘 회신</p></div>
+          <div><p className="text-[18px] font-black tabular-nums text-amber-300">{num(today.bounces)}</p><p className="text-[10.5px] font-bold text-slate-400">오늘 반송</p></div>
           <div><p className="text-[18px] font-black tabular-nums text-violet-300">{num(today.assigned)}</p><p className="text-[10.5px] font-bold text-slate-400">오늘 배정</p></div>
         </div>
       </div>
@@ -234,7 +236,7 @@ function LivePanel({ row, data }) {
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
           <div className="mb-2 flex flex-wrap items-center gap-1.5">
-            {['ALL', 'SENT', 'REPLY', 'ASSIGN', 'FAIL'].map((k) => (
+            {['ALL', 'SENT', 'REPLY', 'ASSIGN', 'BOUNCE', 'FAIL'].map((k) => (
               <button key={k} type="button" onClick={() => setFilter(k)}
                 className={`rounded-full px-2.5 py-0.5 text-[11px] font-black ${filter === k ? 'bg-slate-200 text-slate-900' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>
                 {k === 'ALL' ? '전체' : LIVE_TYPE[k].label}
@@ -256,6 +258,11 @@ function LivePanel({ row, data }) {
                       <span className="text-slate-300">{e.what}</span>
                     </p>
                     {e.detail && <p className="truncate text-[11px] text-slate-500">{e.detail}</p>}
+                    {e.plan && (
+                      <p className="mt-0.5 text-[11.5px] font-bold text-emerald-300">
+                        <span className="mr-1 rounded bg-emerald-500/15 px-1 py-px text-[10px]">처리</span>{e.plan}
+                      </p>
+                    )}
                   </div>
                 </li>
               )
