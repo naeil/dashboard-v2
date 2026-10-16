@@ -34,6 +34,82 @@ const progressOf = (text = '') => {
   return m && num(m[2]) > 0 ? Math.min(100, Math.round((num(m[1]) / num(m[2])) * 100)) : null
 }
 
+// 오프라인 매장 재발주 관리: 발주가 끊긴 매장과 1회만 발주한 매장을 연락 우선순위로 보여준다
+function ReorderPanel({ row, data }) {
+  const [tab, setTab] = useState('lapsed')
+  if (!data) {
+    return (
+      <Panel title="오프라인 재발주 관리">
+        <p className="text-[12.5px] text-slate-500">운영 에이전트가 오프라인 매장 발주 시트를 분석하면 여기에 표시됩니다.</p>
+      </Panel>
+    )
+  }
+  const t = data.totals || {}
+  const tabs = [
+    { key: 'lapsed', label: '발주 끊김', count: t.lapsed, tone: 'text-rose-300', hint: '2회 이상 발주했지만 마지막 발주 후 45일 이상 · 매출 큰 순' },
+    { key: 'noReorder', label: '재발주 없음', count: t.noReorder, tone: 'text-amber-300', hint: '1회 발주 후 30일 이상 · 오래된 순' },
+    { key: 'watch', label: '지켜보는 중', count: t.watch, tone: 'text-sky-300', hint: '첫 발주 후 30일 이내' },
+  ]
+  const list = data[tab] || []
+  return (
+    <Panel title="오프라인 재발주 관리"
+      right={<span className="text-[11px] text-slate-500">{`발주 시트 기준 ${data.dataDate || ''} · AI가 ${ago(row?.updated_at)} 분석`}</span>}>
+      <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-5">
+        <Mini label="발주 매장" value={num(t.stores)} />
+        <Mini label="활성 (재발주 중)" value={num(t.active)} tone="text-emerald-300" />
+        {tabs.map((x) => <Mini key={x.key} label={x.label} value={num(x.count)} tone={x.tone} />)}
+      </div>
+      {data.action && <p className="mb-3 text-[12.5px] font-bold text-slate-200">{data.action}</p>}
+      <div className="mb-2 flex flex-wrap gap-1.5">
+        {tabs.map((x) => (
+          <button key={x.key} type="button" onClick={() => setTab(x.key)}
+            className={`rounded-full border px-3 py-1 text-[12px] font-black ${tab === x.key ? 'border-sky-500 bg-sky-500/15 text-sky-200' : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+            {x.label} {num(x.count)}
+          </button>
+        ))}
+        <span className="self-center text-[11px] text-slate-500">{tabs.find((x) => x.key === tab)?.hint}</span>
+      </div>
+      <div className="max-h-[360px] overflow-y-auto rounded-xl border border-slate-800">
+        <table className="w-full text-left text-[12.5px]">
+          <thead className="sticky top-0 bg-slate-900 text-[11px] text-slate-400">
+            <tr>
+              <th className="px-3 py-2">매장</th><th className="px-3 py-2">체인</th><th className="px-3 py-2">지역</th>
+              {tab !== 'watch' && <><th className="px-3 py-2 text-right">발주</th><th className="px-3 py-2">마지막 발주</th><th className="px-3 py-2 text-right">경과</th><th className="px-3 py-2 text-right">누적 금액</th></>}
+              {tab === 'watch' && <th className="px-3 py-2">첫 발주</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((s) => (
+              <tr key={`${s.chain}-${s.name}`} className="border-t border-slate-800 text-slate-200">
+                <td className="px-3 py-1.5 font-bold">{s.name}</td>
+                <td className="px-3 py-1.5 text-slate-400">{s.chain}</td>
+                <td className="px-3 py-1.5 text-slate-400">{s.region}</td>
+                {tab !== 'watch' && <>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{num(s.orders)}회</td>
+                  <td className="px-3 py-1.5 tabular-nums text-slate-400">{s.last}</td>
+                  <td className={`px-3 py-1.5 text-right font-black tabular-nums ${num(s.daysSinceLast) >= 60 ? 'text-rose-300' : 'text-amber-300'}`}>{num(s.daysSinceLast)}일</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{won(s.amount)}</td>
+                </>}
+                {tab === 'watch' && <td className="px-3 py-1.5 tabular-nums text-slate-400">{s.first}</td>}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {data.basis && <p className="mt-2 text-[11px] text-slate-500">{data.basis}</p>}
+    </Panel>
+  )
+}
+
+function Mini({ label, value, tone = 'text-white' }) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2">
+      <p className="text-[11px] font-bold text-slate-400">{label}</p>
+      <p className={`text-[20px] font-black tabular-nums ${tone}`}>{value.toLocaleString('ko-KR')}</p>
+    </div>
+  )
+}
+
 function Panel({ title, right, children, className = '' }) {
   return (
     <section className={`rounded-2xl border border-slate-800 bg-slate-900/70 p-4 ${className}`}>
@@ -275,6 +351,8 @@ export default function AgentControlRoomPage() {
   const outreach = ops?.outreach
   const staffRow = boards.find((b) => b.board_key === 'staff-focus')
   const staff = staffRow ? parseJson(staffRow.payload) : null
+  const reorderRow = boards.find((b) => b.board_key === 'reorder-watch')
+  const reorder = reorderRow ? parseJson(reorderRow.payload) : null
   const { issues, ok: healthy } = triage(room, ops, now)
 
   return (
@@ -438,6 +516,8 @@ export default function AgentControlRoomPage() {
             </>
           )}
         </Panel>
+
+        <ReorderPanel row={reorderRow} data={reorder} />
 
         <Panel title="운영 에이전트 업무" right={<span className="text-[11px] text-slate-500">{opsRow ? `A가 ${ago(opsRow.updated_at)} 올림` : '아직 올라온 업무 현황이 없습니다'}</span>}>
           {!ops ? <p className="text-[12.5px] text-slate-500">운영 에이전트가 업무 현황을 올리면 여기에 표시됩니다.</p> : (
