@@ -5,6 +5,8 @@ import {
 import { Bar, Doughnut, Line } from 'react-chartjs-2'
 import { getAgentControlRoom, getAgentOverview } from '../../api/agentActivityApi'
 import AgentApprovalCard from '../../components/AgentApprovalCard'
+import { getGroupBuys, getGroupBuySchedule } from '../../api/groupBuyApi'
+import { C as GB, DealHead, DecisionForm } from './GroupBuyPage'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend, Filler)
 
@@ -387,6 +389,46 @@ function MetaAdsPanel({ row, data }) {
   )
 }
 
+// 공동구매 조건 판단: AI가 올린 공구 회신을 관제실에서 바로 승인·수수료·일정 입력 (AI 공동구매 메뉴와 같은 데이터)
+function GroupBuyPanel() {
+  const [pending, setPending] = useState([])
+  const [today, setToday] = useState([])
+  const load = useCallback(async () => {
+    try {
+      const d = new Date(); const t = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const [p, s] = await Promise.all([getGroupBuys({ status: 'PENDING' }), getGroupBuySchedule({ to: t })])
+      setPending(Array.isArray(p) ? p : []); setToday((Array.isArray(s) ? s : []).filter((e) => !e.done))
+    } catch { /* 관제실 다른 패널은 계속 보이도록 조용히 넘김 */ }
+  }, [])
+  useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t) }, [load])
+  return (
+    <Panel title={`공동구매 조건 판단 (${pending.length})`}
+      right={<span className="text-[11px] text-slate-500">승인·수수료·일정을 입력하면 'AI 공동구매' 일정에 바로 반영 · 오늘까지 할 일 {today.length}건</span>}>
+      {today.length > 0 && (
+        <div className="mb-3 rounded-xl p-3" style={GB.soft}>
+          <p className="mb-1 text-[12px] font-black" style={{ color: '#BE123C' }}>오늘까지 할 일</p>
+          {today.slice(0, 8).map((e) => (
+            <p key={e.id} className="text-[12px]" style={GB.text}>{e.event_date} · <b>{e.seller_name}</b> · {e.title} · {e.owner_name || '-'}</p>
+          ))}
+        </div>
+      )}
+      {pending.length === 0
+        ? <p className="text-[12.5px] text-slate-500">판단할 공동구매가 없습니다.</p>
+        : (
+          <div className="grid gap-3 xl:grid-cols-2">
+            {pending.map((d) => (
+              <div key={d.id} className="space-y-2 rounded-xl p-3" style={GB.panel}>
+                <DealHead deal={d} />
+                {d.request_summary && <p className="max-h-24 overflow-y-auto whitespace-pre-wrap rounded-lg p-2 text-[12px]" style={GB.soft}>{d.request_summary}</p>}
+                <DecisionForm deal={d} compact onSaved={load} />
+              </div>
+            ))}
+          </div>
+        )}
+    </Panel>
+  )
+}
+
 function Mini({ label, value, tone = 'text-white' }) {
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2">
@@ -668,6 +710,7 @@ export default function AgentControlRoomPage() {
 
         <WorkStatusPanel row={workRow} data={work} />
         <LivePanel row={liveRow} data={live} />
+        <GroupBuyPanel />
         <MetaAdsPanel row={metaRow} data={meta} />
 
         {error && <p className="rounded-lg bg-rose-500/15 px-3 py-2 text-[12.5px] font-bold text-rose-300">{error}</p>}

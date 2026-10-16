@@ -85,6 +85,7 @@ export const defaultMenuSections = [
 
       { id: 'agent-control-room', icon: 'monitoring', label: 'AI 관제실', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE', 'HR_MANAGER'] },
       { id: 'contact-log', icon: 'forum', label: '상담·미팅 기록', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE', 'HR_MANAGER'] },
+      { id: 'group-buy', icon: 'groups_3', label: 'AI 공동구매', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE', 'HR_MANAGER'] },
       { id: 'my-memo', icon: 'edit_note', label: '내 업무 메모', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'weekly-biz-report', icon: 'summarize', label: '주간 업무 보고', roles: ['EXECUTIVE', 'MANAGER', 'EMPLOYEE'] },
       { id: 'team-manage', icon: 'groups', label: '팀 관리', roles: ['EXECUTIVE', 'MANAGER'] },

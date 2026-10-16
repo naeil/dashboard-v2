@@ -73,6 +73,7 @@ import ControlTowerPage from './pages/common/ControlTowerPage'
 import AgentActivityPage from './pages/common/AgentActivityPage'
 import AgentControlRoomPage from './pages/common/AgentControlRoomPage'
 import ContactLogPage from './pages/common/ContactLogPage'
+import GroupBuyPage from './pages/common/GroupBuyPage'
 import WeeklyBizReportPage from './pages/common/WeeklyBizReportPage'
 import TeamManagePage from './pages/common/TeamManagePage'
 import PersonalMemoPage from './pages/common/PersonalMemoPage'
@@ -90,6 +91,7 @@ const pages = {
   'agent-activity': AgentActivityPage,
   'agent-control-room': AgentControlRoomPage,
   'contact-log': ContactLogPage,
+  'group-buy': GroupBuyPage,
   'weekly-biz-report': WeeklyBizReportPage,
   'team-manage': TeamManagePage,
   'my-memo': PersonalMemoPage,
