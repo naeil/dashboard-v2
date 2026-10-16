@@ -315,6 +315,41 @@ public class GroupBuyService {
         }
     }
 
+    // ===== 공용 설정 (공급가표·업무 절차·확정 필요 항목) =====
+
+    private static final Set<String> SETTING_KEYS = Set.of("prices", "procedure", "confirm");
+
+    public Map<String, Object> settings(Long companyId) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map<String, Object> r : jdbcTemplate.queryForList("""
+                SELECT setting_key, value, updated_by,
+                       TO_CHAR(updated_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS updated_at
+                FROM group_buy_setting WHERE company_id = ?
+                """, companyId)) {
+            Map<String, Object> v = new LinkedHashMap<>();
+            v.put("value", r.get("value"));
+            v.put("updated_by", r.get("updated_by"));
+            v.put("updated_at", r.get("updated_at"));
+            out.put(String.valueOf(r.get("setting_key")), v);
+        }
+        return out;
+    }
+
+    @Transactional
+    public Map<String, Object> saveSetting(Long companyId, String key, Object value, String actor) {
+        if (key == null || !SETTING_KEYS.contains(key)) throw new CustomException(400, "설정 항목이 올바르지 않습니다.");
+        String json = value == null ? null : String.valueOf(value);
+        if (json == null || json.isBlank()) throw new CustomException(400, "저장할 값이 비어 있습니다.");
+        if (json.length() > 50000) throw new CustomException(400, "값이 너무 큽니다.");
+        jdbcTemplate.update("""
+                INSERT INTO group_buy_setting (company_id, setting_key, value, updated_by, updated_at)
+                VALUES (?, ?, ?, ?, NOW())
+                ON CONFLICT (company_id, setting_key)
+                DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = NOW()
+                """, companyId, key, json, limit(actor, 100));
+        return settings(companyId);
+    }
+
     // ===== 헬퍼 =====
 
     private static boolean notBlank(String s) { return s != null && !s.isBlank(); }
