@@ -70,9 +70,9 @@ public class GroupBuyController {
     @PatchMapping("/group-buys/{id}/status")
     public ResponseEntity<Map<String, Object>> status(
             @PathVariable Long id, @RequestBody Map<String, Object> body, HttpServletRequest request) {
-        requireUser(request);
+        AuthUser actor = requireUser(request);
         Object status = body == null ? null : body.get("status");
-        return ResponseEntity.ok(groupBuyService.setStatus(COMPANY, id, status == null ? null : String.valueOf(status)));
+        return ResponseEntity.ok(groupBuyService.setStatus(COMPANY, id, status == null ? null : String.valueOf(status), nameOf(actor)));
     }
 
     @PostMapping("/group-buys/{id}/events")
