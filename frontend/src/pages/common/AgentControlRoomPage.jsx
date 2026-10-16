@@ -152,7 +152,7 @@ function WorkStatusPanel({ row, data }) {
                 {g.list.map((i, idx) => {
                   const pct = typeof i.progress === 'number' ? Math.max(0, Math.min(100, i.progress)) : null
                   return (
-                    <li key={idx} className="rounded-lg bg-slate-900/80 px-2.5 py-2">
+                    <li key={idx} className="rounded-lg bg-slate-900/70 px-2.5 py-2">
                       <p className="text-[12.5px] font-bold leading-snug text-slate-100">{i.title}</p>
                       {i.detail && <p className="mt-0.5 text-[11.5px] leading-snug text-slate-400">{i.detail}</p>}
                       {pct !== null && (
@@ -241,7 +241,7 @@ function LivePanel({ row, data }) {
               </button>
             ))}
           </div>
-          <ul className="max-h-[300px] divide-y divide-slate-800/70 overflow-y-auto pr-1">
+          <ul className="max-h-[300px] divide-y divide-white/10 overflow-y-auto pr-1">
             {shown.length === 0 && <li className="py-2 text-[12px] text-slate-600">기록 없음</li>}
             {shown.map((e, idx) => {
               const t = LIVE_TYPE[e.type] || LIVE_TYPE.SENT
