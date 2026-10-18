@@ -74,6 +74,7 @@ import AgentActivityPage from './pages/common/AgentActivityPage'
 import AgentControlRoomPage from './pages/common/AgentControlRoomPage'
 import ContactLogPage from './pages/common/ContactLogPage'
 import GroupBuyPage from './pages/common/GroupBuyPage'
+import MyNoticeModal from './components/MyNoticeModal'
 import WeeklyBizReportPage from './pages/common/WeeklyBizReportPage'
 import TeamManagePage from './pages/common/TeamManagePage'
 import PersonalMemoPage from './pages/common/PersonalMemoPage'
@@ -262,6 +263,7 @@ function MobileLayout({ activePage, setPage, session, userRole }) {
   return (
     <div className="app-light flex h-dvh flex-col bg-slate-50 text-slate-900" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
       <UpdateNotice />
+      <MyNoticeModal key={session.username} onNavigate={handleNavigate} />
       <header className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 shadow-sm" style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
         <button
           type="button"
@@ -435,7 +437,12 @@ export default function App() {
   const userRole = session.role ?? 'EMPLOYEE'
 
   if (isMobile) {
-    return <MobileLayout activePage={page} setPage={setPage} session={session} userRole={userRole} />
+    return (
+      <>
+        <MobileLayout activePage={page} setPage={setPage} session={session} userRole={userRole} />
+        <MyNoticeModal key={session.username} onNavigate={setPage} />
+      </>
+    )
   }
 
   const PageComponent = pages[page] || PlatformOverviewPage
@@ -463,6 +470,7 @@ export default function App() {
         onSelectSection={handleSelectSection}
       />
       <UpdateNotice />
+      <MyNoticeModal key={session.username} onNavigate={handleNavigate} />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           activePage={page}
