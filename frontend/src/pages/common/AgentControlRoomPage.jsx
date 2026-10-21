@@ -311,6 +311,7 @@ function LivePanel({ row, data }) {
   const [savedMap, setSavedMap] = useState({})
   const [gbDeals, setGbDeals] = useState([])
   const [showClosed, setShowClosed] = useState(false)
+  const [showRunning, setShowRunning] = useState(true)
   const loadDecisions = useCallback(async () => {
     try {
       const [s, g] = await Promise.all([getStaffDecisions(), getGroupBuys()])
@@ -333,7 +334,10 @@ function LivePanel({ row, data }) {
   const shown = filter === 'ALL' ? recent : recent.filter((e) => e.type === filter)
   const decisions = Array.isArray(data.decisions) ? data.decisions : []
   const isClosed = (d) => ['HOLD', 'REJECTED'].includes(savedMap[itemKey(d)]?.status)
-  const openDecisions = decisions.filter((d) => !isClosed(d))
+  const isRunning = (d) => ['APPROVED', 'RUNNING'].includes(savedMap[itemKey(d)]?.status)
+  // 판단 대기 = 아직 아무도 판단 안 한 건만. 승인·진행 중은 '진행 중'으로, 보류·거절은 접어 둔다
+  const openDecisions = decisions.filter((d) => !isClosed(d) && !isRunning(d))
+  const runningDecisions = decisions.filter(isRunning)
   const closedDecisions = decisions.filter(isClosed)
   const sending = /발송 중/.test(now.title || '')
   return (
@@ -369,6 +373,22 @@ function LivePanel({ row, data }) {
               ))}
             </div>
           )}
+        {runningDecisions.length > 0 && (
+          <div className="mt-3">
+            <button type="button" onClick={() => setShowRunning((v) => !v)} className="text-[12px] font-black text-sky-300">
+              진행 중 (승인·진행 중) {runningDecisions.length}건 {showRunning ? '접기' : '보기'}
+            </button>
+            {showRunning && (
+              <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {runningDecisions.map((d) => (
+                  <DecisionCard key={itemKey(d)} d={d} saved={savedMap[itemKey(d)]}
+                    deal={d.email ? gbDeals.find((g) => (g.contact_email || '').toLowerCase() === d.email.toLowerCase() && ['PENDING', 'HOLD'].includes(g.status)) : null}
+                    onSaved={loadDecisions} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {closedDecisions.length > 0 && (
           <div className="mt-2">
             <button type="button" onClick={() => setShowClosed((v) => !v)} className="text-[11.5px] font-bold text-slate-400 underline">

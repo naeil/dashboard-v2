@@ -75,12 +75,43 @@ public class StaffDecisionService {
                 RETURNING id
                 """, Long.class, companyId, key, kind, partner, email, owner, status, reason, steps, details,
                 limit(actor, 100), logId);
+        int tasks = syncTasks(companyId, partner, email, status, reason, actor);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", id);
+        result.put("tasks_updated", tasks);
         result.put("item_key", key);
         result.put("status", status);
         result.put("contact_log_id", logId);
         return result;
+    }
+
+    /**
+     * 같은 거래처의 AI 배정 업무(내 업무 목록) 상태도 함께 맞춘다.
+     * 승인·진행 중 → 진행 중 / 보류 → 막힘(사유 기록) / 거절 → 완료. 업체명 또는 이메일이 업무에 들어 있는 열린 업무만.
+     */
+    private int syncTasks(Long companyId, String partner, String email, String status, String reason, String actor) {
+        String taskStatus = switch (status) {
+            case "REJECTED" -> "DONE";
+            case "HOLD" -> "BLOCKED";
+            default -> "IN_PROGRESS";
+        };
+        String note = "[실무진 판단 " + LABEL.get(status) + " · " + (actor == null ? "-" : actor) + "]" + (reason == null ? "" : " " + reason);
+        String name = partner.contains("|") ? partner.substring(partner.indexOf('|') + 1).trim() : partner;
+        return jdbcTemplate.update("""
+                UPDATE executive_work_task
+                SET status = CAST(? AS VARCHAR),
+                    progress_rate = CASE WHEN CAST(? AS VARCHAR) = 'DONE' THEN 100 ELSE GREATEST(progress_rate, 10) END,
+                    completed_date = CASE WHEN CAST(? AS VARCHAR) = 'DONE' THEN CURRENT_DATE ELSE completed_date END,
+                    blocker_text = CASE WHEN CAST(? AS VARCHAR) = 'BLOCKED' THEN CAST(? AS TEXT) ELSE blocker_text END,
+                    review_comment = CONCAT_WS(E'\\n', review_comment, CAST(? AS TEXT)),
+                    updated_at = NOW()
+                WHERE company_id = ?
+                  AND status NOT IN ('DONE', 'CANCELLED')
+                  AND source_type IN ('AI_AGENT', 'AI_DIRECTIVE')
+                  AND (STRPOS(LOWER(task_name), LOWER(?)) > 0
+                       OR (CAST(? AS VARCHAR) <> '' AND STRPOS(LOWER(COALESCE(next_action, '')), LOWER(?)) > 0))
+                """, taskStatus, taskStatus, taskStatus, taskStatus, reason, note, companyId,
+                "] " + name, email == null ? "" : email, email == null ? "" : email);
     }
 
     private static String text(Object v) {
