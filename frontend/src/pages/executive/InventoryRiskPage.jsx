@@ -13,6 +13,7 @@ import {
   matchThreePlItems,
   normalizeName,
   parseThreePlFile,
+  resolveConsumerPrice,
   summarizeItem,
   toDateKey,
 } from '../../utils/threePlInventory'
@@ -459,10 +460,13 @@ function ProductDrawer({ row, settings, snapshotDate, onClose, onSaveStock }) {
     ['재고일수', row.coverDays == null ? '-' : Number.isFinite(row.coverDays) ? count(row.coverDays, '일') : '출고 없음'],
     ['발주점', row.reorderPoint ? count(row.reorderPoint, '개') : '-'],
     ['안전재고', row.safetyStock ? count(row.safetyStock, '개') : '-'],
-    ['재고 평가액', row.inventoryValue != null ? manWon(row.inventoryValue) : '단가 미등록'],
+    ['재고 평가액 (원가)', row.inventoryValue != null ? manWon(row.inventoryValue) : '원가 미등록'],
+    ['판매가치 (소비자가)', row.salesValue != null ? manWon(row.salesValue) : '소비자가 미등록'],
+    ['개당 원가 / 소비자가', `${row.unitCost ? won(row.unitCost) : '-'} / ${row.unitPrice ? won(row.unitPrice) : '-'}`],
     ['이번 달 입고', row.monthIn == null ? '-' : count(row.monthIn, '개')],
     ['이번 달 출고', row.monthOut == null ? '-' : count(row.monthOut, '개')],
     ['유통기한', row.expiry ? (row.expiryDays <= 0 ? '경과' : `D-${row.expiryDays}`) : '미등록'],
+    ['권장 발주량', row.suggestedOrder ? count(row.suggestedOrder, '개') : '-'],
   ]
 
   return (
@@ -505,7 +509,7 @@ function ProductDrawer({ row, settings, snapshotDate, onClose, onSaveStock }) {
             </Note>
           )}
           {row.flags.includes('WASTE_RISK') && (
-            <Note tone="amber" title={`기한 내 소진 위험 ${count(row.wasteQty, '개')}${row.wasteValue ? ` · ${manWon(row.wasteValue)}` : ''}`}>
+            <Note tone="amber" title={`기한 내 소진 위험 ${count(row.wasteQty, '개')}${row.wasteValue ? ` · 원가 ${manWon(row.wasteValue)}` : ''}${row.wasteSalesValue ? ` (판매가치 ${manWon(row.wasteSalesValue)})` : ''}`}>
               유통기한까지 {row.expiryDays}일 동안 지금 속도라면 약 {count(row.sellableBeforeExpiry, '개')}만 팔립니다. 기한 안에 다 팔려면 하루 {count(row.stock / row.expiryDays, '개')}씩 나가야 합니다(현재 {decimal(row.avgDailyOut)}개).
             </Note>
           )}
@@ -513,6 +517,9 @@ function ProductDrawer({ row, settings, snapshotDate, onClose, onSaveStock }) {
             <Note tone="slate" title="3PL 재고표에 없는 제품">
               세트 구성 상품이거나 3PL 품목과 연결되지 않은 제품입니다. 단품 재고로 관리되는 제품이라면 다음 업로드 때 미리보기에서 3PL 품목과 연결해 주세요.
             </Note>
+          )}
+          {row.priceSourceName && (
+            <p className="text-[11px] font-bold text-slate-400">소비자가는 판매 상품 '{row.priceSourceName}'의 등록 가격을 사용합니다.</p>
           )}
           {row.errors?.length > 0 && (
             <Note tone="rose" title="3PL 표 계산 오류">
@@ -868,12 +875,14 @@ function buildActions(rows, settings) {
       metric: '',
     })
   }
-  const noCost = rows.filter((row) => row.threePlName && !row.unitCost)
-  if (noCost.length) {
+  const missing = rows.filter((row) => row.threePlName && (!row.unitCost || !row.unitPrice))
+  if (missing.length) {
+    const noCost = missing.filter((row) => !row.unitCost).length
+    const noPrice = missing.filter((row) => !row.unitPrice).length
     actions.push({
-      key: 'cost', tone: 'slate', rows: noCost.slice(0, 8),
-      title: `단가 미등록 ${noCost.length}개`,
-      detail: '생산 원가가 없어 재고 평가액에서 빠집니다. 제품 원가 정보를 등록해 주세요.',
+      key: 'price', tone: 'slate', rows: missing.slice(0, 8),
+      title: `가격 정보 미등록 ${missing.length}개`,
+      detail: [noCost ? `원가 미등록 ${noCost}개(재고 평가액에서 빠짐)` : '', noPrice ? `소비자가 미등록 ${noPrice}개(판매가치에서 빠짐)` : ''].filter(Boolean).join(' · '),
       metric: '',
     })
   }
@@ -924,6 +933,7 @@ export default function InventoryRiskPage() {
     return products.map((product) => {
       const item = itemByProduct.get(String(product.id))
       const summary = item ? summarizeItem(item, asOfDate) : null
+      const consumer = resolveConsumerPrice(product, products)
       return {
         ...product,
         threePlName: item?.raw || null,
@@ -934,7 +944,8 @@ export default function InventoryRiskPage() {
         monthIn: summary?.monthIn ?? null,
         monthOut: summary?.monthOut ?? null,
         errors: summary?.errors || [],
-        ...evaluateProduct(product, summary, asOfDate, settings),
+        priceSourceName: consumer.source && consumer.source.id !== product.id ? consumer.source.product_name : null,
+        ...evaluateProduct(product, summary, asOfDate, settings, consumer.price),
       }
     })
   }, [products, snapshot, asOfDate, settings])
@@ -947,6 +958,7 @@ export default function InventoryRiskPage() {
 
   const valuedRows = linkedRows.filter((row) => row.inventoryValue != null)
   const inventoryValue = valuedRows.reduce((sum, row) => sum + row.inventoryValue, 0)
+  const salesValue = linkedRows.reduce((sum, row) => sum + (row.salesValue || 0), 0)
   const monthOut = linkedRows.reduce((sum, row) => sum + (row.monthOut || 0), 0)
   const elapsedDays = Number(asOfDate.slice(8, 10))
   const reorderCount = linkedRows.filter((row) => ['OUT', 'REORDER', 'REORDER_SOON'].some((flag) => row.flags.includes(flag))).length
@@ -977,10 +989,10 @@ export default function InventoryRiskPage() {
 
       <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
-          label={`${selectedCategory} 재고 평가 금액`}
+          label={`${selectedCategory} 재고 평가 금액 (원가)`}
           value={manWon(inventoryValue)}
           icon="inventory_2"
-          helperText={`단가 등록 ${valuedRows.length}/${linkedRows.length}개 기준`}
+          helperText={`판매가치(소비자가) ${manWon(salesValue)} · 원가 등록 ${valuedRows.length}/${linkedRows.length}개`}
           valueClassName="text-slate-950"
         />
         <KpiCard
@@ -999,7 +1011,7 @@ export default function InventoryRiskPage() {
           helperText={`재고일수 ${settings.leadDays + settings.bufferDays + 14}일 미만`}
         />
         <KpiCard
-          label="유통기한 내 소진 위험"
+          label="유통기한 내 소진 위험 (원가)"
           value={wasteValue ? manWon(wasteValue) : count(wasteQty, '개')}
           icon="hourglass_bottom"
           tone="amber"
