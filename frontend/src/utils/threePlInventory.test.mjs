@@ -59,14 +59,15 @@ const settings = { leadDays: 14, bufferDays: 7, targetDays: 30, overDays: 120, n
 const reorder = evaluateProduct({ production_cost: 100 }, { stock: 100, avgDailyOut: 10 }, '2026-10-27', settings, 300)
 assert.equal(reorder.status, 'REORDER')
 assert.equal(reorder.suggestedOrder, 410)
-assert.equal(reorder.inventoryValue, 30000) // 소비자가 기준
-assert.equal(reorder.costValue, 10000) // 원가 기준(참고)
-assert.equal(evaluateProduct({ production_cost: 100 }, { stock: 100, avgDailyOut: 10 }, '2026-10-27', settings).inventoryValue, null)
+assert.equal(reorder.inventoryValue, 10000) // 평가액: 원가 기준
+assert.equal(reorder.salesValue, 30000) // 판매가치: 소비자가 기준
+assert.equal(evaluateProduct({ production_cost: 100 }, { stock: 100, avgDailyOut: 10 }, '2026-10-27', settings).salesValue, null)
 
-const waste = evaluateProduct({ expiry_date: '2026-11-06' }, { stock: 1000, avgDailyOut: 10 }, '2026-10-27', settings, 4000)
+const waste = evaluateProduct({ expiry_date: '2026-11-06', production_cost: 1000 }, { stock: 1000, avgDailyOut: 10 }, '2026-10-27', settings, 4000)
 assert.equal(waste.expiryDays, 10)
 assert.equal(waste.wasteQty, 900)
-assert.equal(waste.wasteValue, 3600000)
+assert.equal(waste.wasteValue, 900000)
+assert.equal(waste.wasteSalesValue, 3600000)
 assert.ok(waste.flags.includes('WASTE_RISK'))
 
 const catalog = [

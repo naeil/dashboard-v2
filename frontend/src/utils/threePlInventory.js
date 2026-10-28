@@ -379,12 +379,13 @@ export function evaluateProduct(product, summary, asOfDate, settings = DEFAULT_I
     expiryDays,
     sellableBeforeExpiry,
     wasteQty,
-    wasteValue: wasteQty * unitPrice,
+    wasteValue: wasteQty * unitCost, // 손실은 원가 기준
+    wasteSalesValue: wasteQty * unitPrice,
     suggestedOrder,
     unitCost,
     unitPrice,
-    inventoryValue: unitPrice > 0 ? unitPrice * stock : null, // 소비자가 기준
-    costValue: unitCost > 0 ? unitCost * stock : null, // 참고용 원가 기준
+    inventoryValue: unitCost > 0 ? unitCost * stock : null, // 재고 평가액: 원가 기준(장부)
+    salesValue: unitPrice > 0 ? unitPrice * stock : null, // 판매가치: 소비자가 기준(참고)
     flags,
     status: flags[0],
   }
