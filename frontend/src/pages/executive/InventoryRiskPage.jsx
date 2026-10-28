@@ -308,8 +308,8 @@ function InventoryTable({ rows, settings, selectedId, onOpen, showUnlinked, setS
         <table className="min-w-full divide-y divide-slate-200 text-left">
           <thead className="bg-slate-50">
             <tr>
-              {['제품명', '현재고', '일평균 출고', '재고일수', '발주점', '유통기한', '상태', '이번 달 추이'].map((label) => (
-                <th key={label} className={`whitespace-nowrap px-4 py-3 text-xs font-black text-slate-500 ${['현재고', '일평균 출고', '발주점'].includes(label) ? 'text-right' : ''}`}>{label}</th>
+              {['제품명', '현재고', '개당 원가 / 소비자가', '재고 금액 (원가 / 소비자가)', '일평균 출고', '재고일수', '발주점', '유통기한', '상태', '이번 달 추이'].map((label) => (
+                <th key={label} className={`whitespace-nowrap px-4 py-3 text-xs font-black text-slate-500 ${['현재고', '개당 원가 / 소비자가', '재고 금액 (원가 / 소비자가)', '일평균 출고', '발주점'].includes(label) ? 'text-right' : ''}`}>{label}</th>
               ))}
             </tr>
           </thead>
@@ -328,6 +328,14 @@ function InventoryTable({ rows, settings, selectedId, onOpen, showUnlinked, setS
                   </p>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-black text-slate-950">{count(row.stock)}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-right">
+                  <p className="text-sm font-medium text-slate-700">{row.unitCost ? won(row.unitCost) : '-'}</p>
+                  <p className="text-xs font-black text-sky-700">{row.unitPrice ? won(row.unitPrice) : '소비자가 없음'}</p>
+                </td>
+                <td className="whitespace-nowrap px-4 py-3 text-right">
+                  <p className="text-sm font-black text-slate-950">{row.inventoryValue != null ? manWon(row.inventoryValue) : '-'}</p>
+                  <p className="text-xs font-black text-sky-700">{row.salesValue != null ? manWon(row.salesValue) : '-'}</p>
+                </td>
                 <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-medium text-slate-700">{decimal(row.avgDailyOut)}</td>
                 <td className="px-4 py-3"><CoverBar row={row} settings={settings} /></td>
                 <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-medium text-slate-700">{row.reorderPoint ? count(row.reorderPoint) : '-'}</td>
@@ -340,7 +348,7 @@ function InventoryTable({ rows, settings, selectedId, onOpen, showUnlinked, setS
             ))}
             {visibleRows.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-sm font-bold text-slate-400">조건에 맞는 제품이 없습니다.</td>
+                <td colSpan={10} className="px-4 py-8 text-center text-sm font-bold text-slate-400">조건에 맞는 제품이 없습니다.</td>
               </tr>
             )}
           </tbody>
@@ -988,13 +996,23 @@ export default function InventoryRiskPage() {
       {snapshot && <ActionList actions={actions} onOpen={setSelectedId} />}
 
       <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard
-          label={`${selectedCategory} 재고 평가 금액 (원가)`}
-          value={manWon(inventoryValue)}
-          icon="inventory_2"
-          helperText={`판매가치(소비자가) ${manWon(salesValue)} · 원가 등록 ${valuedRows.length}/${linkedRows.length}개`}
-          valueClassName="text-slate-950"
-        />
+        <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <p className="text-xs font-bold text-slate-500">{selectedCategory} 재고 금액</p>
+            <span className="material-symbols-outlined rounded-lg border border-sky-200 bg-sky-50 p-2 text-lg text-sky-700">inventory_2</span>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-[11px] font-black text-slate-500">원가 (평가 금액)</p>
+              <p className="mt-0.5 text-xl font-black tracking-tight text-slate-950">{manWon(inventoryValue)}</p>
+            </div>
+            <div className="border-l border-slate-100 pl-3">
+              <p className="text-[11px] font-black text-sky-700">소비자가 (판매가치)</p>
+              <p className="mt-0.5 text-xl font-black tracking-tight text-sky-700">{manWon(salesValue)}</p>
+            </div>
+          </div>
+          <p className="mt-4 text-xs font-bold text-slate-500">현재고 × 개당 가격 · 가격 등록 {valuedRows.length}/{linkedRows.length}개</p>
+        </article>
         <KpiCard
           label={`${Number(asOfDate.slice(5, 7))}월 출고 누계`}
           value={count(monthOut, '개')}
