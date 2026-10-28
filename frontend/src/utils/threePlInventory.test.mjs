@@ -4,6 +4,7 @@ import {
   evaluateProduct,
   matchThreePlItems,
   parseThreePlSheets,
+  resolveConsumerPrice,
   summarizeItem,
 } from './threePlInventory.js'
 
@@ -55,15 +56,31 @@ assert.deepEqual(matchThreePlItems(parsed.items, products), { 알싸고추깡: '
 assert.deepEqual(matchThreePlItems(parsed.items, products, { 새우갈릭깡: 9 }), { 알싸고추깡: '7', 새우갈릭깡: '9' })
 
 const settings = { leadDays: 14, bufferDays: 7, targetDays: 30, overDays: 120, nearExpiryDays: 90, staleDays: 3 }
-const reorder = evaluateProduct({ production_cost: 100 }, { stock: 100, avgDailyOut: 10 }, '2026-10-27', settings)
+const reorder = evaluateProduct({ production_cost: 100 }, { stock: 100, avgDailyOut: 10 }, '2026-10-27', settings, 300)
 assert.equal(reorder.status, 'REORDER')
 assert.equal(reorder.suggestedOrder, 410)
-assert.equal(reorder.inventoryValue, 10000)
+assert.equal(reorder.inventoryValue, 30000) // 소비자가 기준
+assert.equal(reorder.costValue, 10000) // 원가 기준(참고)
+assert.equal(evaluateProduct({ production_cost: 100 }, { stock: 100, avgDailyOut: 10 }, '2026-10-27', settings).inventoryValue, null)
 
-const waste = evaluateProduct({ expiry_date: '2026-11-06' }, { stock: 1000, avgDailyOut: 10 }, '2026-10-27', settings)
+const waste = evaluateProduct({ expiry_date: '2026-11-06' }, { stock: 1000, avgDailyOut: 10 }, '2026-10-27', settings, 4000)
 assert.equal(waste.expiryDays, 10)
 assert.equal(waste.wasteQty, 900)
+assert.equal(waste.wasteValue, 3600000)
 assert.ok(waste.flags.includes('WASTE_RISK'))
+
+const catalog = [
+  { id: 23, product_name: '단백깡 알싸고추깡', bundle_quantity: null, consumer_price: null },
+  { id: 59, product_name: '단백깡 알싸고추깡', bundle_quantity: 1, consumer_price: 4000 },
+  { id: 62, product_name: '단백깡 알싸고추깡 24봉', bundle_quantity: 24, consumer_price: 96000 },
+  { id: 16, product_name: '프리당생생효소', bundle_quantity: null, consumer_price: null },
+  { id: 36, product_name: '당근효소 1박스', bundle_quantity: 1, consumer_price: 9900 },
+  { id: 99, product_name: '미등록 제품' },
+]
+assert.equal(resolveConsumerPrice(catalog[0], catalog).price, 4000)
+assert.equal(resolveConsumerPrice(catalog[2], catalog).price, 4000) // 96,000 ÷ 24
+assert.equal(resolveConsumerPrice(catalog[3], catalog).price, 9900)
+assert.equal(resolveConsumerPrice(catalog[5], catalog).price, 0)
 
 const expired = evaluateProduct({ expiry_date: '2026-02-12' }, { stock: 50, avgDailyOut: 1 }, '2026-10-27', settings)
 assert.equal(expired.status, 'EXPIRY_CHECK')

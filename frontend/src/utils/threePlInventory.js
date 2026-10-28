@@ -274,6 +274,38 @@ export function matchThreePlItems(items, products, savedMapping = {}) {
   return mapping
 }
 
+/* ───────── 소비자가 ───────── */
+
+/* 3PL 연동 제품명(공백 제거) → 소비자가가 등록된 1개짜리 판매 상품명 */
+export const CONSUMER_PRICE_ALIASES = {
+  프리당생생효소: ['당근효소 1박스'],
+}
+
+const unitConsumerPrice = (product) => {
+  const price = Number(product?.consumer_price || 0)
+  const bundle = Math.max(1, Number(product?.bundle_quantity || 1))
+  return price > 0 ? price / bundle : 0
+}
+
+/**
+ * 재고 1개당 소비자가.
+ * 1) 제품 자체에 소비자가가 있으면 그 값(묶음이면 낱개로 환산)
+ * 2) 없으면 같은 이름의 1개짜리 판매 상품(예: NAVER-…-1)의 소비자가
+ */
+export function resolveConsumerPrice(product, products) {
+  const own = unitConsumerPrice(product)
+  if (own > 0) return { price: own, source: product }
+  const key = normalizeName(product.product_name)
+  const names = new Set([key, ...(CONSUMER_PRICE_ALIASES[key] || []).map(normalizeName)])
+  const single = products.find((candidate) => (
+    candidate.id !== product.id
+    && Number(candidate.bundle_quantity || 1) === 1
+    && Number(candidate.consumer_price || 0) > 0
+    && names.has(normalizeName(candidate.product_name))
+  ))
+  return single ? { price: Number(single.consumer_price), source: single } : { price: 0, source: null }
+}
+
 /* ───────── 분석 ───────── */
 
 /** 3PL 품목 하나를 기준일까지 잘라 계산 */
@@ -309,7 +341,7 @@ export function summarizeItem(item, asOfDate) {
 }
 
 /** 대시보드 품목 + (있으면) 3PL 요약 → 판단 결과 */
-export function evaluateProduct(product, summary, asOfDate, settings = DEFAULT_INVENTORY_SETTINGS) {
+export function evaluateProduct(product, summary, asOfDate, settings = DEFAULT_INVENTORY_SETTINGS, consumerPrice = 0) {
   const stock = summary ? summary.stock : Number(product.stock_quantity || 0)
   const avg = summary ? summary.avgDailyOut : null
   const cover = avg > 0 ? stock / avg : (summary ? Infinity : null)
@@ -320,6 +352,7 @@ export function evaluateProduct(product, summary, asOfDate, settings = DEFAULT_I
   const wasteQty = expiryDays != null && expiryDays > 0 && sellableBeforeExpiry != null ? Math.max(0, Math.round(stock - sellableBeforeExpiry)) : 0
   const suggestedOrder = avg > 0 ? Math.max(0, Math.ceil(avg * (settings.leadDays + settings.bufferDays + settings.targetDays) - stock)) : 0
   const unitCost = Number(product.production_cost || 0)
+  const unitPrice = Number(consumerPrice || 0)
 
   const flags = []
   if (!summary) {
@@ -346,10 +379,12 @@ export function evaluateProduct(product, summary, asOfDate, settings = DEFAULT_I
     expiryDays,
     sellableBeforeExpiry,
     wasteQty,
-    wasteValue: wasteQty * unitCost,
+    wasteValue: wasteQty * unitPrice,
     suggestedOrder,
     unitCost,
-    inventoryValue: unitCost > 0 ? unitCost * stock : null,
+    unitPrice,
+    inventoryValue: unitPrice > 0 ? unitPrice * stock : null, // 소비자가 기준
+    costValue: unitCost > 0 ? unitCost * stock : null, // 참고용 원가 기준
     flags,
     status: flags[0],
   }
