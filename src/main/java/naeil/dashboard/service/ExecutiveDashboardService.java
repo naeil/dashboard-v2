@@ -23,6 +23,7 @@ public class ExecutiveDashboardService {
 
     private final JdbcTemplate jdbcTemplate;
     private final PlayAutoSyncService playAutoSyncService;
+    private final CashFlowForecastBuilder cashFlowForecastBuilder;
     private static final int PRODUCT_FORECAST_MONTHS = 12;
     private static final List<BigDecimal> PRODUCT_FORECAST_GROWTH_FACTORS = List.of(
             BigDecimal.valueOf(0.35),
@@ -493,22 +494,12 @@ public class ExecutiveDashboardService {
     }
 
     public Map<String, Object> getCashFlow(Long companyId) {
-        Map<String, Object> totals = jdbcTemplate.queryForMap("""
-                SELECT
-                    COALESCE(SUM(amount) FILTER (WHERE flow_date = CURRENT_DATE AND flow_type = 'INFLOW'), 0) AS today_inflow,
-                    COALESCE(SUM(amount) FILTER (WHERE flow_date = CURRENT_DATE AND flow_type = 'OUTFLOW'), 0) AS today_outflow,
-                    COALESCE(SUM(amount) FILTER (WHERE flow_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '6 day' AND flow_type = 'INFLOW'), 0) AS week_inflow,
-                    COALESCE(SUM(amount) FILTER (WHERE flow_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '6 day' AND flow_type = 'OUTFLOW'), 0) AS week_outflow,
-                    COALESCE(SUM(amount) FILTER (WHERE date_trunc('month', flow_date) = date_trunc('month', CURRENT_DATE) AND flow_type = 'INFLOW'), 0) AS month_inflow,
-                    COALESCE(SUM(amount) FILTER (WHERE date_trunc('month', flow_date) = date_trunc('month', CURRENT_DATE) AND flow_type = 'OUTFLOW'), 0) AS month_outflow
-                FROM executive_cash_flow
-                WHERE company_id = ?
-                """, companyId);
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("totals", totals);
-        result.put("expectedCashShortageDate", getExpectedCashShortageDate(companyId));
-        result.put("accounts", queryAccounts(companyId));
+        List<Map<String, Object>> accounts = queryAccounts(companyId);
+        List<Map<String, Object>> receivables = getReceivables(companyId);
+        Map<String, Object> result = new LinkedHashMap<>(cashFlowForecastBuilder.build(
+                companyId, accounts, getOperatingExpenses(companyId), receivables));
+        result.put("accounts", accounts);
+        result.put("receivables", receivables);
         result.put("monthlyFlow", jdbcTemplate.queryForList("""
                 SELECT
                     date_trunc('month', flow_date)::date AS month,
@@ -518,36 +509,6 @@ public class ExecutiveDashboardService {
                 WHERE company_id = ?
                 GROUP BY date_trunc('month', flow_date)::date
                 ORDER BY month
-                """, companyId));
-        result.put("inflows", jdbcTemplate.queryForList("""
-                SELECT *
-                FROM executive_cash_flow
-                WHERE company_id = ? AND flow_type = 'INFLOW'
-                ORDER BY flow_date, amount DESC
-                """, companyId));
-        result.put("outflows", jdbcTemplate.queryForList("""
-                SELECT *
-                FROM executive_cash_flow
-                WHERE company_id = ? AND flow_type = 'OUTFLOW'
-                ORDER BY flow_date, amount DESC
-                """, companyId));
-        result.put("receivables", getReceivables(companyId));
-        result.put("dailyProjection", getDailyCashProjection(companyId));
-        result.put("upcomingOutflows", jdbcTemplate.queryForList("""
-                SELECT *
-                FROM executive_cash_flow
-                WHERE company_id = ? AND flow_type = 'OUTFLOW' AND flow_date >= CURRENT_DATE
-                ORDER BY flow_date, amount DESC
-                LIMIT 8
-                """, companyId));
-        result.put("delayedInflows", jdbcTemplate.queryForList("""
-                SELECT *
-                FROM executive_cash_flow
-                WHERE company_id = ?
-                  AND flow_type = 'INFLOW'
-                  AND flow_date < CURRENT_DATE
-                  AND status NOT IN ('DONE', 'CANCELLED')
-                ORDER BY flow_date, amount DESC
                 """, companyId));
         return result;
     }
